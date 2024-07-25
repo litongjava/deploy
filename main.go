@@ -1,6 +1,7 @@
 package main
 
 import (
+  "archive/zip"
   "bufio"
   "bytes"
   "crypto/tls"
@@ -8,6 +9,8 @@ import (
   "flag"
   "fmt"
   "github.com/spf13/viper"
+  "golang.org/x/text/encoding/simplifiedchinese"
+  "golang.org/x/text/transform"
   "io"
   "io/ioutil"
   "log"
@@ -16,8 +19,10 @@ import (
   "os"
   "os/exec"
   "path/filepath"
+  "regexp"
   "strings"
   "time"
+  "unicode"
 )
 
 func init() {
@@ -35,6 +40,7 @@ func main() {
   m := flag.String("m", "", "move to file path")
   d := flag.String("d", "", "extra file path")
   c := flag.String("c", "", "full command")
+  z := flag.String("z", "", "zip")
 
   flag.Parse()
 
@@ -58,6 +64,10 @@ func main() {
     if *b == "" {
       *b = viper.GetString(*e + ".upload-run.b")
     }
+
+    if *z == "" {
+      *z = viper.GetString(*e + ".upload-run.z")
+    }
     if *filePath == "" {
       *filePath = viper.GetString(*e + ".upload-run.file")
     }
@@ -79,6 +89,7 @@ func main() {
     }
 
     log.Println("b:", *b)
+    log.Println("z:", *z)
     log.Println("url:", *url)
     log.Println("p:", *p)
     log.Println("filePath:", *filePath)
@@ -112,6 +123,15 @@ func main() {
       return
     }
     build(b)
+
+    // 设置压缩包名称和目录
+    split := strings.Split(*z, " ")
+    // 输出解析得到的参数值，用于验证
+    log.Printf("Zip File: %s, Source Directory: %s\n", split[0], split[1])
+    err := Zip(split[0], split[1], nil)
+    if err != nil {
+      log.Fatalln(err)
+    }
     uploadAndRun(client, url, p, filePath, m, d, c)
   } else if strings.HasSuffix(*url, "web/") {
     log.Println("web")
@@ -275,4 +295,101 @@ func executeCommand(commandStr string, envVariables []string) {
   if err != nil {
     log.Fatal("Error executing command:", err)
   }
+}
+
+func Zip(target string, sourceDir string, excludeFile *string) error {
+  zipfile, err := os.Create(target)
+  if err != nil {
+    return err
+  }
+  defer zipfile.Close()
+
+  archive := zip.NewWriter(zipfile)
+  defer archive.Close()
+  base := filepath.Base(sourceDir)
+  filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
+    if err != nil {
+      return err
+    }
+
+    // 获取相对路径
+    relPath, err := filepath.Rel(sourceDir, path)
+
+    if relPath == "." || (excludeFile != nil && matchExcludeFile(relPath, *excludeFile)) {
+      return nil // 跳过根目录或匹配排除模式的文件
+    }
+
+    header, err := zip.FileInfoHeader(info)
+    if err != nil {
+      return err
+    }
+    if err != nil {
+      return err
+    }
+    if relPath == "." {
+      return nil
+    } else if strings.Contains(relPath, string(os.PathSeparator)) {
+      relPath = strings.Replace(relPath, string(os.PathSeparator), "/", len(relPath))
+    }
+    //处理中文编码
+    if IsChineseChar(relPath) {
+      relPath = GetChineseName(relPath)
+    }
+
+    header.Name = base + "/" + relPath
+
+    if info.IsDir() {
+      header.Name += "/"
+    } else {
+      header.Method = zip.Deflate
+    }
+
+    writer, err := archive.CreateHeader(header)
+    if err != nil {
+      return err
+    }
+
+    if info.IsDir() {
+      return nil
+    }
+
+    file, err := os.Open(path)
+    if err != nil {
+      return err
+    }
+    defer file.Close()
+    _, err = io.Copy(writer, file)
+    return err
+  })
+
+  return err
+}
+
+// matchExcludeFile 检查文件名是否匹配排除模式
+func matchExcludeFile(filename string, pattern string) bool {
+  matched, err := filepath.Match(pattern, filename)
+  if err != nil {
+    log.Printf("Error matching file with pattern: %v", err)
+    return false
+  }
+  return matched
+}
+
+// 或者封装函数调用
+func IsChineseChar(str string) bool {
+  for _, r := range str {
+    compile := regexp.MustCompile("[\u3002\uff1b\uff0c\uff1a\u201c\u201d\uff08\uff09\u3001\uff1f\u300a\u300b]")
+    if unicode.Is(unicode.Scripts["Han"], r) || (compile.MatchString(string(r))) {
+      return true
+    }
+  }
+  return false
+}
+
+//对中文文件进行编码
+func GetChineseName(filename string) string {
+  reader := bytes.NewReader([]byte(filename))
+  encoder := transform.NewReader(reader, simplifiedchinese.GB18030.NewEncoder())
+  content, _ := ioutil.ReadAll(encoder)
+  return string(content)
 }
