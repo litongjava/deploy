@@ -1,6 +1,7 @@
 package main
 
 import (
+  "bufio"
   "bytes"
   "crypto/tls"
   "encoding/base64"
@@ -13,6 +14,7 @@ import (
   "mime/multipart"
   "net/http"
   "os"
+  "os/exec"
   "path/filepath"
   "strings"
   "time"
@@ -22,9 +24,11 @@ func init() {
   log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.Lshortfile)
 }
 func main() {
+  url := flag.String("url", "", "remote server url")
+  p := flag.String("p", "", "password")
+  b := flag.String("b", "", "buidl script")
   a := flag.String("a", "", "action")
   e := flag.String("e", "dev", "environment:such dev,test,prod")
-  url := flag.String("url", "", "remote server url")
   //filePath := target/malang-pen-api-server-1.0.0.jar
   filePath := flag.String("file", "", "local file path")
   //d := "/data/apps/web/ztbjg"
@@ -35,12 +39,15 @@ func main() {
   flag.Parse()
 
   // read config file
-  viper.SetConfigFile("ping-base64.toml")
+  viper.SetConfigFile(".deploy.toml")
   viper.SetConfigType("toml")
   if err := viper.ReadInConfig(); err != nil {
-    log.Println("Error reading config file, %s", err)
+    log.Printf("Error reading config file, %s \n", err)
   }
 
+  if *a == "" {
+    *a = "upload-run"
+  }
   // read config item
   if *url == "" {
     *url = viper.GetString(*e + "." + *a + ".url")
@@ -48,12 +55,19 @@ func main() {
 
   if *a == "upload-run" {
 
+    if *b == "" {
+      *b = viper.GetString(*e + ".upload-run.b")
+    }
     if *filePath == "" {
       *filePath = viper.GetString(*e + ".upload-run.file")
     }
 
     if *m == "" {
       *m = viper.GetString(*e + ".upload-run.m")
+    }
+
+    if *p == "" {
+      *p = viper.GetString(*e + ".upload-run.p")
     }
 
     if *d == "" {
@@ -64,7 +78,9 @@ func main() {
       *c = viper.GetString(*e + "." + *a + ".c")
     }
 
+    log.Println("b:", *b)
     log.Println("url:", *url)
+    log.Println("p:", *p)
     log.Println("filePath:", *filePath)
     log.Println("m:", *m)
     log.Println("d:", *d)
@@ -86,7 +102,7 @@ func main() {
     },
   }
   if strings.HasSuffix(*url, "upload-run/") {
-    log.Println("upload-run")
+    log.Println("action is upload-run")
     if len(*url) == 0 {
       fmt.Println("please specified remote server url")
       return
@@ -95,7 +111,8 @@ func main() {
       fmt.Println("please specified local file path")
       return
     }
-    uploadAndRun(client, url, filePath, m, d, c)
+    build(b)
+    uploadAndRun(client, url, p, filePath, m, d, c)
   } else if strings.HasSuffix(*url, "web/") {
     log.Println("web")
     runRemoteCmd(client, url, c)
@@ -105,7 +122,37 @@ func main() {
   fmt.Println("done")
 }
 
-func uploadAndRun(client *http.Client, url *string, filePath *string, m *string, d *string, c *string) {
+func build(filePath *string) {
+  file, err := os.Open(*filePath)
+  if err != nil {
+    log.Fatalln("Error opening file:", err)
+  }
+  defer file.Close()
+
+  envVariables := []string{}
+
+  scanner := bufio.NewScanner(file)
+  for scanner.Scan() {
+    line := scanner.Text()
+
+    // 检查是否是设置环境变量的命令
+    if strings.HasPrefix(line, "set ") {
+      value := line[4:]
+      envVariables = append(envVariables, value)
+      log.Println("add env variable:", value)
+      continue // 跳过执行此命令
+    }
+
+    executeCommand(line, envVariables)
+  }
+
+  if err := scanner.Err(); err != nil {
+    log.Fatalln("Error reading file:", err)
+  }
+
+}
+
+func uploadAndRun(client *http.Client, url *string, p *string, filePath *string, m *string, d *string, c *string) {
   var file, errFile1 = os.Open(*filePath)
   if errFile1 != nil {
     log.Fatalln(errFile1)
@@ -131,6 +178,9 @@ func uploadAndRun(client *http.Client, url *string, filePath *string, m *string,
     return
   }
 
+  if len(*p) != 0 {
+    _ = writer.WriteField("p", *p)
+  }
   if len(*m) != 0 {
     _ = writer.WriteField("m", *m)
   }
@@ -161,7 +211,7 @@ func uploadAndRun(client *http.Client, url *string, filePath *string, m *string,
     return
   }
   code := res.StatusCode
-  fmt.Println("response status dode", code)
+  fmt.Println("response status code:", code)
   defer res.Body.Close()
   //goland:noinspection ALL
   body, err := ioutil.ReadAll(res.Body)
@@ -204,4 +254,25 @@ func runRemoteCmd(client *http.Client, url *string, c *string) {
   }
 
   fmt.Println(string(decodedBytes))
+}
+
+// executeCommand 在指定目录下执行一条命令，并应用所有以前设置的环境变量
+func executeCommand(commandStr string, envVariables []string) {
+  log.Println("Executing in", ":", commandStr)
+
+  cmd := exec.Command("cmd", "/C", commandStr)
+
+  // 添加之前设置的环境变量到命令中
+  currEnv := os.Environ()
+  for _, env := range envVariables {
+    currEnv = append(currEnv, env)
+  }
+  cmd.Env = currEnv
+
+  cmd.Stdout = os.Stdout
+  cmd.Stderr = os.Stderr
+  err := cmd.Run()
+  if err != nil {
+    log.Fatal("Error executing command:", err)
+  }
 }
