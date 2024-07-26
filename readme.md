@@ -134,7 +134,8 @@ p = "123456"
 b = "package-win.txt"
 z = "dist.zip dist"
 file = "dist.zip"
-d = "/data/apps/bussines-web"
+d = "unzip/bussines-web"
+c = "mv unzip/bussines-web/dist/* /data/apps/bussines-web"
 ```
 
 #### 执行部署命令
