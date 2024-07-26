@@ -124,13 +124,18 @@ func main() {
     }
     build(b)
 
-    // 设置压缩包名称和目录
-    split := strings.Split(*z, " ")
-    // 输出解析得到的参数值，用于验证
-    log.Printf("Zip File: %s, Source Directory: %s\n", split[0], split[1])
-    err := Zip(split[0], split[1], nil)
-    if err != nil {
-      log.Fatalln(err)
+    if *z != "" {
+      // 设置压缩包名称和目录
+      split := strings.Split(*z, " ")
+      if len(split) < 2 {
+        log.Fatalln("please specify a target name and a compressed directory")
+      }
+      // 输出解析得到的参数值，用于验证
+      log.Printf("Zip File: %s, Source Directory: %s\n", split[0], split[1])
+      err := Zip(split[0], split[1], nil)
+      if err != nil {
+        log.Fatalln(err)
+      }
     }
     uploadAndRun(client, url, p, filePath, m, d, c)
   } else if strings.HasSuffix(*url, "web/") {
