@@ -72,10 +72,25 @@ deploy -a upload-run
 
 #### 打包步骤
 
-创建 `package-win.txt` 文件，内容如下：
+创建 `.build.txt` 文件，内容如下：
 
 ```shell
+[win.env]
 set JAVA_HOME=D:\java\jdk1.8.0_121
+
+[win.build]
+mvn clean package -DskipTests
+
+[linux.env]
+export JAVA_HOME=/usr/java/jdk1.8.0_121
+
+[linux.build]
+mvn clean package -DskipTests
+
+[mac.env]
+set JAVA_HOME=~/java/jdk1.8.0_121
+
+[mac.build]
 mvn clean package -DskipTests
 ```
 
@@ -91,13 +106,13 @@ mvn clean package -DskipTests
 创建 `.deploy.toml` 文件，内容如下：
 
 ```toml
-[upload-run]
-b = "package-win.txt"
+[dev.upload-run]
 url = "http://192.168.1.2:10405/deploy/file/upload-run/"
 p = "123456"
-file = "target/malang-pen-api-server-1.0.0.jar"
-m = "/data/apps/webapps/malang_pen_api_server"
-c = "docker restart malang_pen_api_server"
+b = ".build.txt"
+file = "target/dubbo-provider-0.0.1-SNAPSHOT.jar"
+m = "/data/apps/dubbo-provider"
+c = "docker restart dubbo-provider"
 ```
 
 #### 执行部署命令
@@ -110,9 +125,16 @@ deploy
 
 #### 打包步骤
 
-创建 `package-win.txt` 文件，内容如下：
+创建 `.build.txt` 文件，内容如下：
 
 ```shell
+[win.build]
+npm run build:prod
+
+[linux.build]
+npm run build:prod
+
+[mac.build]
 npm run build:prod
 ```
 
@@ -131,11 +153,11 @@ npm run build:prod
 [dev.upload-run]
 url = "http://192.168.1.2:10405/deploy/file/upload-run/"
 p = "123456"
-b = "package-win.txt"
+b = ".build.txt"
 z = "dist.zip dist"
 file = "dist.zip"
 d = "unzip/bussines-web"
-c = "mv unzip/bussines-web/dist/* /data/apps/bussines-web"
+c = "cp -r unzip/bussines-web/dist/* /data/apps/bussines-we
 ```
 
 #### 执行部署命令
