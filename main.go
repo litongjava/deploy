@@ -110,10 +110,10 @@ func main() {
     log.Println("filePath:", *filePath)
     log.Println("m:", *m)
     log.Println("d:", *d)
-    log.Println("c:", *c)
     log.Println("c1:", *c1)
     log.Println("c2:", *c2)
     log.Println("c3:", *c3)
+    log.Println("c:", *c)
   }
 
   if *a == "web" {
