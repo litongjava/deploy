@@ -41,6 +41,9 @@ func main() {
   m := flag.String("m", "", "move to file path")
   d := flag.String("d", "", "extra file path")
   c := flag.String("c", "", "full command")
+  c1 := flag.String("c1", "", "full command")
+  c2 := flag.String("c2", "", "full command")
+  c3 := flag.String("c3", "", "full command")
   z := flag.String("z", "", "zip")
 
   flag.Parse()
@@ -89,6 +92,17 @@ func main() {
       *c = viper.GetString(*e + "." + *a + ".c")
     }
 
+    if *c1 == "" {
+      *c1 = viper.GetString(*e + "." + *a + ".c1")
+    }
+    if *c2 == "" {
+      *c2 = viper.GetString(*e + "." + *a + ".c2")
+    }
+
+    if *c3 == "" {
+      *c3 = viper.GetString(*e + "." + *a + ".c3")
+    }
+
     log.Println("b:", *b)
     log.Println("z:", *z)
     log.Println("url:", *url)
@@ -97,6 +111,9 @@ func main() {
     log.Println("m:", *m)
     log.Println("d:", *d)
     log.Println("c:", *c)
+    log.Println("c1:", *c1)
+    log.Println("c2:", *c2)
+    log.Println("c3:", *c3)
   }
 
   if *a == "web" {
@@ -138,7 +155,7 @@ func main() {
         log.Fatalln(err)
       }
     }
-    uploadAndRun(client, url, p, filePath, m, d, c)
+    uploadAndRun(client, url, p, filePath, m, d, c, c1, c2, c3)
   } else if strings.HasSuffix(*url, "web/") {
     log.Println("web")
     runRemoteCmd(client, url, c)
@@ -148,7 +165,7 @@ func main() {
   fmt.Println("done")
 }
 
-func uploadAndRun(client *http.Client, url *string, p *string, filePath *string, m *string, d *string, c *string) {
+func uploadAndRun(client *http.Client, url *string, p *string, filePath *string, m *string, d *string, c *string, c1 *string, c2 *string, c3 *string) {
   var file, errFile1 = os.Open(*filePath)
   if errFile1 != nil {
     log.Fatalln(errFile1)
@@ -187,6 +204,15 @@ func uploadAndRun(client *http.Client, url *string, p *string, filePath *string,
 
   if len(*c) != 0 {
     _ = writer.WriteField("c", *c)
+  }
+  if len(*c1) != 0 {
+    _ = writer.WriteField("c1", *c1)
+  }
+  if len(*c2) != 0 {
+    _ = writer.WriteField("c2", *c2)
+  }
+  if len(*c3) != 0 {
+    _ = writer.WriteField("c3", *c3)
   }
 
   err = writer.Close()
