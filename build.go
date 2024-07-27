@@ -57,10 +57,14 @@ func Build(filePath string) {
 
     // 根据当前部分判断如何处理当前行
     if section == envSection {
-      if strings.HasPrefix(line, "set ") || strings.HasPrefix(line, "export ") {
-        value := strings.TrimSpace(line)
+      // 检查是否是设置环境变量的命令
+      if strings.HasPrefix(line, "set ") {
+        value := line[4:]
         envVariables = append(envVariables, value)
-        log.Println("add env variable:", value)
+        continue // 跳过执行此命令
+      } else if strings.HasPrefix(line, "export ") {
+        value := line[7:]
+        envVariables = append(envVariables, value)
       }
     } else if section == buildSection {
       buildCommands = append(buildCommands, line)
@@ -71,25 +75,18 @@ func Build(filePath string) {
     log.Fatalln("Error reading file:", err)
   }
 
-  // 设置环境变量
-  for _, env := range envVariables {
-    keyValue := strings.SplitN(env, "=", 2)
-    if len(keyValue) == 2 {
-      os.Setenv(keyValue[0], keyValue[1])
-    }
-  }
-
   // 执行构建命令
   for _, command := range buildCommands {
-    ExecuteCommand(command, envVariables)
+    executeCommand(command, envVariables)
   }
 }
 
 // executeCommand 在指定目录下执行一条命令，并应用所有以前设置的环境变量
-func ExecuteCommand(commandStr string, envVariables []string) {
+func executeCommand(commandStr string, envVariables []string) {
   log.Println("Executing in", ":", commandStr)
 
   cmd := exec.Command("cmd", "/C", commandStr)
+
   if runtime.GOOS != "windows" {
     cmd = exec.Command("sh", "-c", commandStr)
   }
@@ -97,6 +94,7 @@ func ExecuteCommand(commandStr string, envVariables []string) {
   // 添加之前设置的环境变量到命令中
   currEnv := os.Environ()
   for _, env := range envVariables {
+    log.Println("add env variable:", env)
     currEnv = append(currEnv, env)
   }
   cmd.Env = currEnv
