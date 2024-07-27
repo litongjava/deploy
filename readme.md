@@ -110,8 +110,10 @@ mvn clean package -DskipTests
 url = "http://192.168.1.2:10405/deploy/file/upload-run/"
 p = "123456"
 b = ".build.txt"
-file = "target/dubbo-provider-0.0.1-SNAPSHOT.jar"
-m = "/data/apps/dubbo-provider"
+z ="app.zip target/dubbo-provider-0.0.1-SNAPSHOT.jar"
+file = "app.zip"
+d = "unzip/dubbo-provider"
+c1 = "cp unzip/dubbo-provider/target/dubbo-provider-0.0.1-SNAPSHOT.jar /data/apps/dubbo-provider/"
 c = "docker restart dubbo-provider"
 ```
 
@@ -119,6 +121,20 @@ c = "docker restart dubbo-provider"
 
 ```shell
 deploy
+```
+你可能已经注意到了,在上面的部署过程中执行docker restart命令,如果你想要每次部署都启动新的docker镜像.可以使用下面的配置
+```shells
+[dev.upload-run]
+url = "http://192.168.1.2:10405/deploy/file/upload-run/"
+p = "123456"
+b = ".build.txt"
+z ="app.zip target/dubbo-provider-0.0.1-SNAPSHOT.jar"
+file = "app.zip"
+d = "unzip/dubbo-provider"
+c1 = "cp unzip/dubbo-provider/target/dubbo-provider-0.0.1-SNAPSHOT.jar /data/apps/dubbo-provider/"
+c2 = "docker stop dubbo-provider && docker rm -f dubbo-provider"
+c3 = "cd /data/apps/dubbo-provider && docker run -dit --name dubbo-provider --restart=always --net=host -v $(pwd):/app -w /app -e TZ=Asia/Shanghai -e LANG=C.UTF-8 litongjava/jdk:8u391-stable-slim java -jar dubbo-provider-0.0.1-SNAPSHOT.jar"
+c = "docker ps |grep dubbo-provider"
 ```
 
 ### 部署前端纯静态文件
