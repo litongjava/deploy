@@ -30,6 +30,7 @@ func main() {
   //filePath := target/malang-pen-api-server-1.0.0.jar
   filePath := flag.String("file", "", "local file path")
   //d := "/data/apps/web/ztbjg"
+  w := flag.String("w", "", "work dir")
   m := flag.String("m", "", "move to file path")
   d := flag.String("d", "", "extra file path")
   c := flag.String("c", "", "full command")
@@ -59,6 +60,10 @@ func main() {
 
     if *b == "" {
       *b = viper.GetString(*e + ".upload-run.b")
+    }
+
+    if *w == "" {
+      *w = viper.GetString(*e + ".upload-run.w")
     }
 
     if *z == "" {
@@ -100,6 +105,7 @@ func main() {
     log.Println("url:", *url)
     log.Println("p:", *p)
     log.Println("filePath:", *filePath)
+    log.Println("w:", *w)
     log.Println("m:", *m)
     log.Println("d:", *d)
     log.Println("c1:", *c1)
@@ -151,7 +157,7 @@ func main() {
       }
       Zip(split[0], split[1], excludeFile)
     }
-    uploadAndRun(client, url, p, filePath, m, d, c, c1, c2, c3)
+    uploadAndRun(client, url, p, filePath, w, m, d, c, c1, c2, c3)
   } else if strings.HasSuffix(*url, "web/") {
     log.Println("web")
     runRemoteCmd(client, url, c)
@@ -161,7 +167,7 @@ func main() {
   fmt.Println("done")
 }
 
-func uploadAndRun(client *http.Client, url *string, p *string, filePath *string, m *string, d *string, c *string, c1 *string, c2 *string, c3 *string) {
+func uploadAndRun(client *http.Client, url *string, p *string, filePath *string, w *string, m *string, d *string, c *string, c1 *string, c2 *string, c3 *string) {
   var file, errFile1 = os.Open(*filePath)
   if errFile1 != nil {
     log.Fatalln(errFile1)
@@ -192,6 +198,10 @@ func uploadAndRun(client *http.Client, url *string, p *string, filePath *string,
   }
   if len(*m) != 0 {
     _ = writer.WriteField("m", *m)
+  }
+
+  if len(*w) != 0 {
+    _ = writer.WriteField("w", *w)
   }
 
   if len(*d) != 0 {
