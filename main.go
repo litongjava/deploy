@@ -176,27 +176,27 @@ func main() {
     }
 
     if len(*c4) != 0 {
-      log.Println("c3:", *c4)
+      log.Println("c4:", *c4)
     }
 
     if len(*c5) != 0 {
-      log.Println("c3:", *c5)
+      log.Println("c5:", *c5)
     }
 
     if len(*c6) != 0 {
-      log.Println("c3:", *c6)
+      log.Println("c6:", *c6)
     }
 
     if len(*c7) != 0 {
-      log.Println("c3:", *c7)
+      log.Println("c7:", *c7)
     }
 
     if len(*c8) != 0 {
-      log.Println("c3:", *c8)
+      log.Println("c8:", *c8)
     }
 
     if len(*c9) != 0 {
-      log.Println("c3:", *c9)
+      log.Println("c9:", *c9)
     }
 
     if len(*c) != 0 {
