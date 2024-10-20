@@ -313,24 +313,24 @@ func uploadAndRun(client *http.Client, url *string, p *string, filePath *string,
     _ = writer.WriteField("c3", *c3)
   }
   if len(*c4) != 0 {
-    _ = writer.WriteField("c3", *c4)
+    _ = writer.WriteField("c4", *c4)
   }
 
   if len(*c5) != 0 {
-    _ = writer.WriteField("c3", *c5)
+    _ = writer.WriteField("c5", *c5)
   }
   if len(*c6) != 0 {
-    _ = writer.WriteField("c3", *c6)
+    _ = writer.WriteField("c6", *c6)
   }
   if len(*c7) != 0 {
-    _ = writer.WriteField("c3", *c7)
+    _ = writer.WriteField("c7", *c7)
   }
   if len(*c8) != 0 {
-    _ = writer.WriteField("c3", *c8)
+    _ = writer.WriteField("c8", *c8)
   }
 
   if len(*c9) != 0 {
-    _ = writer.WriteField("c3", *c9)
+    _ = writer.WriteField("c9", *c9)
   }
 
   err = writer.Close()
