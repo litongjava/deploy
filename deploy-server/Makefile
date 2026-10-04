@@ -7,11 +7,11 @@ VERSION ?= 0.1.0
 LDFLAGS := -s -w -X main.version=$(VERSION)
 BIN := bin
 
-# 前端仓库 deploy-server-ui 的位置。
+# 前端目录 deploy-server-ui 的位置。
 #
-# 约定是「前端仓库与平台仓库同级」（和 java-mosskb / java-mosskb-ui 一样），
-# 但平台自身可能再套一层（仓库根是 deploy/，前端在它上一级），所以按候选顺序探测，
-# 而不是写死一层 ../。要覆盖就 `make ui UI_DIR=/path/to/deploy-server-ui`。
+# 它在同一个仓库里、与 deploy-server 同级，所以 ../deploy-server-ui 就能命中；
+# 但为了不因为调整目录层级而失效，这里按候选顺序探测而不是写死一条路径。
+# 要覆盖就 `make ui UI_DIR=/path/to/deploy-server-ui`。
 UI_DIR ?= $(shell for d in ../deploy-server-ui ../../deploy-server-ui deploy-server-ui ../../../deploy-server-ui; do \
 	if [ -f "$$d/package.json" ]; then echo "$$d"; break; fi; done)
 
@@ -25,7 +25,7 @@ help:
 	@echo "make linux       交叉编译 Linux/amd64（CGO_ENABLED=0）"
 	@echo "make linux-arm64 交叉编译 Linux/arm64"
 	@echo "make test        跑测试"
-	@echo "make docker      构建镜像（上下文是含两个仓库的父目录）"
+	@echo "make docker      构建镜像（上下文是仓库根目录）"
 	@echo "make clean       清理产物"
 
 ui:
@@ -67,11 +67,10 @@ fmt:
 run: build
 	./$(BIN)/deploy-server -data-dir ./data -web-root ./workspaces -listen 127.0.0.1:8080
 
-# 镜像构建的上下文必须是**含两个仓库的父目录**，不是 deploy-server/ 也不是平台仓库根 ——
-# Dockerfile 要同时看到平台仓库（deploy/）与前端仓库（deploy-server-ui/），
-# 而在当前布局里这两个是同级目录，所以上下文得再往上一层。
+# 镜像构建的上下文必须是**仓库根目录**（即 deploy-server 的上一级）——
+# Dockerfile 要同时看到 deploy-server/ 与 deploy-server-ui/，而它们在同一个仓库里。
 docker:
-	cd ../.. && docker build -t deploy-server:$(VERSION) -f deploy/deploy-server/Dockerfile .
+	cd .. && docker build -t deploy-server:$(VERSION) -f deploy-server/Dockerfile .
 
 clean:
 	rm -rf $(BIN)

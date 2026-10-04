@@ -20,22 +20,22 @@
 | ↳ 配置 | `gopkg.in/yaml.v3`；命令行 > 环境变量 > 配置文件 > 默认值 |
 | ↳ 前端托管 | 标准库 **`embed`**，支持 SPA 路由回退；`/api/` 下的 404 仍返回 JSON |
 | [`deploy-cli/`](deploy-cli/) | CLI：登录、触发部署、跟随日志；Go 1.24 / cobra |
-| [`deploy-server-ui/`](../deploy-server-ui/) | Web 界面（**独立仓库，与平台仓库同级**）：React 18 / Umi Max 4 / Ant Design 5，裁剪自 Ant Design Pro |
+| [`deploy-server-ui/`](deploy-server-ui/) | Web 界面：React 18 / Umi Max 4 / Ant Design 5，裁剪自 Ant Design Pro |
 | [`tools/`](tools/) | 运维与冒烟脚本：`sshpoke` 做密码认证 SSH 执行/传文件；`remote-scripts` 初始化和校验服务器；`smoke` 验证进程树终止及 API 部署 |
 
-> **目录约定**：前端是独立仓库，与平台仓库（本 README 所在目录）**同级**放置，和
-> `java-mosskb` / `java-mosskb-ui` 的组织方式一致：
+> **仓库**：<https://gitee.com/ppnt/deploy> —— 前端、后端、CLI、工具与文档都在这一个仓库里：
 >
 > ```
-> <父目录>/
->   deploy/              ← 平台仓库：https://gitee.com/ppnt/deploy
->                          （本 README、deploy-server、deploy-cli、tools、docs）
->   deploy-server-ui/    ← 前端仓库：https://gitee.com/ppnt/deploy-server-ui
+> deploy/                 ← 仓库根
+>   deploy-server/        ← 服务端（Go）
+>   deploy-server-ui/     ← Web 界面（React）
+>   deploy-cli/           ← 命令行客户端（Go）
+>   tools/                ← 服务器初始化与冒烟脚本
+>   docs/                 ← 需求规格说明、API 契约
 > ```
 >
-> 构建脚本会**自动探测**前端仓库位置（找带 `package.json` 的 `../deploy-server-ui` 或
-> `../../deploy-server-ui`），所以把两者换个层级也不会断；必要时可用
-> `-UiDir <路径>`（Windows）或 `UI_DIR=<路径>`（make）显式指定。
+> 构建脚本会**自动探测**前端目录位置（找带 `package.json` 的 `../deploy-server-ui` 等候选路径），
+> 所以调整目录层级不会让它断掉；必要时也可用 `-UiDir <路径>`（Windows）或 `UI_DIR=<路径>`（make）显式指定。
 
 命令在**服务端所在机器**执行，模型预留 Runner 字段；Git 准备是项目级开关；`admin` / `user` 按项目归属判权。
 交付采用 SQLite + 单二进制，也支持 Docker，无需 Redis 或消息队列；工具链由用户安装，平台只自检并提示。
@@ -73,13 +73,13 @@ curl -s http://127.0.0.1:8080/api/v1/system/doctor -H 'Authorization: <你的tok
 本节使用 `pnpm.cmd`，避开 PowerShell 执行策略对 `pnpm.ps1` 的限制。
 
 ```powershell
-# 1) 构建前端（前端是独立仓库，与平台仓库 deploy\ 同级）
-cd D:\code\project\project-deploy\deploy-server-ui
+# 1) 构建前端
+cd D:\code\project\project-deploy\deploy\deploy-server-ui
 pnpm.cmd install
 pnpm.cmd build
 
-# 2) 构建后端（脚本会自动探测前端仓库位置）
-cd ..\deploy\deploy-server
+# 2) 构建后端（脚本会自动探测前端目录位置）
+cd ..\deploy-server
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build.ps1 -Version 0.1.0 -Local
 
 # 3) 启动本机版本
@@ -104,15 +104,15 @@ Windows 安装 PowerShell 7 时可将 `powershell` 换成 `pwsh`；含中文的 
 
 ### Linux/macOS 开发机
 
-一律使用 `make ui && make linux`。前端仓库与平台仓库同级，所以在平台仓库根目录（即本 README 所在目录）这样执行：
+一律使用 `make ui && make linux`，在仓库根目录（本 README 所在目录）这样执行：
 
 ```bash
-cd ../deploy-server-ui && pnpm install && pnpm build   # 构建前端（独立仓库）
-cd ../deploy/deploy-server && make ui && make linux     # 拷前端 + 交叉编译
+cd deploy-server-ui && pnpm install && pnpm build   # 构建前端
+cd ../deploy-server && make ui && make linux        # 拷前端 + 交叉编译
 ```
 
-`make ui` 会自动探测 `../deploy-server-ui` 或 `../../deploy-server-ui`；也可以用 `make ui UI_DIR=<路径>` 指定。
-产物为 `deploy/deploy-server/bin/deploy-server-linux-amd64`。ARM 服务器使用 `make linux-arm64`（对应 `GOARCH=arm64`）。
+`make ui` 会自动探测前端目录（`../deploy-server-ui` 等候选路径）；也可以用 `make ui UI_DIR=<路径>` 指定。
+产物为 `deploy-server/bin/deploy-server-linux-amd64`。ARM 服务器使用 `make linux-arm64`（对应 `GOARCH=arm64`）。
 本机试跑可在 `deploy-server` 下执行 `make run`；要部署服务器则继续下一节。
 
 ### 只有 Linux 服务器时就地构建
@@ -127,12 +127,10 @@ export PATH=$PATH:/usr/local/go/bin
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt-get install -y nodejs
 corepack enable && corepack prepare pnpm@latest --activate
-# 两个仓库是同级目录，分别 clone（换成你自己的地址；当前地址见文首「目录约定」）
-cd /srv
-git clone https://gitee.com/ppnt/deploy.git deploy
-git clone https://gitee.com/ppnt/deploy-server-ui.git deploy-server-ui
+# 克隆仓库（换成你自己的地址，当前为 https://gitee.com/ppnt/deploy）
+cd /srv && git clone https://gitee.com/ppnt/deploy.git deploy && cd deploy
 cd deploy-server-ui && pnpm install && pnpm build
-cd ../deploy/deploy-server && make ui && make linux
+cd ../deploy-server && make ui && make linux
 ```
 
 后续会话需确保 `/usr/local/go/bin` 在 PATH 中。也可上传已有源码，省去 clone。
@@ -209,17 +207,17 @@ curl -fsS http://127.0.0.1:8080/api/v1/healthz
 
 ### Docker 部署
 
-**构建上下文必须是同时含两个仓库的父目录**（Dockerfile 要同时看到平台仓库 `deploy/` 与前端仓库 `deploy-server-ui/`，而它们是同级目录）：
+**构建上下文必须是仓库根目录**（Dockerfile 要同时看到 `deploy-server/` 与 `deploy-server-ui/`）：
 
 ```bash
-cd <父目录>       # 这个目录下要能同时看到 deploy/ 和 deploy-server-ui/
-docker build -t deploy-server:1.0.0 -f deploy/deploy-server/Dockerfile .
+cd deploy            # 仓库根目录
+docker build -t deploy-server:1.0.0 -f deploy-server/Dockerfile .
 docker run -d --name deploy-server -p 8080:8080 \
   -v /srv/deploy/data:/data -v /srv/deploy/workspaces:/workspaces \
   --restart unless-stopped deploy-server:1.0.0
 ```
 
-也可以直接用 make（它会自己切到父目录）：`cd deploy/deploy-server && make docker`。
+也可以直接用 make（它会自己切到仓库根目录）：`cd deploy-server && make docker`。
 
 镜像预装 `git bash curl rsync openssh-client`。容器里执行的是**容器内的命令**，部署到宿主机需挂载目录或 `docker.sock`；容器内无法 `systemctl reload nginx`，因为没有宿主机 systemd。
 部署本机优先 systemd；Docker 更适合构建并把产物输出到挂载卷。公网部署同样遵守上面的监听与反代要求。

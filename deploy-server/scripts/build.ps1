@@ -58,14 +58,14 @@ $binDir = Join-Path $root "bin"
 
 # 定位前端仓库 deploy-server-ui。
 #
-# 目录约定是「前端仓库与平台仓库同级」（和 java-mosskb / java-mosskb-ui 一样），
-# 但平台自身可能再套一层（例如仓库根是 deploy/，而前端在它的上一级），
-# 所以按候选顺序探测，而不是写死一层 ../。用 -UiDir 可以显式覆盖。
+# 前端目录 deploy-server-ui 在同一个仓库里、与 deploy-server 同级，所以 ../deploy-server-ui 就能命中。
+# 但为了不因为调整目录层级（这个项目来回改过几次布局）而失效，这里按候选顺序探测，
+# 而不是写死一条路径。用 -UiDir 可以显式覆盖。
 $uiCandidates = @()
 if ($UiDir) { $uiCandidates += $UiDir }
 $uiCandidates += @(
-    (Join-Path $root "..\deploy-server-ui")       # 前端与 deploy-server 同级
-    (Join-Path $root "..\..\deploy-server-ui")    # 前端与「平台仓库」同级（当前布局）
+    (Join-Path $root "..\deploy-server-ui")       # 前端与 deploy-server 同级（当前布局）
+    (Join-Path $root "..\..\deploy-server-ui")    # 前端在仓库根的上一级
     (Join-Path $root "deploy-server-ui")          # 前端被放在 deploy-server 里面
     (Join-Path $root "..\..\..\deploy-server-ui")
 )
