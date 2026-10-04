@@ -33,7 +33,7 @@ func newLoginCmd(app *App) *cobra.Command {
 			return runLogin(app, server, username, password, token, contextName)
 		},
 	}
-	cmd.Flags().StringVarP(&server, "server", "s", "", "服务端地址，如 http://127.0.0.1:8080")
+	cmd.Flags().StringVarP(&server, "server", "s", "", "服务端地址，如 http://127.0.0.1:10055")
 	cmd.Flags().StringVarP(&username, "username", "u", "", "用户名（默认 admin）")
 	cmd.Flags().StringVarP(&password, "password", "p", "", "密码；不传则交互式输入（不回显）")
 	cmd.Flags().StringVarP(&token, "token", "t", "", "直接写入 API Token / JWT，跳过登录")
@@ -54,7 +54,7 @@ func runLogin(app *App, server, username, password, token, contextName string) e
 		target = config.NormalizeServer(server)
 	}
 	if strings.TrimSpace(target) == "" {
-		return exitcode.Usagef("请提供服务端地址：deploy login -s http://127.0.0.1:8080")
+		return exitcode.Usagef("请提供服务端地址：deploy login -s http://127.0.0.1:10055")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

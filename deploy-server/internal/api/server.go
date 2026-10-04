@@ -122,7 +122,13 @@ func (s *Server) Router() *gin.Engine {
 		a.POST("/runs/:id/rerun", s.rerun)
 
 		a.GET("/system/doctor", s.doctor)
+		// 服务器基本信息与资源占用（CPU / 内存 / 磁盘）。
+		// 读的是后台采样好的快照，前端可以放心高频轮询。
+		a.GET("/system/info", s.serverInfo)
 		a.GET("/system/settings", s.getSettings)
+		// 环境工具链一键安装：安装以普通 Run 的形式执行（见 handlers_toolchain.go）。
+		// 只读的清单给所有登录用户看，真正动手安装仅限 admin。
+		a.GET("/system/toolchains", s.listToolchains)
 
 		admin := a.Group("", RequireAdmin())
 		{
@@ -133,11 +139,13 @@ func (s *Server) Router() *gin.Engine {
 			admin.POST("/users/:id/reset-password", s.resetUserPassword)
 			admin.PUT("/system/settings", s.updateSettings)
 			admin.GET("/audit-logs", s.listAuditLogs)
+			admin.POST("/system/toolchains/install", s.installToolchains)
+			admin.GET("/system/toolchains/script", s.downloadToolchainScript)
 		}
 	}
 
 	if err := web.Register(r); err != nil {
-		slog.Error("注册静态资源失败", "err", err)
+		slog.Error("failed to register static assets", "err", err)
 	}
 	return r
 }

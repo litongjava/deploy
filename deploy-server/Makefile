@@ -29,17 +29,17 @@ help:
 	@echo "make clean       清理产物"
 
 ui:
-	@test -n "$(UI_DIR)" || (echo "找不到前端仓库 deploy-server-ui（目录里应有 package.json）；可执行 make ui UI_DIR=<路径>"; exit 1)
-	@test -d $(UI_DIR)/dist || (echo "前端还没构建：cd $(UI_DIR) && pnpm install && pnpm build"; exit 1)
+	@test -n "$(UI_DIR)" || (echo "cannot find the frontend repo deploy-server-ui (its directory should contain package.json); run: make ui UI_DIR=<path>"; exit 1)
+	@test -d $(UI_DIR)/dist || (echo "the frontend is not built yet: cd $(UI_DIR) && pnpm install && pnpm build"; exit 1)
 	rm -rf internal/web/dist
 	mkdir -p internal/web/dist
 	cp -r $(UI_DIR)/dist/. internal/web/dist/
-	# 排除两类不该进生产的东西：
-	#   *.map         source map，能占到 dist 的一半体积
-	#   *hot-update*  `max dev` 往 dist/ 里写的开发态热更新产物
+	# Exclude the two kinds of things that must not ship to production:
+	#   *.map         source maps, they can account for half the size of dist/
+	#   *hot-update*  dev-mode hot-update artifacts that `max dev` writes into dist/
 	find internal/web/dist \( -name '*.map' -o -name '*hot-update*' \) -delete
-	@test -f internal/web/dist/index.html || (echo "embed 目录里没有 index.html，前端产物不完整"; exit 1)
-	@echo "已从 $(UI_DIR) 拷入 $$(find internal/web/dist -type f | wc -l) 个前端文件"
+	@test -f internal/web/dist/index.html || (echo "no index.html in the embed directory - the frontend build output is incomplete"; exit 1)
+	@echo "copied $$(find internal/web/dist -type f | wc -l) frontend files from $(UI_DIR)"
 
 build:
 	@mkdir -p $(BIN)
@@ -65,7 +65,7 @@ fmt:
 	gofmt -l -w .
 
 run: build
-	./$(BIN)/deploy-server -data-dir ./data -web-root ./workspaces -listen 127.0.0.1:8080
+	./$(BIN)/deploy-server -data-dir ./data -web-root ./workspaces -listen 127.0.0.1:10055
 
 # 镜像构建的上下文必须是**仓库根目录**（即 deploy-server 的上一级）——
 # Dockerfile 要同时看到 deploy-server/ 与 deploy-server-ui/，而它们在同一个仓库里。

@@ -53,7 +53,7 @@ Move-Item deploy.exe "$env:USERPROFILE\bin\deploy.exe"   # 确保该目录已在
 current: default
 contexts:
   default:
-    server: http://127.0.0.1:8080
+    server: http://127.0.0.1:10055
     token: eyJhbGciOi...
     user: admin
   prod:
@@ -69,7 +69,7 @@ contexts:
 | 1 | 命令行 flag：`--server` / `--token` |
 | 2 | 环境变量：`DEPLOY_SERVER` / `DEPLOY_TOKEN`（CI 里可以完全不用配置文件） |
 | 3 | 配置文件当前 context 的 `server` / `token` |
-| 4 | 默认值：`http://127.0.0.1:8080`（token 无默认值，为空即视为未登录） |
+| 4 | 默认值：`http://127.0.0.1:10055`（token 无默认值，为空即视为未登录） |
 
 ### 全局 flag
 
@@ -109,10 +109,10 @@ deploy version [--short]        # 也支持 deploy --version
 
 ```powershell
 # 交互式：-p 省略时输入密码不回显（golang.org/x/term.ReadPassword）
-deploy login -s http://127.0.0.1:8080 -u admin
+deploy login -s http://127.0.0.1:10055 -u admin
 
 # 非交互（CI）
-deploy login -s http://127.0.0.1:8080 -u admin -p "$env:DEPLOY_PASSWORD"
+deploy login -s http://127.0.0.1:10055 -u admin -p "$env:DEPLOY_PASSWORD"
 
 # 直接用 API Token 跳过登录（会先调 /auth/me 校验；401 则不落盘）
 deploy login -s https://deploy.example.com --token dk_xxxxxxxx
@@ -197,7 +197,7 @@ deploy doctor --json     # 原样输出契约里的 doctor data
 
 deploy config get                       # 全部配置（token 打码）
 deploy config get server                # 单项（token 会输出明文，供脚本使用）
-deploy config set server http://127.0.0.1:8080
+deploy config set server http://127.0.0.1:10055
 deploy config set token dk_xxx
 deploy config set current prod          # 切换 context（不存在则以当前 server 为模板新建）
 deploy config list                      # 所有 context

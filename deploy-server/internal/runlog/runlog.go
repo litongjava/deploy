@@ -232,12 +232,12 @@ func PathFor(logDir, projectKey string, runID uint) string {
 func NewWriter(logDir, projectKey string, runID uint, broker *Broker, secrets []string, maxBytes int64) (*Writer, error) {
 	dir := filepath.Join(logDir, safeName(projectKey))
 	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return nil, fmt.Errorf("创建日志目录失败: %w", err)
+		return nil, fmt.Errorf("failed to create log directory: %w", err)
 	}
 	path := PathFor(logDir, projectKey, runID)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o640)
 	if err != nil {
-		return nil, fmt.Errorf("创建日志文件失败: %w", err)
+		return nil, fmt.Errorf("failed to create log file: %w", err)
 	}
 	w := &Writer{file: f, path: path, maxBytes: maxBytes, runID: runID, broker: broker}
 	w.masker = NewMasker(secrets, w.emit)
@@ -255,7 +255,7 @@ func (w *Writer) emit(data []byte) {
 	if w.maxBytes > 0 && w.size >= w.maxBytes {
 		if !w.overflow {
 			w.overflow = true
-			w.writeLocked([]byte("\n*** 日志已达上限，后续输出被丢弃 ***\n"))
+			w.writeLocked([]byte("\n*** log size limit reached, further output is discarded ***\n"))
 		}
 		return
 	}

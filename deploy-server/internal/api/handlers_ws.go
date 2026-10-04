@@ -29,7 +29,7 @@ var upgrader = websocket.Upgrader{
 // resolveAnyToken 同时接受 JWT 与 API Token。
 func (s *Server) resolveAnyToken(raw string) (*store.User, error) {
 	if raw == "" {
-		return nil, errors.New("缺少令牌")
+		return nil, errors.New("missing token")
 	}
 	if strings.HasPrefix(raw, "dk_") {
 		return s.auth.userByAPIToken(raw)
@@ -43,7 +43,7 @@ func (s *Server) resolveAnyToken(raw string) (*store.User, error) {
 		return nil, err
 	}
 	if u.Status != "active" {
-		return nil, errors.New("账号已禁用")
+		return nil, errors.New("account disabled")
 	}
 	return u, nil
 }
@@ -65,27 +65,27 @@ func (s *Server) runLogWS(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, Envelope{
 			Success: false, ErrorCode: CodeUnauthorized,
-			ErrorMessage: "未登录或登录已过期", ShowType: 0,
+			ErrorMessage: "not logged in or session expired", ShowType: 0,
 		})
 		return
 	}
 
 	id64, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || id64 == 0 {
-		BadRequest(c, "运行 ID 不合法")
+		BadRequest(c, "invalid run ID")
 		return
 	}
 	runID := uint(id64)
 
 	var run store.Run
 	if err := s.st.DB().First(&run, runID).Error; err != nil {
-		NotFound(c, "运行记录不存在")
+		NotFound(c, "run not found")
 		return
 	}
 	if u.Role != "admin" && s.visibilityMode() == "ownerOnly" {
 		var p store.Project
 		if err := s.st.DB().First(&p, run.ProjectID).Error; err == nil && p.OwnerID != u.ID {
-			NotFound(c, "运行记录不存在")
+			NotFound(c, "run not found")
 			return
 		}
 	}
@@ -99,7 +99,7 @@ func (s *Server) runLogWS(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		// Upgrade 失败时它已经写过响应了，这里只记日志。
-		slog.Debug("websocket 升级失败", "err", err, "run", runID)
+		slog.Debug("websocket upgrade failed", "err", err, "run", runID)
 		return
 	}
 	defer conn.Close()
@@ -149,7 +149,7 @@ func (s *Server) runLogWS(c *gin.Context) {
 			data, next, eof, err := runlog.ReadRange(logPath, sent, 128*1024)
 			if err != nil {
 				_ = writeFrame(map[string]any{
-					"type": "error", "runId": runID, "message": "读取日志失败: " + err.Error(),
+					"type": "error", "runId": runID, "message": "failed to read the log: " + err.Error(),
 				})
 				return false
 			}

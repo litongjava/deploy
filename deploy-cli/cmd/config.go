@@ -18,7 +18,7 @@ func newConfigCmd(app *App) *cobra.Command {
 
   deploy config get                 显示当前全部配置（token 打码）
   deploy config get server          读取单项
-  deploy config set server http://127.0.0.1:8080
+  deploy config set server http://127.0.0.1:10055
   deploy config set current prod    切换 context（不存在则新建）
   deploy config list                列出所有 context
   deploy config path                显示配置文件路径`,

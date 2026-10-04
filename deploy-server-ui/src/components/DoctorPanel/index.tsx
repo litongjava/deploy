@@ -8,7 +8,7 @@ const { Text, Paragraph } = Typography;
 
 /**
  * 环境自检面板：展示 GET /system/doctor 的结果。
- * 平台不安装工具链，只报告缺失并给出安装提示（需求 FR-INIT-2 / FR-INIT-3）。
+ * 缺失项给出手动安装提示；一键安装见 ToolchainPanel（需求 FR-INIT-2 / FR-INIT-3）。
  */
 const DoctorPanel: React.FC<{ data?: DoctorResult | null; loading?: boolean }> = ({
   data,
@@ -129,7 +129,7 @@ const DoctorPanel: React.FC<{ data?: DoctorResult | null; loading?: boolean }> =
           description={
             <div>
               <Paragraph style={{ marginBottom: 4 }}>
-                平台<Text strong>不会自动安装</Text>任何工具链，请在上面这台服务器上自行安装：
+                可以在下面「工具链一键安装」里一键装上（管理员），或按下面的提示在这台服务器上手动装：
               </Paragraph>
               <ul style={{ marginBottom: 0, paddingLeft: 18, listStyle: 'disc' }}>
                 {missing.map((m) => (

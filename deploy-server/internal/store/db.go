@@ -31,7 +31,7 @@ func Open(path string) (*Store, error) {
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("打开数据库失败: %w", err)
+		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
 	sqlDB, err := gdb.DB()

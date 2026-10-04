@@ -48,7 +48,7 @@ type Config struct {
 // Default 返回一份可直接使用的默认配置。
 func Default() *Config {
 	return &Config{
-		Listen:             "127.0.0.1:8080",
+		Listen:             "127.0.0.1:10055",
 		DataDir:            "data",
 		WebRoot:            "workspaces",
 		TokenTTLHours:      24 * 7,
@@ -70,11 +70,11 @@ func Load(args []string) (*Config, error) {
 
 	fs := flag.NewFlagSet("deploy-server", flag.ContinueOnError)
 	var (
-		configPath = fs.String("config", "", "配置文件路径（默认依次尝试 ./deploy-server.yaml、$DATA_DIR/deploy-server.yaml）")
-		listen     = fs.String("listen", "", "HTTP 监听地址，如 0.0.0.0:8080")
-		dataDir    = fs.String("data-dir", "", "数据目录（数据库/日志/密钥）")
-		webRoot    = fs.String("web-root", "", "项目工作目录根")
-		serverURL  = fs.String("server-url", "", "服务端对外地址")
+		configPath = fs.String("config", "", "path to the config file (by default tries ./deploy-server.yaml, then $DATA_DIR/deploy-server.yaml)")
+		listen     = fs.String("listen", "", "HTTP listen address, e.g. 0.0.0.0:10055")
+		dataDir    = fs.String("data-dir", "", "data directory (database / logs / keys)")
+		webRoot    = fs.String("web-root", "", "root directory for project workspaces")
+		serverURL  = fs.String("server-url", "", "server URL injected into commands as DEPLOY_SERVER_URL")
 	)
 	fs.SetOutput(os.Stderr)
 	if err := fs.Parse(args); err != nil {
@@ -105,16 +105,16 @@ func Load(args []string) (*Config, error) {
 		if st, err := os.Stat(p); err == nil && !st.IsDir() {
 			raw, err := os.ReadFile(p)
 			if err != nil {
-				return nil, fmt.Errorf("读取配置文件 %s 失败: %w", p, err)
+				return nil, fmt.Errorf("failed to read config file %s: %w", p, err)
 			}
 			if err := yaml.Unmarshal(raw, cfg); err != nil {
-				return nil, fmt.Errorf("解析配置文件 %s 失败: %w", p, err)
+				return nil, fmt.Errorf("failed to parse config file %s: %w", p, err)
 			}
 			cfg.ConfigPath = p
 			break
 		}
 		if *configPath != "" {
-			return nil, fmt.Errorf("配置文件不存在: %s", p)
+			return nil, fmt.Errorf("config file not found: %s", p)
 		}
 	}
 
@@ -219,7 +219,7 @@ func (c *Config) normalize() {
 func (c *Config) ensureDirs() error {
 	for _, d := range []string{c.DataDir, c.LogDir(), c.WebRoot} {
 		if err := os.MkdirAll(d, 0o750); err != nil {
-			return fmt.Errorf("创建目录 %s 失败: %w", d, err)
+			return fmt.Errorf("failed to create directory %s: %w", d, err)
 		}
 	}
 	return nil
@@ -263,7 +263,7 @@ func loadOrCreateKey(path string) (string, error) {
 	}
 	key := base64.RawURLEncoding.EncodeToString(buf)
 	if err := os.WriteFile(path, []byte(key+"\n"), 0o600); err != nil {
-		return "", fmt.Errorf("写入密钥文件 %s 失败: %w", path, err)
+		return "", fmt.Errorf("failed to write key file %s: %w", path, err)
 	}
 	return key, nil
 }

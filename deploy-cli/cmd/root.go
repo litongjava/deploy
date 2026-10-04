@@ -81,7 +81,7 @@ func buildRoot(out, errw io.Writer) *cobra.Command {
 	})
 
 	pf := root.PersistentFlags()
-	pf.StringVar(&app.ServerFlag, "server", "", "服务端地址（覆盖配置与环境变量），如 http://127.0.0.1:8080")
+	pf.StringVar(&app.ServerFlag, "server", "", "服务端地址（覆盖配置与环境变量），如 http://127.0.0.1:10055")
 	pf.StringVar(&app.TokenFlag, "token", "", "API Token 或 JWT（覆盖配置与环境变量）")
 	pf.BoolVar(&app.JSONFlag, "json", false, "以 JSON 输出结果，stdout 只输出机器可读内容")
 	pf.BoolVar(&app.NoColor, "no-color", false, "禁用彩色输出（非 TTY 自动禁用）")

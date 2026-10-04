@@ -37,26 +37,26 @@ type credentialReq struct {
 func (s *Server) createCredential(c *gin.Context) {
 	var req credentialReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		BadRequest(c, "请填写凭据名称与类型")
+		BadRequest(c, "credential name and type are required")
 		return
 	}
 	if req.Type != "https_token" && req.Type != "ssh_key" {
-		BadRequest(c, "凭据类型只能是 https_token 或 ssh_key")
+		BadRequest(c, "credential type must be https_token or ssh_key")
 		return
 	}
 	if strings.TrimSpace(req.Secret) == "" {
-		BadRequest(c, "凭据内容不能为空")
+		BadRequest(c, "credential content must not be empty")
 		return
 	}
 	u := CurrentUser(c)
 	enc, err := s.box.Encrypt(req.Secret)
 	if err != nil {
-		Internal(c, "加密凭据失败")
+		Internal(c, "failed to encrypt the credential")
 		return
 	}
 	passEnc, err := s.box.Encrypt(req.Passphrase)
 	if err != nil {
-		Internal(c, "加密凭据失败")
+		Internal(c, "failed to encrypt the credential")
 		return
 	}
 	owner := u.ID
@@ -68,7 +68,7 @@ func (s *Server) createCredential(c *gin.Context) {
 		Username: req.Username, SecretEnc: enc, Passphrase: passEnc,
 	}
 	if err := s.st.DB().Create(&cred).Error; err != nil {
-		Internal(c, "创建凭据失败")
+		Internal(c, "failed to create credential")
 		return
 	}
 	s.audit(c, "create-credential", cred.Name, cred.Type)
@@ -82,16 +82,16 @@ func (s *Server) updateCredential(c *gin.Context) {
 	}
 	var cred store.Credential
 	if err := s.st.DB().First(&cred, id).Error; err != nil {
-		NotFound(c, "凭据不存在")
+		NotFound(c, "credential not found")
 		return
 	}
 	if !s.canUseCredential(CurrentUser(c), &cred) {
-		Forbidden(c, "无权修改该凭据")
+		Forbidden(c, "not allowed to modify this credential")
 		return
 	}
 	var req credentialReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		BadRequest(c, "请求体不是合法 JSON")
+		BadRequest(c, "request body is not valid JSON")
 		return
 	}
 	updates := map[string]any{
@@ -102,7 +102,7 @@ func (s *Server) updateCredential(c *gin.Context) {
 	if req.Secret != "" {
 		enc, err := s.box.Encrypt(req.Secret)
 		if err != nil {
-			Internal(c, "加密凭据失败")
+			Internal(c, "failed to encrypt the credential")
 			return
 		}
 		updates["secret_enc"] = enc
@@ -110,7 +110,7 @@ func (s *Server) updateCredential(c *gin.Context) {
 	if req.Passphrase != "" {
 		enc, err := s.box.Encrypt(req.Passphrase)
 		if err != nil {
-			Internal(c, "加密凭据失败")
+			Internal(c, "failed to encrypt the credential")
 			return
 		}
 		updates["passphrase"] = enc
@@ -131,18 +131,18 @@ func (s *Server) deleteCredential(c *gin.Context) {
 	}
 	var cred store.Credential
 	if err := s.st.DB().First(&cred, id).Error; err != nil {
-		NotFound(c, "凭据不存在")
+		NotFound(c, "credential not found")
 		return
 	}
 	if !s.canUseCredential(CurrentUser(c), &cred) {
-		Forbidden(c, "无权删除该凭据")
+		Forbidden(c, "not allowed to delete this credential")
 		return
 	}
 	// 被项目引用时禁止删除，否则项目会在下次部署时才炸。
 	var refs int64
 	s.st.DB().Model(&store.Project{}).Where("git_credential_id = ?", id).Count(&refs)
 	if refs > 0 {
-		Conflict(c, "该凭据正被 "+itoa(int(refs))+" 个项目引用，请先解除引用")
+		Conflict(c, "this credential is referenced by "+itoa(int(refs))+" project(s); remove those references first")
 		return
 	}
 	s.st.DB().Delete(&store.Credential{}, id)
@@ -171,18 +171,18 @@ type testGitReq struct {
 func (s *Server) testGit(c *gin.Context) {
 	var req testGitReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		BadRequest(c, "请填写仓库地址")
+		BadRequest(c, "repository URL is required")
 		return
 	}
 	u := CurrentUser(c)
 	if req.CredentialID != nil {
 		var cred store.Credential
 		if err := s.st.DB().First(&cred, *req.CredentialID).Error; err != nil {
-			NotFound(c, "凭据不存在")
+			NotFound(c, "credential not found")
 			return
 		}
 		if !s.canUseCredential(u, &cred) {
-			Forbidden(c, "无权使用该凭据")
+			Forbidden(c, "not allowed to use this credential")
 			return
 		}
 	}
@@ -198,7 +198,7 @@ func (s *Server) testGit(c *gin.Context) {
 	if len(lines) > 20 {
 		lines = lines[:20]
 	}
-	OK(c, gin.H{"ok": true, "message": "连接成功", "sampleRefs": lines})
+	OK(c, gin.H{"ok": true, "message": "connection succeeded", "sampleRefs": lines})
 }
 
 func itoa(n int) string { return strconvItoa(n) }

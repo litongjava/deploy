@@ -27,20 +27,20 @@ type toolProbe struct {
 }
 
 var toolProbes = []toolProbe{
-	{"git", []string{"--version"}, "Git 准备阶段与脚本里的 git 命令都需要。Debian/Ubuntu: apt install -y git"},
-	{"bash", []string{"-c", "echo $BASH_VERSION"}, "Unix 下默认用它执行脚本。Debian/Ubuntu: apt install -y bash"},
-	{"sh", []string{"-c", "echo ok"}, "bash 不可用时的兜底解释器。"},
-	{"rsync", []string{"--version"}, "把构建产物同步到站点目录时最常用。Debian/Ubuntu: apt install -y rsync"},
-	{"curl", []string{"--version"}, "脚本里做健康检查、调接口时常用。Debian/Ubuntu: apt install -y curl"},
-	{"docker", []string{"--version"}, "需要以容器方式部署时使用。见 https://docs.docker.com/engine/install/"},
-	{"nginx", []string{"-v"}, "托管静态站点需要。Debian/Ubuntu: apt install -y nginx"},
-	{"node", []string{"--version"}, "构建前端项目需要。建议用 nvm 安装。"},
-	{"npm", []string{"--version"}, "随 Node.js 一起安装。"},
-	{"pnpm", []string{"--version"}, "前端常用包管理器。npm install -g pnpm"},
-	{"go", []string{"version"}, "构建 Go 项目需要。见 https://go.dev/dl/"},
-	{"java", []string{"-version"}, "构建 Java 项目需要。Debian/Ubuntu: apt install -y openjdk-17-jdk"},
-	{"mvn", []string{"--version"}, "构建 Maven 项目需要。Debian/Ubuntu: apt install -y maven"},
-	{"certbot", []string{"--version"}, "签发 HTTPS 证书需要。见 https://certbot.eff.org/"},
+	{"git", []string{"--version"}, "Needed by the Git prepare phase and by git commands in scripts. Debian/Ubuntu: apt install -y git"},
+	{"bash", []string{"-c", "echo $BASH_VERSION"}, "Default shell for running scripts on Unix. Debian/Ubuntu: apt install -y bash"},
+	{"sh", []string{"-c", "echo ok"}, "Fallback interpreter when bash is unavailable."},
+	{"rsync", []string{"--version"}, "Most commonly used to sync build output into the site directory. Debian/Ubuntu: apt install -y rsync"},
+	{"curl", []string{"--version"}, "Commonly used in scripts for health checks and API calls. Debian/Ubuntu: apt install -y curl"},
+	{"docker", []string{"--version"}, "Used when deploying with containers. See https://docs.docker.com/engine/install/"},
+	{"nginx", []string{"-v"}, "Required to serve static sites. Debian/Ubuntu: apt install -y nginx"},
+	{"node", []string{"--version"}, "Needed to build frontend projects. Installing it via nvm is recommended."},
+	{"npm", []string{"--version"}, "Installed together with Node.js."},
+	{"pnpm", []string{"--version"}, "Common package manager for frontends. npm install -g pnpm"},
+	{"go", []string{"version"}, "Needed to build Go projects. See https://go.dev/dl/"},
+	{"java", []string{"-version"}, "Needed to build Java projects. Debian/Ubuntu: apt install -y openjdk-17-jdk"},
+	{"mvn", []string{"--version"}, "Needed to build Maven projects. Debian/Ubuntu: apt install -y maven"},
+	{"certbot", []string{"--version"}, "Needed to issue HTTPS certificates. See https://certbot.eff.org/"},
 }
 
 type checkDTO struct {
@@ -82,7 +82,7 @@ func webNote(built bool) string {
 	if built {
 		return ""
 	}
-	return "当前二进制内嵌的是占位页，前端尚未构建。请在 deploy-server-ui 执行 pnpm build，再运行 make ui 重新编译后端。"
+	return "this binary embeds a placeholder page because the frontend was not built; run pnpm build in deploy-server-ui, then make ui to rebuild the backend"
 }
 
 func probeTool(p toolProbe) checkDTO {
@@ -106,7 +106,7 @@ func probeTool(p toolProbe) checkDTO {
 	case out := <-done:
 		dto.Version = firstLine(out)
 	case <-time.After(5 * time.Second):
-		dto.Version = "(版本探测超时)"
+		dto.Version = "(version check timed out)"
 		_ = cmd.Process.Kill()
 	}
 	return dto
@@ -203,13 +203,13 @@ func (s *Server) getSettings(c *gin.Context) {
 func (s *Server) updateSettings(c *gin.Context) {
 	var req settingsDTO
 	if err := c.ShouldBindJSON(&req); err != nil {
-		BadRequest(c, "请求体不是合法 JSON")
+		BadRequest(c, "request body is not valid JSON")
 		return
 	}
 
 	if req.MaxConcurrentRuns > 0 {
 		if req.MaxConcurrentRuns > 100 {
-			BadRequest(c, "最大并发数请设置在 1-100 之间")
+			BadRequest(c, "max concurrency must be between 1 and 100")
 			return
 		}
 		s.st.SetSetting("maxConcurrentRuns", strconv.Itoa(req.MaxConcurrentRuns))

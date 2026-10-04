@@ -92,6 +92,8 @@ export interface GitTestResult {
 export type ShellType = 'auto' | 'bash' | 'sh' | 'pwsh' | 'cmd';
 export type ConcurrencyType = 'queue' | 'allow' | 'cancelPrev';
 export type FailStrategy = 'abort' | 'continue';
+/** 项目类型：app 应用项目（默认）| lib 构建项目（可被别的项目依赖） */
+export type ProjectKind = 'app' | 'lib';
 
 export interface Command {
   id: number;
@@ -127,6 +129,21 @@ export interface EnvVar {
   isSecret: boolean;
 }
 
+export interface DepNode {
+  key: string;
+  name: string;
+  kind: ProjectKind;
+  archived: boolean;
+  order?: number;
+}
+
+/** 依赖构建计划：含依赖执行时实际会按什么顺序构建 */
+export interface DependencyPlan {
+  ok: boolean;
+  error?: string;
+  order: DepNode[];
+}
+
 export interface ProjectBrief {
   id: number;
   key: string;
@@ -140,6 +157,10 @@ export interface ProjectBrief {
   ownerId: number;
   ownerName: string;
   archived: boolean;
+  /** 项目类型：app 应用项目 | lib 构建项目 */
+  kind: ProjectKind;
+  /** 直接依赖的构建项目 key 列表 */
+  dependencies: string[];
   useGit: boolean;
   gitUrl: string;
   gitBranch: string;
@@ -160,6 +181,10 @@ export interface Project extends ProjectBrief {
   gitSubmodule: boolean;
   commands: Command[];
   envs: EnvVar[];
+  /** 仅详情接口返回 */
+  dependencyPlan?: DependencyPlan;
+  /** 仅详情接口返回：谁依赖了我 */
+  dependents?: DepNode[];
 }
 
 export interface ProjectInput {
@@ -172,6 +197,8 @@ export interface ProjectInput {
   concurrency?: ConcurrencyType;
   hookEnabled?: boolean;
   archived?: boolean;
+  kind?: ProjectKind;
+  dependencies?: string[];
   useGit: boolean;
   gitUrl?: string;
   gitBranch?: string;
@@ -187,8 +214,11 @@ export interface ProjectInput {
 
 export interface ProjectQuery extends PageQuery {
   keyword?: string;
-  archived?: boolean;
+  /** true = 只看已归档；false/不传 = 只看未归档；'all' = 全部 */
+  archived?: boolean | 'all';
   mine?: boolean;
+  /** 只取某一类项目（依赖下拉用 kind=lib） */
+  kind?: ProjectKind;
 }
 
 export interface PreviewResult {
@@ -263,6 +293,12 @@ export interface Run {
   triggerUa: string;
   requestedRef: string;
   params: Record<string, string> | null;
+  /** 依赖构建流水线：同一次触发产生的 Run 共享同一个 pipelineId */
+  pipelineId?: string;
+  pipelineRole?: '' | 'main' | 'dependency';
+  pipelineOrder?: number;
+  /** 仅运行详情接口返回：同一条流水线里的全部 Run */
+  pipeline?: PipelineRun[];
   prepareStatus: PrepareStatus;
   prepareDurationMs: number;
   gitCommit: string;
@@ -277,6 +313,17 @@ export interface Run {
   steps?: RunStep[];
 }
 
+export interface PipelineRun {
+  runId: number;
+  projectKey: string;
+  projectName: string;
+  buildNumber: number;
+  status: RunStatus;
+  pipelineRole: '' | 'main' | 'dependency';
+  pipelineOrder: number;
+  durationMs: number;
+}
+
 export interface RunQuery extends PageQuery {
   projectKey?: string;
   status?: RunStatus;
@@ -287,6 +334,8 @@ export interface TriggerRunInput {
   env?: Record<string, string>;
   commandIds?: number[];
   commandId?: number;
+  /** 先按依赖顺序构建依赖的构建项目，全部成功后再执行本项目 */
+  withDependencies?: boolean;
 }
 
 export interface TriggerResult {
@@ -294,6 +343,9 @@ export interface TriggerResult {
   buildNumber: number;
   status: RunStatus;
   logUrl: string;
+  pipelineId?: string;
+  dependencyCount?: number;
+  dependencies?: { key: string; runId: number; buildNumber: number }[];
 }
 
 export interface LogChunk {
@@ -328,6 +380,90 @@ export interface DoctorResult {
   checks: DoctorCheck[];
 }
 
+/* ------------------- 服务器信息（GET /system/info） ------------------- */
+
+export interface ServerLoad {
+  /** Windows 没有 load average，为 false，此时应隐藏该项而不是显示 0 */
+  available: boolean;
+  avg1: number;
+  avg5: number;
+  avg15: number;
+}
+
+export interface ServerCpu {
+  model: string;
+  /** 逻辑核心数（含超线程） */
+  cores: number;
+  /** 物理核数；Windows 上恒为 0，此时按 0 处理（隐藏该项） */
+  physicalCores: number;
+  mhz: number;
+  /** 服务刚启动、第一次采样还没完成时为 false，应显示「采样中」而不是 0% */
+  available: boolean;
+  usagePercent: number;
+  /** 使用率的统计窗口（秒），默认采样间隔为 3 */
+  sampleWindowSec: number;
+  /**
+   * 以下都是**所有核心累加**的时间（秒），不是墙上时钟：
+   * 16 核跑满 1 秒 → totalSec ≈ 16。usagePercent = busySec / totalSec。
+   */
+  busySec: number;
+  totalSec: number;
+  userSec: number;
+  systemSec: number;
+  idleSec: number;
+  iowaitSec: number;
+}
+
+export interface ServerMemory {
+  totalBytes: number;
+  /** Linux 上是 total - available（不是 total - free），见 docs/API设计.md */
+  usedBytes: number;
+  freeBytes: number;
+  availableBytes: number;
+  usagePercent: number;
+  /**
+   * Swap* 的口径两个平台不同（Linux 是交换分区，Windows 是提交内存），
+   * 所以标题要照 swapLabel 显示，不要硬写「交换分区」。
+   */
+  swapTotalBytes: number;
+  swapUsedBytes: number;
+  swapFreeBytes: number;
+  /** linux -> 'swap' | windows -> 'commit' */
+  swapKind: string;
+  /** 可直接用作标题的中文名，如「交换分区」/「提交内存」 */
+  swapLabel: string;
+}
+
+export interface ServerDisk {
+  /** Linux 是挂载点（/、/home），Windows 是卷根（C:\） */
+  path: string;
+  device: string;
+  fstype: string;
+  totalBytes: number;
+  usedBytes: number;
+  /** Linux 上是「非特权用户可用」，与 df 的 Avail 列口径一致 */
+  freeBytes: number;
+  usagePercent: number;
+  /** 后端算好的阈值判断：ok | warn（≥75% 或剩余 <2GiB） */
+  status: 'ok' | 'warn';
+}
+
+export interface ServerInfo {
+  time: string;
+  hostname: string;
+  os: string;
+  arch: string;
+  osName: string;
+  kernel: string;
+  uptimeSec: number;
+  load: ServerLoad;
+  cpu: ServerCpu;
+  memory: ServerMemory;
+  disks: ServerDisk[];
+  /** 采集失败的项目说明，用于解释「某项为什么是空的」 */
+  warnings: string[];
+}
+
 export interface SystemSettings {
   webRoot: string;
   maxConcurrentRuns: number;
@@ -337,6 +473,61 @@ export interface SystemSettings {
   visibility: 'allReadable' | 'ownerOnly';
   allowRegistration: boolean;
   notify: { enabled: boolean; url: string; on: string[] };
+}
+
+/* --------------------------- 环境工具链安装 --------------------------- */
+
+export interface ToolchainProbe {
+  name: string;
+  found: boolean;
+  version: string;
+  path: string;
+}
+
+export interface ToolchainComponent {
+  key: string;
+  name: string;
+  note: string;
+  estimate: string;
+  installed: boolean;
+  version: string;
+  path: string;
+  probes: ToolchainProbe[];
+}
+
+export interface ToolchainList {
+  /** 只有 Linux 服务端支持真正的安装（dry-run 任何平台都能看） */
+  supported: boolean;
+  platform: string;
+  components: ToolchainComponent[];
+  /** 当前缺失的组件 key */
+  missing: string[];
+  scriptPath: string;
+  scriptUrl: string;
+  projectKey: string;
+  hint: string;
+  installCmd: string;
+}
+
+export interface ToolchainInstallInput {
+  /** 空数组 = 安装所有缺失的组件 */
+  components?: string[];
+  dryRun?: boolean;
+  force?: boolean;
+  mirror?: 'cn' | 'off';
+}
+
+export interface ToolchainInstallResult {
+  runId: number;
+  buildNumber?: number;
+  status?: RunStatus;
+  projectKey?: string;
+  components?: string[];
+  dryRun?: boolean;
+  command?: string;
+  logUrl?: string;
+  nothingToDo?: boolean;
+  message?: string;
 }
 
 /* --------------------------- WebSocket 帧 --------------------------- */

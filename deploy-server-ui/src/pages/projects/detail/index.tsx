@@ -3,6 +3,7 @@ import { runApi } from '@/services/run';
 import type { HookToken, HookTokenCreated, Project, Run } from '@/services/types';
 import {
   PREPARE_STATUS_META,
+  PROJECT_KIND_META,
   RUN_STATUS_META,
   SECRET_PLACEHOLDER,
   formatDuration,
@@ -28,6 +29,7 @@ import {
   Button,
   Card,
   Descriptions,
+  Dropdown,
   Empty,
   Form,
   Input,
@@ -58,13 +60,15 @@ const ProjectDetail: React.FC = () => {
   const [hookForm] = Form.useForm();
 
   const load = useCallback(async () => {
-    if (!key) return;
+    if (!key) return false;
     setLoading(true);
     try {
       const data = await projectApi.detail(key);
       setProject(data);
+      return true;
     } catch (e) {
       setProject(null);
+      return false;
     } finally {
       setLoading(false);
     }
@@ -84,15 +88,25 @@ const ProjectDetail: React.FC = () => {
   }, [key]);
 
   useEffect(() => {
-    load();
-    loadHooks();
+    // 项目都不存在时不必再查 Hook：否则同一个 404 会弹两次错误提示
+    load().then((ok) => {
+      if (ok) loadHooks();
+    });
   }, [load, loadHooks]);
 
-  const handleRun = async (commandId?: number) => {
+  const handleRun = async (commandId?: number, withDependencies = false) => {
     setRunning(true);
     try {
-      const res = await projectApi.run(key, commandId ? { commandId } : undefined);
-      messageApi.success(`已触发构建 #${res.buildNumber}`);
+      const res = await projectApi.run(key, {
+        ...(commandId ? { commandId } : {}),
+        withDependencies,
+      });
+      const depCount = res?.dependencies?.length || 0;
+      messageApi.success(
+        withDependencies && depCount > 0
+          ? `已触发构建 #${res.buildNumber}，先构建 ${depCount} 个依赖`
+          : `已触发构建 #${res.buildNumber}`,
+      );
       history.push(`/runs/${res.runId}`);
     } catch (e) {
       // 统一提示
@@ -221,16 +235,36 @@ const ProjectDetail: React.FC = () => {
       subTitle={key}
       onBack={() => history.push('/projects')}
       extra={[
-        <Button
-          key="run"
-          type="primary"
-          icon={<PlayCircleOutlined />}
-          loading={running}
-          disabled={!project || project.archived || !project.canEdit}
-          onClick={() => handleRun()}
-        >
-          执行
-        </Button>,
+        (project?.dependencies || []).length > 0 && !project?.archived ? (
+          <Dropdown.Button
+            key="run"
+            type="primary"
+            icon={<PlayCircleOutlined />}
+            loading={running}
+            disabled={!project || project.archived || !project.canEdit}
+            onClick={() => handleRun(undefined, true)}
+            menu={{
+              items: [
+                { key: 'with-deps', label: '含依赖执行（推荐）' },
+                { key: 'only', label: '仅执行本项目' },
+              ],
+              onClick: ({ key }) => handleRun(undefined, key === 'with-deps'),
+            }}
+          >
+            执行
+          </Dropdown.Button>
+        ) : (
+          <Button
+            key="run"
+            type="primary"
+            icon={<PlayCircleOutlined />}
+            loading={running}
+            disabled={!project || project.archived || !project.canEdit}
+            onClick={() => handleRun()}
+          >
+            执行
+          </Button>
+        ),
         <Button
           key="edit"
           disabled={!project || !project.canEdit}
@@ -251,6 +285,56 @@ const ProjectDetail: React.FC = () => {
         />
       ) : null}
 
+      {project?.dependencyPlan && (project.dependencies || []).length > 0 ? (
+        project.dependencyPlan.ok ? (
+          <Alert
+            style={{ marginBottom: 16 }}
+            type="success"
+            showIcon
+            message="依赖构建顺序（点「执行」默认含依赖）"
+            description={
+              <Space wrap size={4}>
+                {project.dependencyPlan.order.map((d) => (
+                  <Tag key={d.key} color="purple">
+                    <a onClick={() => history.push(`/projects/${d.key}`)}>{d.key}</a>
+                  </Tag>
+                ))}
+                <span>→</span>
+                <Tag color={PROJECT_KIND_META[(project.kind as any) || 'app']?.color}>
+                  {project.key}
+                </Tag>
+              </Space>
+            }
+          />
+        ) : (
+          <Alert
+            style={{ marginBottom: 16 }}
+            type="error"
+            showIcon
+            message="依赖配置当前不可用，含依赖执行会被拒绝"
+            description={project.dependencyPlan.error}
+          />
+        )
+      ) : null}
+
+      {(project?.dependents || []).length > 0 ? (
+        <Alert
+          style={{ marginBottom: 16 }}
+          type="info"
+          showIcon
+          message="被以下项目依赖"
+          description={
+            <Space wrap size={4}>
+              {(project?.dependents || []).map((d) => (
+                <Tag key={d.key}>
+                  <a onClick={() => history.push(`/projects/${d.key}`)}>{d.name || d.key}</a>
+                </Tag>
+              ))}
+            </Space>
+          }
+        />
+      ) : null}
+
       <ProCard gutter={16} wrap>
         <ProCard colSpan={{ xs: 24, lg: 14 }} title="基本信息" bordered>
           <ProDescriptions<Project>
@@ -259,6 +343,31 @@ const ProjectDetail: React.FC = () => {
             columns={[
               { title: '项目 Key', dataIndex: 'key', copyable: true },
               { title: '名称', dataIndex: 'name' },
+              {
+                title: '项目类型',
+                dataIndex: 'kind',
+                render: (v, row) => (
+                  <Tag color={PROJECT_KIND_META[(row.kind as any) || 'app']?.color}>
+                    {PROJECT_KIND_META[(row.kind as any) || 'app']?.text}
+                  </Tag>
+                ),
+              },
+              {
+                title: '依赖的构建项目',
+                dataIndex: 'dependencies',
+                render: (_, row) =>
+                  (row.dependencies || []).length === 0 ? (
+                    <Text type="secondary">无</Text>
+                  ) : (
+                    <Space size={4} wrap>
+                      {(row.dependencies || []).map((k) => (
+                        <Tag key={k} color="purple">
+                          <a onClick={() => history.push(`/projects/${k}`)}>{k}</a>
+                        </Tag>
+                      ))}
+                    </Space>
+                  ),
+              },
               {
                 title: '工作目录',
                 dataIndex: 'workdir',

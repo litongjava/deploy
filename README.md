@@ -55,7 +55,7 @@
 验证时调用下面的 `doctor`，应看到 `web.built=true`；若为 `false`，查看 `note`，按下一节先构建前端再编译后端，避免嵌入占位页。
 
 ```bash
-curl -s http://127.0.0.1:8080/api/v1/system/doctor -H 'Authorization: <你的token>'
+curl -s http://127.0.0.1:10055/api/v1/system/doctor -H 'Authorization: <你的token>'
 ```
 
 全文 `<尖括号>` 表示需替换的地址、令牌或路径；替换后再执行。示例项目 `my-app`、运行 ID `88` 和示例域名也需换成自己的值。
@@ -63,6 +63,7 @@ curl -s http://127.0.0.1:8080/api/v1/system/doctor -H 'Authorization: <你的tok
 ## 构建与快速开始
 
 推荐在开发机构建，只把二进制传到服务器；服务器无需安装 Go/Node，部署脚本用到的工具另行安装。
+**项目构建脚本用到的工具装在服务端机器上**（命令在那里执行）——包括作者自己常用的 `build`，安装方法见[建议安装 build 命令](#建议安装-build-命令多模块构建)。
 构建机需要 **Go 1.24+、Node 22、pnpm**，Linux/macOS 还需 make、git；顺序必须是**构建前端 → 拷贝前端 → 编译后端**。
 交叉编译必须设置 `CGO_ENABLED=0`；SQLite 使用纯 Go 驱动，因此可以关闭 CGO、免依赖交付。
 构建入口拷贝时排除 `*.map`（曾占 dist 一半体积，24 个文件 / 20.8 MB）和 `*hot-update*`（`max dev` 开发态产物）。
@@ -84,13 +85,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build.ps1 -Version
 
 # 3) 启动本机版本
 .\bin\deploy-server.exe `
-    -listen 127.0.0.1:8080 `
+    -listen 127.0.0.1:10055 `
     -data-dir .\data `
     -web-root .\workspaces `
-    -server-url http://127.0.0.1:8080
+    -server-url http://127.0.0.1:10055
 ```
 
-打开 <http://127.0.0.1:8080>，按[首次初始化](#首次初始化)创建管理员。
+打开 <http://127.0.0.1:10055>，按[首次初始化](#首次初始化)创建管理员。
 脚本内部会切换到服务端目录，因此用正确脚本路径可从任意目录调用；`-NoProfile` 避免个人配置干扰，`-ExecutionPolicy Bypass` 用于本次脚本执行。
 
 | Windows 构建参数 | 默认 | 作用 |
@@ -147,15 +148,15 @@ apt-get install -y git rsync curl nginx
 
 ### 安装 systemd 服务
 
-**默认监听 `127.0.0.1:8080`**。仓库 unit 用 `0.0.0.0:8080` 是有意让局域网浏览器与 CLI 访问；有公网入口时，**必须改回 `127.0.0.1:8080`，经 nginx 反代 + HTTPS**。
+**默认监听 `127.0.0.1:10055`**。仓库 unit 用 `0.0.0.0:10055` 是有意让局域网浏览器与 CLI 访问；有公网入口时，**必须改回 `127.0.0.1:10055`，经 nginx 反代 + HTTPS**。
 先调整待上传的 [unit](deploy-server/deploy/deploy-server.service)；**`-server-url` 必须改为自己的地址**，它会注入 `DEPLOY_SERVER_URL`。
 
 ```ini
 ExecStart=/usr/local/bin/deploy-server \
-    -listen 0.0.0.0:8080 \
+    -listen 0.0.0.0:10055 \
     -data-dir /srv/deploy/data \
     -web-root /srv/deploy/workspaces \
-    -server-url http://<本机IP>:8080
+    -server-url http://<本机IP>:10055
 ```
 
 unit 中这三项配置别删：
@@ -178,7 +179,7 @@ ssh 'root@<服务器地址>' '
   systemctl enable --now deploy-server
   sleep 2
   systemctl is-active deploy-server
-  curl -fsS http://127.0.0.1:8080/api/v1/healthz
+  curl -fsS http://127.0.0.1:10055/api/v1/healthz
 '
 ```
 
@@ -192,15 +193,15 @@ Windows 需脚本化密码认证时可配合 [sshpoke](tools/sshpoke/)；Windows
 ```bash
 # 前台调试，看到「HTTP 服务已就绪」后可访问；Ctrl+C 会优雅退出
 /usr/local/bin/deploy-server \
-    -listen 127.0.0.1:8080 -data-dir /srv/deploy/data \
-    -web-root /srv/deploy/workspaces -server-url 'http://<本机IP>:8080'
+    -listen 127.0.0.1:10055 -data-dir /srv/deploy/data \
+    -web-root /srv/deploy/workspaces -server-url 'http://<本机IP>:10055'
 
 # 或后台运行
 nohup /usr/local/bin/deploy-server \
-    -listen 127.0.0.1:8080 -data-dir /srv/deploy/data \
-    -web-root /srv/deploy/workspaces -server-url 'http://<本机IP>:8080' \
+    -listen 127.0.0.1:10055 -data-dir /srv/deploy/data \
+    -web-root /srv/deploy/workspaces -server-url 'http://<本机IP>:10055' \
     > /var/log/deploy-server.log 2>&1 &
-curl -fsS http://127.0.0.1:8080/api/v1/healthz
+curl -fsS http://127.0.0.1:10055/api/v1/healthz
 ```
 
 仍建议 systemd：开机自启、崩溃自动重启，并在停止时先发 SIGTERM，让运行中的部署收尾。
@@ -212,7 +213,7 @@ curl -fsS http://127.0.0.1:8080/api/v1/healthz
 ```bash
 cd deploy            # 仓库根目录
 docker build -t deploy-server:1.0.0 -f deploy-server/Dockerfile .
-docker run -d --name deploy-server -p 8080:8080 \
+docker run -d --name deploy-server -p 10055:10055 \
   -v /srv/deploy/data:/data -v /srv/deploy/workspaces:/workspaces \
   --restart unless-stopped deploy-server:1.0.0
 ```
@@ -233,7 +234,7 @@ server {
     ssl_certificate     /etc/letsencrypt/live/deploy.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/deploy.example.com/privkey.pem;
     location / {
-        proxy_pass http://127.0.0.1:8080;
+        proxy_pass http://127.0.0.1:10055;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -292,7 +293,7 @@ rm -rf /srv/deploy
 可用「个人设置 → 修改密码」，也可在取得登录 token 后调用：
 
 ```bash
-curl -X POST http://192.168.31.97:8080/api/v1/auth/change-password \
+curl -X POST http://192.168.31.97:10055/api/v1/auth/change-password \
   -H 'Authorization: <你的token>' -H 'Content-Type: application/json' \
   -d '{"oldPassword":"admin12345","newPassword":"<新密码，至少8位>"}'
 ```
@@ -305,8 +306,10 @@ curl -X POST http://192.168.31.97:8080/api/v1/auth/change-password \
 
 | 配置 | 含义 / 默认 |
 |---|---|
-| Key | 唯一标识，只允许字母、数字、点、下划线、短横线，例如 `my-app`；CLI 与接口用它引用项目 |
+| Key | 唯一标识，只允许字母、数字、点、下划线、短横线，例如 `my-app`；CLI 与接口用它引用项目。**`new` 是前端「新建项目」路由（`/projects/new`）的保留字**，别用作 Key，否则详情页地址会被新建页占用 |
 | 名称 | 显示名，可用中文 |
+| **项目类型** | `应用项目`（默认，常规的构建/部署单元）或 `构建项目`（产出被依赖的产物，例如底层库）；**只有构建项目能被选为依赖** |
+| **依赖的构建项目** | 多选。点「执行」时按依赖顺序先构建它们，见[依赖构建](#依赖构建多模块项目) |
 | 工作目录 | 默认 `${WORKSPACE_ROOT}/${PROJECT_KEY}`，如 `/srv/deploy/workspaces/my-app` |
 | Shell | `auto`，解释器选择见[平台差异](#平台差异) |
 | 并发策略 | 默认 `queue` 串行排队；`allow` 并行；`cancelPrev` 新任务取消旧任务 |
@@ -374,13 +377,102 @@ echo "HTTP $code"
 - **最后一条命令的退出码决定整次部署成败**，因此把健康检查放在末尾并使用「中止」策略。准确说，每条脚本的最终退出码交给平台判断；「中止」会在前面失败时立即停止，「继续」会忽略该条失败，即使它是最后一条。
 - 「项目详情 → 预览」可先查看实际会执行的内容，不真的执行。
 
+### 依赖构建（多模块项目）
+
+上层项目的构建常常要先装好底层库（例如 `myprofessor-backend` 依赖 `tio-boot-admin`，
+而 `tio-boot-admin` 又依赖 `tio-boot`、`java-openai`）。平台用**项目类型 + 依赖列表**表达：
+
+1. 把底层库建成**构建项目**：类型选「构建项目」，命令写产生产物的那几条（如 `mvn -DskipTests install`）。构建项目自己也可以依赖更底层的构建项目（例如 `tio-boot-admin` 依赖 `tio-boot`、`java-openai`），形成多层依赖链。
+2. 在上层项目里把**依赖的构建项目**多选上（只列构建项目；保存时会校验不是自己、不成环）。
+3. 触发时用「**含依赖执行**」（网页上「执行」按钮的下拉，或接口 `withDependencies: true`）。
+
+执行顺序按依赖深度优先展开、依赖在前、同一个项目只构建一次：
+
+```
+myprofessor-backend
+└── tio-boot-admin
+    ├── tio-boot
+    └── java-openai
+→ 实际顺序：tio-boot → java-openai → tio-boot-admin → myprofessor-backend
+```
+
+规则：
+
+- 每次触发都会**重新构建全部依赖**（不做增量缓存），结果确定、不会拿到旧包。
+- 依赖用**同一个分支 / Tag**（触发时传的 `branch` 会透传），但**不继承**触发时传入的 `env` 覆盖——那是给上层项目的参数。依赖自己的项目变量、Secret 与内置变量照常注入。
+- 每条 Run 有**自己的构建号与日志文件**；一次带依赖的触发用 `pipelineId` 串起来，运行详情页会列出「前置构建」并可跳转。
+- **任何一条依赖失败就中止**：后面的依赖与上层项目都不执行，上层 Run 记 `failed`，错误信息与日志直接写明是哪个依赖、哪条 Run 失败。依赖被取消时上层记 `canceled`。
+- 取消流水线里的任意一条 Run，会连带取消同一条流水线里还在跑或排队的其它 Run。
+- 依赖被归档 / 删掉 / 改成应用项目后，触发时会明确报错并指出是哪个依赖，不会静默跳过。
+- 依赖项目之间**同一项目串行**（沿用项目的并发策略），协调器本身不占并发额度，因此不会自锁。
+
+### 建议安装 build 命令（多模块构建）
+
+平台的每条命令都是一段 shell 脚本，工程一多（不同操作系统、不同 `JAVA_HOME`、`mvn -Pproduction` 之类的参数）把构建命令散落在每个项目里就很难维护。
+作者自己的 **go-build** 就是为这件事写的：环境变量与构建命令写进一份配置文件，按当前操作系统挑一组来执行，仓库地址 <https://github.com/litongjava/build>。
+
+**安装（需要 Go 1.21+）**：
+
+```bash
+go install github.com/litongjava/build@latest
+
+# 让 go install 出来的可执行文件进入 PATH（重开终端后生效）
+export PATH="$PATH:$(go env GOPATH)/bin"     # Linux / macOS
+$env:Path += ";$(go env GOPATH)\bin"         # Windows PowerShell（写进 $PROFILE 可持久化）
+
+command -v build                              # 能打印出路径就装好了
+```
+
+> **装在哪台机器**：项目命令是在**服务端所在机器**上执行的，所以 `build` 必须装在服务端机器上（自检见[环境自检与系统设置](#环境自检与系统设置)）。
+> 服务端不方便装 Go 时，在自己机器上交叉编译再传上去即可：
+>
+> ```bash
+> git clone https://github.com/litongjava/build && cd build
+> GOOS=linux GOARCH=amd64 go build -o build .        # 产出 Linux 二进制
+> scp build 'root@<服务器地址>:/usr/local/bin/build' && ssh 'root@<服务器地址>' 'chmod +x /usr/local/bin/build'
+> # 本仓库自带 tools/sshpoke 也能传（密码走 SSHPOKE_PASS 环境变量）：
+> #   sshpoke -host <服务器地址> put .\build /usr/local/bin/build
+> ```
+
+**工程里放一份 `.build.txt`**（不带参数运行时会在当前目录依次找 `.build.txt`、`build.txt`）：
+
+```ini
+[linux.env]
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+
+[linux.build]
+mvn clean package -DskipTests -Pproduction
+
+[win.env]
+set JAVA_HOME=D:\java\jdk-17
+
+[win.build]
+mvn clean package -DskipTests -Pproduction
+
+[mac.env]
+export JAVA_HOME=~/java/jdk-17
+
+[mac.build]
+mvn clean package -DskipTests -Pproduction
+```
+
+**在平台里怎么用**：把项目的某条命令直接写成 `build`（工作目录就是项目工作目录，会自动找到 `.build.txt`），要指定文件就写 `build .build.txt`。
+行为要点：
+
+- 按当前操作系统选 `[win.*]` / `[mac.*]` / `[linux.*]` 段：`set ` / `export ` 开头的行作为环境变量注入，该段其余行按顺序执行（Unix 走 `sh -c`，Windows 走 `cmd /C`）。
+- **任一条命令失败即以退出码 1 结束**，平台的「失败策略」据此把这次运行标记为失败——所以末尾放健康检查仍然有效。
+- 平台注入的内置变量（`WORKDIR`、`PROJECT_KEY`、`BUILD_NUMBER`、`TRIGGER_BY`…）会被子进程继承，可以直接在 `.build.txt` 里用 `${WORKDIR}`。
+- 与[依赖构建](#依赖构建多模块项目)天然配合：底层库的**构建项目**命令写 `build`，上层项目选「含依赖执行」，一次触发就是完整的多模块构建链。
+
+> Java 工程还需要**服务端机器**上有 `java` 与 `mvn`。本次交付的 `192.168.31.97` 上这两项（以及 `go`）都还没装，先按[环境自检与系统设置](#环境自检与系统设置)里的提示补齐，否则 `build` 起来了也会在 `mvn` 这一步失败。
+
 ### 第三步：执行
 
 | 入口 | 操作 |
 |---|---|
-| 网页 | 项目列表或详情点「执行」，也可对某条命令「单独执行」 |
+| 网页 | 项目列表或详情点「执行」（有依赖时可选「仅执行本项目」）；单条命令用「单独执行」 |
 | CLI | `deploy run my-app -f`，实时跟随日志 |
-| HTTP Hook | 下节的 `POST /api/v1/hooks/{token}`，适合 CI 或外部系统 |
+| HTTP Hook | 下节的 `POST /api/v1/hooks/{token}`，Body 带 `"withDependencies": true` 即含依赖构建 |
 
 ### 运行与日志
 
@@ -402,16 +494,16 @@ xterm 日志终端保留 ANSI 颜色，支持暂停自动滚动、滚到底部�
 
 ```bash
 # 默认异步
-curl -X POST 'http://<服务器地址>:8080/api/v1/hooks/<Hook令牌>' \
+curl -X POST 'http://<服务器地址>:10055/api/v1/hooks/<Hook令牌>' \
   -H 'Content-Type: application/json' \
   -d '{"branch":"main","env":{"TAG":"v1.2.3"}}'
 # 同步等待
-curl -X POST 'http://<服务器地址>:8080/api/v1/hooks/<Hook令牌>?wait=true' \
+curl -X POST 'http://<服务器地址>:10055/api/v1/hooks/<Hook令牌>?wait=true' \
   -H 'Content-Type: application/json' -d '{"async":false}'
 # 请求体也可以省略
-curl -X POST 'http://<服务器地址>:8080/api/v1/hooks/<Hook令牌>'
+curl -X POST 'http://<服务器地址>:10055/api/v1/hooks/<Hook令牌>'
 # 令牌改放请求头（不出现在 URL 里，也就不会落进 nginx 的 access_log）
-curl -X POST 'http://<服务器地址>:8080/api/v1/hooks' \
+curl -X POST 'http://<服务器地址>:10055/api/v1/hooks' \
   -H 'X-Deploy-Token: <Hook令牌>' \
   -H 'Content-Type: application/json' -d '{"async":true}'
 ```
@@ -445,7 +537,7 @@ go build -o deploy.exe .
 current: default
 contexts:
   default:
-    server: http://192.168.31.97:8080
+    server: http://192.168.31.97:10055
     token: <你的token>
     user: admin
 ```
@@ -454,8 +546,8 @@ contexts:
 常用命令（替换服务器地址、API 令牌、项目 Key 与运行 ID）：
 
 ```bash
-deploy login -s 'http://<服务器地址>:8080' -u admin
-deploy login -s 'http://<服务器地址>:8080' --token '<API令牌>'
+deploy login -s 'http://<服务器地址>:10055' -u admin
+deploy login -s 'http://<服务器地址>:10055' --token '<API令牌>'
 deploy whoami
 deploy project list
 deploy project get my-app
@@ -465,7 +557,7 @@ deploy logs 88 -f
 deploy runs list --project my-app --status failed
 deploy stop 88
 deploy doctor
-deploy config set server 'http://<另一服务器地址>:8080'
+deploy config set server 'http://<另一服务器地址>:10055'
 deploy version
 ```
 
@@ -501,6 +593,45 @@ deploy version
 监听地址、工作目录等影响进程本身的配置需改配置文件并重启，不在界面热改。
 **凭据管理**支持 `https_token`（用户名 + Token/密码）与 `ssh_key`（私钥），AES-GCM 加密，接口永不返回密文；编辑留空表示不改，被项目引用时禁止删除。
 
+### 一键安装工具链（页面）
+
+「系统设置 → 环境自检」下面还有一块**「工具链一键安装」**：把常用的构建工具链装到服务端机器上，不用登服务器敲命令。
+
+| 组件 | 装什么 | 大致体积 |
+|---|---|---|
+| `cc` | gcc / g++ / make / pkg-config（apt 的 build-essential） | 约 200 MB |
+| `java` | OpenJDK（默认 17，`--java 11/21` 可换）并写 `JAVA_HOME` 到 `/etc/profile.d/java.sh` | 约 180 MB |
+| `maven` | mvn；顺带写一份阿里云镜像 `~/.m2/settings.xml`（已存在则不覆盖） | 约 30 MB |
+| `nvm` | nvm 本体（装到 `/usr/local/nvm`，写 `/etc/profile.d/nvm.sh`） | 约 5 MB |
+| `node` | 经 nvm 装 LTS 并设为默认版本 | 约 60 MB |
+| `pnpm` | 经 corepack 装到 `/usr/local/bin`，registry 指向 npmmirror | 约 10 MB |
+| `go` | 装到 `/usr/local/go` 并软链到 `/usr/local/bin`，`GOPROXY=goproxy.cn` | 约 120 MB |
+| `rust` | 系统级 rustup（`/usr/local/cargo`），crates 走 rsproxy 镜像 | 约 250 MB |
+
+用法：勾选要装的组件 →「安装所选」或直接点「一键安装缺失（n）」→ 先弹确认框 → 点确定后**跳到运行详情页看实时日志**。
+实现上安装就是一次**普通运行**（内置项目 `system-toolchain`），所以取消、重跑、下载日志、日志脱敏全都照旧可用。
+
+要点与边界：
+
+- **仅管理员**可触发（真装软件、走 apt），普通账号只能看状态。
+- **仅 Linux 服务端**：脚本基于 bash + apt/dnf；其他平台可以点「预演」查看计划，或「下载脚本」拿到 Linux 机器上手动跑。
+- **预演（dry-run）**：只打印将要执行的动作，不做任何修改——第一次用建议先预演。
+- **幂等**：已装好的组件默认跳过（要看强制重装可在页面上勾选后仍走安装；脚本层面是 `--force`）。
+- **保守修改**：只写 `/usr/local`、`/etc/profile.d` 和工具自己的配置；**不动 apt 源**，**不覆盖**已有的 `~/.m2/settings.xml` 与 `~/.cargo/config.toml`。
+- **默认国内镜像**（`--mirror off` 关闭）：Go 走阿里云/golang.google.cn，Node 走 npmmirror，Rust 走 rsproxy，npm/pnpm registry 指向 npmmirror，Maven 走阿里云。
+- **nvm 的 node 只在 login shell 可见**：平台默认的 `bash -lc` 没问题；项目 Shell 若选了 `sh`，请改成 `bash` 或写绝对路径。`pnpm`/`go`/`rustc` 有 `/usr/local/bin` 软链，任何 shell 都能用。
+- 想手动跑：页面上「下载脚本」，或直接取仓库里的 `deploy-server/internal/toolchain/install.sh`：
+
+```bash
+bash install.sh --list                 # 只看状态
+bash install.sh --only java,maven,go   # 装指定组件
+bash install.sh --dry-run              # 预演
+bash install.sh --skip rust            # 除 rust 全装
+NODE_VERSION=20 bash install.sh --only node,pnpm   # 指定 Node 大版本
+```
+
+- 装完回到「环境自检」点**重新检测**即可看到新的版本与路径。
+
 ## 排查与测试
 
 **先看响应体 `success`：业务失败也可能返回 HTTP 200，不能仅凭状态码判断成功。** 业务码与格式见 [API 契约](docs/API设计.md)。
@@ -508,6 +639,7 @@ deploy version
 | 现象 | 排查方法 |
 |---|---|
 | 页面正常但实时日志不刷新 | 反代未转发 WebSocket 或开启缓冲，按[反向代理与 HTTPS](#反向代理与-https)补齐配置 |
+| 日志每行越来越往右缩进、长行被拦腰截断（"阶梯"错位） | 前端 xterm 必须设 `convertEol: true`（见 `deploy-server-ui/src/components/LogTerminal`）。日志文件是按 `\n` 写的，而 xterm 默认的 `convertEol:false` 遇到 LF 只下移一行、**不回列首**，于是每行都接在上一行末尾继续画 |
 | Git 准备失败 | 用项目「测试连接」验证地址、凭据；私有仓库先在凭据管理创建凭据 |
 | 「工作目录已存在且不是 Git 仓库」 | 有意拒绝覆盖以防误删；确认内容后清空或换目录 |
 | `command not found` | systemd 的 PATH 很干净；`bash -lc` 加载 `/etc/profile`，工具在其他位置时写全路径 |
@@ -550,7 +682,7 @@ Windows 冒烟脚本（在仓库根目录执行，第二条替换服务器地址
 
 ```powershell
 powershell -File tools\smoke\test-cancel-tree.ps1
-powershell -File tools\smoke\deploy-mosskb-via-api.ps1 -Base 'http://<服务器地址>:8080/api/v1'
+powershell -File tools\smoke\deploy-mosskb-via-api.ps1 -Base 'http://<服务器地址>:10055/api/v1'
 ```
 
 前者按 Windows 进程语义验证孙子进程一并终止；后者用 REST + 显式 UTF-8 请求体完成建项目、部署静态站与健康检查。

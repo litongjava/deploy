@@ -39,7 +39,7 @@ ENV TZ=Asia/Shanghai
 WORKDIR /app
 COPY --from=build /out/deploy-server /usr/local/bin/deploy-server
 VOLUME ["/data", "/workspaces"]
-EXPOSE 8080
+EXPOSE 10055
 # 默认只监听容器内网卡，由外部反代/端口映射暴露，避免无意间裸奔到公网。
 ENTRYPOINT ["deploy-server"]
-CMD ["-listen", "0.0.0.0:8080", "-data-dir", "/data", "-web-root", "/workspaces"]
+CMD ["-listen", "0.0.0.0:10055", "-data-dir", "/data", "-web-root", "/workspaces"]

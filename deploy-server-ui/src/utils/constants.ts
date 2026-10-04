@@ -3,6 +3,7 @@ import type {
   CredentialType,
   FailStrategy,
   PrepareStatus,
+  ProjectKind,
   Run,
   RunStatus,
   ShellType,
@@ -65,6 +66,17 @@ export const CREDENTIAL_TYPE_OPTIONS: { label: string; value: CredentialType }[]
 ];
 
 export const PROJECT_KEY_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
+
+/** 项目类型 → 颜色 + 中文 */
+export const PROJECT_KIND_META: Record<ProjectKind, { color: string; text: string }> = {
+  app: { color: 'blue', text: '应用项目' },
+  lib: { color: 'purple', text: '构建项目' },
+};
+
+export const PROJECT_KIND_OPTIONS: { label: string; value: ProjectKind }[] = [
+  { label: '应用项目', value: 'app' },
+  { label: '构建项目', value: 'lib' },
+];
 
 /** Secret 环境变量的占位符（提交时若仍为该值则保持原值） */
 export const SECRET_PLACEHOLDER = '******';

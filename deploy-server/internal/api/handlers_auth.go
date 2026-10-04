@@ -37,33 +37,33 @@ func (s *Server) bootstrap(c *gin.Context) {
 	var n int64
 	s.st.DB().Model(&store.User{}).Count(&n)
 	if n > 0 {
-		Conflict(c, "系统已初始化，无法重复创建管理员")
+		Conflict(c, "the system is already initialized; cannot create another admin")
 		return
 	}
 	var req bootstrapReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		BadRequest(c, "用户名至少 3 位、密码至少 8 位")
+		BadRequest(c, "username must be at least 3 characters and password at least 8")
 		return
 	}
 	hash, err := HashPassword(req.Password)
 	if err != nil {
-		Internal(c, "生成密码哈希失败")
+		Internal(c, "failed to hash the password")
 		return
 	}
 	u := store.User{
 		Username: strings.TrimSpace(req.Username), PasswordHash: hash,
-		Nickname: "管理员", Role: "admin", Status: "active",
+		Nickname: "Admin", Role: "admin", Status: "active",
 	}
 	if err := s.st.DB().Create(&u).Error; err != nil {
-		Conflict(c, "创建管理员失败："+err.Error())
+		Conflict(c, "failed to create admin: "+err.Error())
 		return
 	}
 	token, exp, err := s.auth.Issue(&u)
 	if err != nil {
-		Internal(c, "签发令牌失败")
+		Internal(c, "failed to issue token")
 		return
 	}
-	s.st.Audit(u.ID, u.Username, "bootstrap", "system", "创建初始管理员", ClientIP(c))
+	s.st.Audit(u.ID, u.Username, "bootstrap", "system", "create the initial admin", ClientIP(c))
 	OK(c, gin.H{"token": token, "expiresAt": exp.Unix(), "user": toUserDTO(&u)})
 }
 
@@ -75,27 +75,27 @@ type loginReq struct {
 func (s *Server) login(c *gin.Context) {
 	var req loginReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		BadRequest(c, "请填写用户名与密码")
+		BadRequest(c, "username and password are required")
 		return
 	}
 	if locked, wait := guard.locked(req.Username); locked {
-		RateLimited(c, "登录失败次数过多，请 "+wait.Round(time.Second).String()+" 后再试")
+		RateLimited(c, "too many failed login attempts, please wait "+wait.Round(time.Second).String()+" before trying again")
 		return
 	}
 
 	var u store.User
 	if err := s.st.DB().Where("username = ?", strings.TrimSpace(req.Username)).First(&u).Error; err != nil {
 		guard.fail(req.Username)
-		Unauthorized(c, "用户名或密码错误")
+		Unauthorized(c, "incorrect username or password")
 		return
 	}
 	if !CheckPassword(u.PasswordHash, req.Password) {
 		guard.fail(req.Username)
-		Unauthorized(c, "用户名或密码错误")
+		Unauthorized(c, "incorrect username or password")
 		return
 	}
 	if u.Status != "active" {
-		Forbidden(c, "账号已被禁用，请联系管理员")
+		Forbidden(c, "account is disabled, please contact an admin")
 		return
 	}
 	guard.reset(req.Username)
@@ -106,7 +106,7 @@ func (s *Server) login(c *gin.Context) {
 
 	token, exp, err := s.auth.Issue(&u)
 	if err != nil {
-		Internal(c, "签发令牌失败")
+		Internal(c, "failed to issue token")
 		return
 	}
 	s.st.Audit(u.ID, u.Username, "login", "user", "", ClientIP(c))
@@ -133,21 +133,21 @@ type changePasswordReq struct {
 func (s *Server) changePassword(c *gin.Context) {
 	var req changePasswordReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		BadRequest(c, "新密码长度至少 8 位")
+		BadRequest(c, "the new password must be at least 8 characters")
 		return
 	}
 	u := CurrentUser(c)
 	if !CheckPassword(u.PasswordHash, req.OldPassword) {
-		BadRequest(c, "原密码不正确")
+		BadRequest(c, "the current password is incorrect")
 		return
 	}
 	if req.OldPassword == req.NewPassword {
-		BadRequest(c, "新密码不能与原密码相同")
+		BadRequest(c, "the new password must differ from the current one")
 		return
 	}
 	hash, err := HashPassword(req.NewPassword)
 	if err != nil {
-		Internal(c, "生成密码哈希失败")
+		Internal(c, "failed to hash the password")
 		return
 	}
 	s.st.DB().Model(&store.User{}).Where("id = ?", u.ID).Updates(map[string]any{
@@ -189,7 +189,7 @@ type createUserReq struct {
 func (s *Server) createUser(c *gin.Context) {
 	var req createUserReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		BadRequest(c, "用户名至少 3 位、密码至少 8 位")
+		BadRequest(c, "username must be at least 3 characters and password at least 8")
 		return
 	}
 	role := req.Role
@@ -198,7 +198,7 @@ func (s *Server) createUser(c *gin.Context) {
 	}
 	hash, err := HashPassword(req.Password)
 	if err != nil {
-		Internal(c, "生成密码哈希失败")
+		Internal(c, "failed to hash the password")
 		return
 	}
 	u := store.User{
@@ -207,7 +207,7 @@ func (s *Server) createUser(c *gin.Context) {
 		MustChangePassword: true,
 	}
 	if err := s.st.DB().Create(&u).Error; err != nil {
-		Conflict(c, "创建失败，用户名可能已存在")
+		Conflict(c, "creation failed; the username may already exist")
 		return
 	}
 	s.audit(c, "create-user", u.Username, "role="+role)
@@ -228,12 +228,12 @@ func (s *Server) updateUser(c *gin.Context) {
 	}
 	var req updateUserReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		BadRequest(c, "参数不合法")
+		BadRequest(c, "invalid parameters")
 		return
 	}
 	var u store.User
 	if err := s.st.DB().First(&u, id).Error; err != nil {
-		NotFound(c, "用户不存在")
+		NotFound(c, "user not found")
 		return
 	}
 	cur := CurrentUser(c)
@@ -242,12 +242,12 @@ func (s *Server) updateUser(c *gin.Context) {
 	if req.Role == "admin" || req.Role == "user" {
 		// 不允许把自己降级，避免把自己锁在外面。
 		if u.ID == cur.ID && req.Role != "admin" {
-			BadRequest(c, "不能取消自己的管理员权限")
+			BadRequest(c, "you cannot revoke your own admin rights")
 			return
 		}
 		if u.Role == "admin" && req.Role != "admin" {
 			if n := s.countActiveAdmins(); n <= 1 {
-				BadRequest(c, "系统必须保留至少一个管理员")
+				BadRequest(c, "the system must keep at least one admin")
 				return
 			}
 		}
@@ -255,7 +255,7 @@ func (s *Server) updateUser(c *gin.Context) {
 	}
 	if req.Status == "active" || req.Status == "disabled" {
 		if u.ID == cur.ID && req.Status != "active" {
-			BadRequest(c, "不能禁用自己")
+			BadRequest(c, "you cannot disable yourself")
 			return
 		}
 		updates["status"] = req.Status
@@ -273,16 +273,16 @@ func (s *Server) deleteUser(c *gin.Context) {
 	}
 	cur := CurrentUser(c)
 	if id == cur.ID {
-		BadRequest(c, "不能删除自己")
+		BadRequest(c, "you cannot delete yourself")
 		return
 	}
 	var u store.User
 	if err := s.st.DB().First(&u, id).Error; err != nil {
-		NotFound(c, "用户不存在")
+		NotFound(c, "user not found")
 		return
 	}
 	if u.Role == "admin" && s.countActiveAdmins() <= 1 {
-		BadRequest(c, "系统必须保留至少一个管理员")
+		BadRequest(c, "the system must keep at least one admin")
 		return
 	}
 	// 用户拥有的项目不删，只把归属转到当前管理员，避免项目变成孤儿。
@@ -311,17 +311,17 @@ func (s *Server) resetUserPassword(c *gin.Context) {
 	}
 	var req resetPasswordReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		BadRequest(c, "新密码长度至少 8 位")
+		BadRequest(c, "the new password must be at least 8 characters")
 		return
 	}
 	var u store.User
 	if err := s.st.DB().First(&u, id).Error; err != nil {
-		NotFound(c, "用户不存在")
+		NotFound(c, "user not found")
 		return
 	}
 	hash, err := HashPassword(req.NewPassword)
 	if err != nil {
-		Internal(c, "生成密码哈希失败")
+		Internal(c, "failed to hash the password")
 		return
 	}
 	s.st.DB().Model(&store.User{}).Where("id = ?", id).Updates(map[string]any{
@@ -352,7 +352,7 @@ type createTokenReq struct {
 func (s *Server) createToken(c *gin.Context) {
 	var req createTokenReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		BadRequest(c, "请填写令牌名称")
+		BadRequest(c, "token name is required")
 		return
 	}
 	u := CurrentUser(c)
@@ -366,7 +366,7 @@ func (s *Server) createToken(c *gin.Context) {
 		t.ExpiresAt = &exp
 	}
 	if err := s.st.DB().Create(&t).Error; err != nil {
-		Internal(c, "创建令牌失败")
+		Internal(c, "failed to create token")
 		return
 	}
 	s.audit(c, "create-token", req.Name, "")
@@ -386,7 +386,7 @@ func (s *Server) deleteToken(c *gin.Context) {
 	u := CurrentUser(c)
 	res := s.st.DB().Where("id = ? AND user_id = ?", id, u.ID).Delete(&store.APIToken{})
 	if res.RowsAffected == 0 {
-		NotFound(c, "令牌不存在")
+		NotFound(c, "token not found")
 		return
 	}
 	s.audit(c, "delete-token", "", "")

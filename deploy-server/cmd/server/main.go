@@ -3,7 +3,7 @@
 // 单二进制交付：HTTP API + WebSocket 实时日志 + 执行引擎 + 内嵌前端 + SQLite。
 // 用法：
 //
-//	deploy-server -listen 0.0.0.0:8080 -data-dir /srv/deploy/data -web-root /srv/deploy/workspaces
+//	deploy-server -listen 0.0.0.0:10055 -data-dir /srv/deploy/data -web-root /srv/deploy/workspaces
 package main
 
 import (
@@ -20,6 +20,7 @@ import (
 
 	"deploy-server/internal/api"
 	"deploy-server/internal/config"
+	"deploy-server/internal/metrics"
 	"deploy-server/internal/runner"
 	"deploy-server/internal/secret"
 	"deploy-server/internal/store"
@@ -40,25 +41,25 @@ func main() {
 
 	cfg, err := config.Load(os.Args[1:])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "加载配置失败: %v\n", err)
+		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
 		os.Exit(1)
 	}
 
 	setupLogger()
 
-	slog.Info("启动 deploy-server", "version", version, "listen", cfg.Listen)
-	slog.Info("数据目录", "dataDir", cfg.DataDir, "configFile", cfg.ConfigPath)
+	slog.Info("starting deploy-server", "version", version, "listen", cfg.Listen)
+	slog.Info("data directory", "dataDir", cfg.DataDir, "configFile", cfg.ConfigPath)
 
 	st, err := store.Open(cfg.DBPath())
 	if err != nil {
-		slog.Error("打开数据库失败", "err", err)
+		slog.Error("failed to open database", "err", err)
 		os.Exit(1)
 	}
 	defer st.Close()
 
 	box, err := secret.New(cfg.SecretKey)
 	if err != nil {
-		slog.Error("初始化加密模块失败", "err", err)
+		slog.Error("failed to initialize crypto module", "err", err)
 		os.Exit(1)
 	}
 
@@ -75,12 +76,20 @@ func main() {
 	// 把上一个进程留下的 running/queued 标记为中断。
 	// 不这样做的话，重启后界面上会一直挂着一堆「运行中」，但进程早就没了。
 	if n, err := exec.RecoverInterrupted(); err != nil {
-		slog.Warn("恢复中断的运行记录失败", "err", err)
+		slog.Warn("failed to recover interrupted runs", "err", err)
 	} else if n > 0 {
-		slog.Warn("已把服务重启前未结束的运行标记为中断", "count", n)
+		slog.Warn("marked runs left unfinished by the previous process as interrupted", "count", n)
 	}
 
 	srv := api.NewServer(cfg, st, box, exec, version)
+
+	// 服务器资源采样（顶层菜单「服务器」页面用）。
+	//
+	// 在这里主动启动而不是等第一次请求：CPU 使用率是两次采样的差分，
+	// 早启动 3 秒就能让用户第一次打开页面看到真实数字，
+	// 而不是「采样中」。采样本身只是个后台 goroutine，开销可以忽略。
+	metrics.Start(0)
+	defer metrics.Stop()
 
 	httpSrv := &http.Server{
 		Addr:              cfg.Listen,
@@ -91,9 +100,9 @@ func main() {
 	}
 
 	go func() {
-		slog.Info("HTTP 服务已就绪", "url", cfg.ServerURL)
+		slog.Info("HTTP server ready", "url", cfg.ServerURL)
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.Error("HTTP 服务退出", "err", err)
+			slog.Error("HTTP server exited", "err", err)
 			os.Exit(1)
 		}
 	}()
@@ -105,19 +114,19 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	slog.Info("收到退出信号，开始优雅关闭")
+	slog.Info("received shutdown signal, starting graceful shutdown")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	if err := httpSrv.Shutdown(ctx); err != nil {
-		slog.Warn("HTTP 关闭超时", "err", err)
+		slog.Warn("timed out waiting for the HTTP server to shut down", "err", err)
 	}
 	stopCleanup()
 
 	if !exec.Wait(60 * time.Second) {
-		slog.Warn("仍有运行未结束，进程即将退出（下次启动会被标记为中断）")
+		slog.Warn("some runs are still active; exiting anyway (they are marked interrupted on next start)")
 	}
-	slog.Info("已退出")
+	slog.Info("exited")
 }
 
 func setupLogger() {
@@ -135,9 +144,9 @@ func startCleanup(srv *api.Server) func() {
 	go func() {
 		run := func() {
 			if n, err := srv.CleanupOldRuns(); err != nil {
-				slog.Warn("清理历史运行失败", "err", err)
+				slog.Warn("failed to prune old runs", "err", err)
 			} else if n > 0 {
-				slog.Info("已清理过期运行记录", "count", n)
+				slog.Info("pruned expired runs", "count", n)
 			}
 		}
 		run()

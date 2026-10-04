@@ -54,7 +54,7 @@ func (s *Server) createHook(c *gin.Context) {
 
 	plain, prefix := ids.NewHookToken()
 	h := store.HookToken{
-		ProjectID: p.ID, Name: defaultStr(req.Name, "默认令牌"),
+		ProjectID: p.ID, Name: defaultStr(req.Name, "default token"),
 		Prefix: prefix, TokenHash: ids.HashToken(plain), Enabled: true,
 	}
 	if req.ExpiresInDays > 0 {
@@ -62,7 +62,7 @@ func (s *Server) createHook(c *gin.Context) {
 		h.ExpiresAt = &exp
 	}
 	if err := s.st.DB().Create(&h).Error; err != nil {
-		Internal(c, "创建 Hook 令牌失败")
+		Internal(c, "failed to create hook token")
 		return
 	}
 	s.audit(c, "create-hook", p.Key, h.Name)
@@ -85,7 +85,7 @@ func (s *Server) deleteHook(c *gin.Context) {
 	}
 	var h store.HookToken
 	if err := s.st.DB().First(&h, id).Error; err != nil {
-		NotFound(c, "Hook 令牌不存在")
+		NotFound(c, "hook token not found")
 		return
 	}
 	if _, _, ok := s.loadProjectForEdit(c, keyOf(h.ProjectID, s)); !ok {
@@ -103,7 +103,7 @@ func (s *Server) resetHook(c *gin.Context) {
 	}
 	var h store.HookToken
 	if err := s.st.DB().First(&h, id).Error; err != nil {
-		NotFound(c, "Hook 令牌不存在")
+		NotFound(c, "hook token not found")
 		return
 	}
 	p, _, ok := s.loadProjectForEdit(c, keyOf(h.ProjectID, s))
@@ -125,6 +125,8 @@ type hookTriggerReq struct {
 	CommandIDs     []uint            `json:"commandIds"`
 	Async          *bool             `json:"async"`
 	IdempotencyKey string            `json:"idempotencyKey"`
+	// WithDependencies 为真时先按依赖顺序构建依赖的构建项目（见 §4.5）。
+	WithDependencies bool `json:"withDependencies"`
 }
 
 type rateBucket struct {
@@ -165,39 +167,39 @@ func (s *Server) hookTrigger(c *gin.Context) {
 		raw = c.GetHeader("X-Deploy-Token")
 	}
 	if raw == "" {
-		Unauthorized(c, "缺少 Hook 令牌")
+		Unauthorized(c, "missing hook token")
 		return
 	}
 
 	var h store.HookToken
 	if err := s.st.DB().Where("token_hash = ?", ids.HashToken(raw)).First(&h).Error; err != nil {
-		Unauthorized(c, "Hook 令牌无效")
+		Unauthorized(c, "invalid hook token")
 		return
 	}
 	if !h.Enabled {
-		Forbidden(c, "Hook 令牌已被禁用")
+		Forbidden(c, "hook token is disabled")
 		return
 	}
 	if h.ExpiresAt != nil && time.Now().After(*h.ExpiresAt) {
-		Unauthorized(c, "Hook 令牌已过期")
+		Unauthorized(c, "hook token has expired")
 		return
 	}
 	if !hookLimiter.allow(h.ID, s.effectiveHookLimit()) {
-		RateLimited(c, "触发过于频繁，请稍后再试")
+		RateLimited(c, "triggered too frequently, try again later")
 		return
 	}
 
 	var p store.Project
 	if err := s.st.DB().First(&p, h.ProjectID).Error; err != nil {
-		NotFound(c, "项目不存在")
+		NotFound(c, "project not found")
 		return
 	}
 	if !p.HookEnabled {
-		Forbidden(c, "该项目的 Hook 触发已被关闭")
+		Forbidden(c, "hook triggering is disabled for this project")
 		return
 	}
 	if p.Archived {
-		Forbidden(c, "项目已归档，不能触发部署")
+		Forbidden(c, "the project is archived; cannot trigger a deployment")
 		return
 	}
 
@@ -218,7 +220,7 @@ func (s *Server) hookTrigger(c *gin.Context) {
 		"last_used_at": now, "last_used_ip": ip, "call_count": h.CallCount + 1,
 	})
 
-	run, err := s.exec.Submit(runner.SubmitRequest{
+	res, err := s.exec.SubmitWithDependencies(runner.SubmitRequest{
 		ProjectID:   p.ID,
 		Ref:         req.Branch,
 		Params:      req.Env,
@@ -227,22 +229,35 @@ func (s *Server) hookTrigger(c *gin.Context) {
 		TriggerUser: "hook:" + h.Name,
 		TriggerIP:   ip,
 		TriggerUA:   c.GetHeader("User-Agent"),
-	})
+	}, req.WithDependencies)
 	if err != nil {
 		if errors.Is(err, runner.ErrProjectArchived) {
 			Forbidden(c, err.Error())
 			return
 		}
-		Internal(c, "触发失败: "+err.Error())
+		if errors.Is(err, runner.ErrDependency) {
+			BadRequest(c, err.Error())
+			return
+		}
+		Internal(c, "trigger failed: "+err.Error())
 		return
 	}
+	run := res.Main
 
 	payload := gin.H{
 		"runId": run.ID, "projectKey": p.Key, "buildNumber": run.BuildNumber,
-		"status":    run.Status,
-		"async":     async,
-		"statusUrl": "/api/v1/runs/" + strconvItoa(int(run.ID)),
-		"logUrl":    "/api/v1/runs/" + strconvItoa(int(run.ID)) + "/log",
+		"status":     run.Status,
+		"async":      async,
+		"pipelineId": res.PipelineID,
+		"statusUrl":  "/api/v1/runs/" + strconvItoa(int(run.ID)),
+		"logUrl":     "/api/v1/runs/" + strconvItoa(int(run.ID)) + "/log",
+	}
+	if len(res.Deps) > 0 {
+		deps := make([]gin.H, 0, len(res.Deps))
+		for _, d := range res.Deps {
+			deps = append(deps, gin.H{"key": d.ProjectKey, "runId": d.ID, "buildNumber": d.BuildNumber})
+		}
+		payload["dependencies"] = deps
 	}
 
 	if async {

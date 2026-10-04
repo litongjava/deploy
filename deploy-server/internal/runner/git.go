@@ -76,7 +76,7 @@ func (e *Executor) prepareGit(ctx context.Context, p *store.Project, ref, workdi
 		// 目录存在且有内容但不是 git 仓库：拒绝继续，避免把用户的东西覆盖掉。
 		if entries, err := os.ReadDir(workdir); err == nil && len(entries) > 0 {
 			return info, ge.secrets, fmt.Errorf(
-				"工作目录 %s 已存在且不是 Git 仓库（含 %d 个条目），为安全起见拒绝 clone。请清空该目录或改用一个新目录",
+				"workdir %s already exists and is not a Git repository (%d entries); refusing to clone for safety. Empty that directory or use a new one",
 				workdir, len(entries))
 		}
 		if err := os.MkdirAll(filepath.Dir(workdir), 0o750); err != nil {
@@ -97,21 +97,21 @@ func (e *Executor) prepareGit(ctx context.Context, p *store.Project, ref, workdi
 
 		fmt.Fprintf(out, "$ git clone %s (%s)\n", p.GitURL, ref)
 		if code, err := runCommand(ctx, "git", args, "", env, out, nil); err != nil || code != 0 {
-			return info, ge.secrets, fmt.Errorf("git clone 失败（退出码 %d）: %v", code, err)
+			return info, ge.secrets, fmt.Errorf("git clone failed (exit code %d): %v", code, err)
 		}
 		if isSHA {
 			if code, err := runCommand(ctx, "git", []string{"checkout", "-f", ref}, workdir, env, out, nil); err != nil || code != 0 {
-				return info, ge.secrets, fmt.Errorf("checkout %s 失败（退出码 %d）", ref, code)
+				return info, ge.secrets, fmt.Errorf("checkout %s failed (exit code %d)", ref, code)
 			}
 		}
 	} else {
 		if code, err := runCommand(ctx, "git", []string{"fetch", "--prune", "--tags", "origin"}, workdir, env, out, nil); err != nil || code != 0 {
-			return info, ge.secrets, fmt.Errorf("git fetch 失败（退出码 %d）: %v", code, err)
+			return info, ge.secrets, fmt.Errorf("git fetch failed (exit code %d): %v", code, err)
 		}
 
 		if isSHA {
 			if code, _ := runCommand(ctx, "git", []string{"checkout", "-f", ref}, workdir, env, out, nil); code != 0 {
-				return info, ge.secrets, fmt.Errorf("checkout %s 失败（退出码 %d）", ref, code)
+				return info, ge.secrets, fmt.Errorf("checkout %s failed (exit code %d)", ref, code)
 			}
 		} else {
 			// 先试「作为远端分支对齐」。第一次拉取、分支被 rebase 过都能靠它收敛。
@@ -119,7 +119,7 @@ func (e *Executor) prepareGit(ctx context.Context, p *store.Project, ref, workdi
 			if code != 0 {
 				// 不是分支（可能是 tag），退回普通 checkout。
 				if code2, _ := runCommand(ctx, "git", []string{"checkout", "-f", ref}, workdir, env, out, nil); code2 != 0 {
-					return info, ge.secrets, fmt.Errorf("checkout %s 失败（既不是分支也不是可用的 ref）", ref)
+					return info, ge.secrets, fmt.Errorf("checkout %s failed (neither a branch nor a usable ref)", ref)
 				}
 			}
 		}
@@ -127,12 +127,12 @@ func (e *Executor) prepareGit(ctx context.Context, p *store.Project, ref, workdi
 		if p.GitClean {
 			// gitClean 会删掉未跟踪文件，属危险操作，前端必须二次确认。
 			if code, _ := runCommand(ctx, "git", []string{"clean", "-fdx"}, workdir, env, out, nil); code != 0 {
-				fmt.Fprintln(out, "*** git clean 返回非 0，已忽略 ***")
+				fmt.Fprintln(out, "*** git clean returned non-zero, ignored ***")
 			}
 		}
 		if p.GitSubmodule {
 			if code, _ := runCommand(ctx, "git", []string{"submodule", "update", "--init", "--recursive"}, workdir, env, out, nil); code != 0 {
-				return info, ge.secrets, fmt.Errorf("submodule 更新失败（退出码 %d）", code)
+				return info, ge.secrets, fmt.Errorf("submodule update failed (exit code %d)", code)
 			}
 		}
 	}
@@ -169,12 +169,12 @@ func (e *Executor) TestGitAccess(ctx context.Context, gitURL string, credID *uin
 	var buf bytes.Buffer
 	code, err := runCommand(ctx, "git", []string{"ls-remote", "--heads", "--tags", gitURL}, "", env, &buf, nil)
 	if err != nil {
-		return "", fmt.Errorf("执行 git 失败: %w", err)
+		return "", fmt.Errorf("failed to run git: %w", err)
 	}
 	if code != 0 {
 		msg := strings.TrimSpace(buf.String())
 		if msg == "" {
-			msg = fmt.Sprintf("git ls-remote 返回退出码 %d（常见原因：地址错误、凭据无效、网络不通）", code)
+			msg = fmt.Sprintf("git ls-remote returned exit code %d (common causes: wrong URL, invalid credentials, no network)", code)
 		}
 		return "", errors.New(redact(msg, ge.secrets))
 	}
@@ -217,7 +217,7 @@ func (e *Executor) buildGitEnv(p *store.Project) (*gitEnv, error) {
 
 	var cred store.Credential
 	if err := e.st.DB().First(&cred, *p.GitCredentialID).Error; err != nil {
-		return nil, fmt.Errorf("凭据 %d 不存在: %w", *p.GitCredentialID, err)
+		return nil, fmt.Errorf("credential %d not found: %w", *p.GitCredentialID, err)
 	}
 
 	plain, err := e.box.Decrypt(cred.SecretEnc)
@@ -279,13 +279,13 @@ func (e *Executor) buildGitEnv(p *store.Project) (*gitEnv, error) {
 		if passphrase != "" {
 			// 带口令的私钥需要 ssh-agent，MVP 阶段明确不支持，给出可操作的错误。
 			ge.close()
-			return nil, fmt.Errorf("暂不支持带 passphrase 的 SSH 私钥，请改用 https_token 凭据或生成无口令密钥")
+			return nil, fmt.Errorf("SSH keys with a passphrase are not supported yet; use an https_token credential or generate a key without a passphrase")
 		}
 		ge.secrets = append(ge.secrets, plain)
 
 	default:
 		ge.close()
-		return nil, fmt.Errorf("未知的凭据类型: %s", cred.Type)
+		return nil, fmt.Errorf("unknown credential type: %s", cred.Type)
 	}
 
 	return ge, nil

@@ -11,7 +11,7 @@ import {
 } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
 import { history } from '@umijs/max';
-import { Button, Card, Col, Empty, List, Row, Space, Statistic, Table, Tag, message } from 'antd';
+import { Button, Card, Col, Dropdown, Empty, List, Row, Space, Statistic, Table, Tag, message } from 'antd';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 const REFRESH_MS = 10000;
@@ -67,10 +67,15 @@ const Dashboard: React.FC = () => {
     return { running, queued, todaySuccess, todayFailed, total: runs.length };
   }, [runs]);
 
-  const handleRun = async (key: string) => {
+  const handleRun = async (key: string, withDependencies = false) => {
     try {
-      const res = await projectApi.run(key);
-      messageApi.success(`已触发 #${res.buildNumber}，正在跳转日志…`);
+      const res = await projectApi.run(key, { withDependencies });
+      const depCount = res?.dependencies?.length || 0;
+      messageApi.success(
+        withDependencies && depCount > 0
+          ? `已触发 #${res.buildNumber}，先构建 ${depCount} 个依赖…`
+          : `已触发 #${res.buildNumber}，正在跳转日志…`,
+      );
       history.push(`/runs/${res.runId}`);
     } catch (e) {
       // 已统一提示
@@ -88,7 +93,7 @@ const Dashboard: React.FC = () => {
           key="new"
           type="primary"
           icon={<ThunderboltOutlined />}
-          onClick={() => history.push('/projects/edit')}
+          onClick={() => history.push('/projects/new')}
         >
           新建项目
         </Button>,
@@ -207,15 +212,33 @@ const Dashboard: React.FC = () => {
               renderItem={(item) => (
                 <List.Item
                   actions={[
-                    <Button
-                      key="run"
-                      type="link"
-                      size="small"
-                      disabled={item.archived}
-                      onClick={() => handleRun(item.key)}
-                    >
-                      执行
-                    </Button>,
+                    (item.dependencies || []).length > 0 && !item.archived ? (
+                      <Dropdown
+                        key="run"
+                        trigger={['click']}
+                        menu={{
+                          items: [
+                            { key: 'with-deps', label: '含依赖执行（推荐）' },
+                            { key: 'only', label: '仅执行本项目' },
+                          ],
+                          onClick: ({ key }) => handleRun(item.key, key === 'with-deps'),
+                        }}
+                      >
+                        <Button type="link" size="small">
+                          执行
+                        </Button>
+                      </Dropdown>
+                    ) : (
+                      <Button
+                        key="run"
+                        type="link"
+                        size="small"
+                        disabled={item.archived}
+                        onClick={() => handleRun(item.key)}
+                      >
+                        执行
+                      </Button>
+                    ),
                     <a key="detail" onClick={() => history.push(`/projects/${item.key}`)}>
                       详情
                     </a>,

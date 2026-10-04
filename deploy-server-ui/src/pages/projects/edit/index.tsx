@@ -4,14 +4,23 @@ import type {
   CommandInput,
   Credential,
   EnvVar,
+  ProjectBrief,
   ProjectInput,
+  ProjectKind,
 } from '@/services/types';
-import { SECRET_PLACEHOLDER, SHELL_OPTIONS, CONCURRENCY_OPTIONS } from '@/utils/constants';
+import {
+  PROJECT_KIND_META,
+  PROJECT_KIND_OPTIONS,
+  SECRET_PLACEHOLDER,
+  SHELL_OPTIONS,
+  CONCURRENCY_OPTIONS,
+} from '@/utils/constants';
 import { ArrowLeftOutlined, SaveOutlined } from '@ant-design/icons';
 import {
   PageContainer,
   ProForm,
   ProFormDigit,
+  ProFormRadio,
   ProFormSelect,
   ProFormSwitch,
   ProFormText,
@@ -33,6 +42,10 @@ interface FormValues {
   concurrency?: string;
   hookEnabled?: boolean;
   allowEnvOverride?: boolean;
+  /** 项目类型：app 应用项目 | lib 构建项目 */
+  kind?: ProjectKind;
+  /** 依赖的构建项目 key（含依赖执行时先构建它们） */
+  dependencies?: string[];
   useGit?: boolean;
   gitUrl?: string;
   gitBranch?: string;
@@ -55,9 +68,15 @@ const ProjectEdit: React.FC = () => {
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [credentials, setCredentials] = useState<Credential[]>([]);
+  const [libProjects, setLibProjects] = useState<ProjectBrief[]>([]);
+  const [dependencyPlan, setDependencyPlan] = useState<{ ok: boolean; error?: string; order: string[] }>({
+    ok: true,
+    order: [],
+  });
   const [doctorWarning, setDoctorWarning] = useState<string>('');
   const [messageApi, contextHolder] = message.useMessage();
   const useGit = Form.useWatch('useGit', form);
+  const kind = Form.useWatch('kind', form);
   const originalEnvsRef = useRef<EnvVar[]>([]);
 
   const load = useCallback(async () => {
@@ -76,6 +95,8 @@ const ProjectEdit: React.FC = () => {
         concurrency: project.concurrency,
         hookEnabled: project.hookEnabled,
         allowEnvOverride: project.allowEnvOverride,
+        kind: project.kind || 'app',
+        dependencies: project.dependencies || [],
         useGit: project.useGit,
         gitUrl: project.gitUrl,
         gitBranch: project.gitBranch,
@@ -102,6 +123,11 @@ const ProjectEdit: React.FC = () => {
         })),
       };
       form.setFieldsValue(values);
+      setDependencyPlan({
+        ok: project.dependencyPlan?.ok !== false,
+        error: project.dependencyPlan?.error,
+        order: (project.dependencyPlan?.order || []).map((d) => d.key),
+      });
     } catch (e) {
       // 统一错误提示
     } finally {
@@ -113,11 +139,16 @@ const ProjectEdit: React.FC = () => {
     load();
   }, [load]);
 
-  // 凭据列表 + 环境自检提示（缺 git 但开了 useGit 时给个警告）
+  // 凭据列表 + 可选的依赖项目（构建项目）+ 环境自检提示
   useEffect(() => {
     credentialApi
       .list()
       .then((list) => setCredentials(list || []))
+      .catch(() => undefined);
+    // 只有「构建项目」能被选为依赖，所以这里只拉 kind=lib
+    projectApi
+      .list({ page: 1, pageSize: 200, kind: 'lib' })
+      .then((res) => setLibProjects(res?.list || []))
       .catch(() => undefined);
     systemApi
       .doctor()
@@ -137,6 +168,19 @@ const ProjectEdit: React.FC = () => {
         value: c.id,
       })),
     [credentials],
+  );
+
+  /** 依赖下拉：只列构建项目，排除自己 */
+  const dependencyOptions = useMemo(
+    () =>
+      (libProjects || [])
+        .filter((p) => !isEdit || p.key !== editKey)
+        .map((p) => ({
+          label: `${p.name}（${p.key}）${p.archived ? ' · 已归档' : ''}`,
+          value: p.key,
+          disabled: p.archived,
+        })),
+    [libProjects, isEdit, editKey],
   );
 
   const handleSubmit = async (values: FormValues) => {
@@ -184,6 +228,8 @@ const ProjectEdit: React.FC = () => {
         concurrency: values.concurrency as any,
         hookEnabled: values.hookEnabled !== false,
         useGit: !!values.useGit,
+        kind: (values.kind || 'app') as ProjectKind,
+        dependencies: values.dependencies || [],
         gitUrl: values.useGit ? values.gitUrl || '' : '',
         gitBranch: values.gitBranch || 'main',
         gitCredentialId: values.useGit ? (values.gitCredentialId ?? null) : null,
@@ -260,6 +306,8 @@ const ProjectEdit: React.FC = () => {
           concurrency: 'queue',
           hookEnabled: true,
           allowEnvOverride: true,
+          kind: 'app',
+          dependencies: [],
           useGit: false,
           gitBranch: 'main',
           gitDepth: 0,
@@ -331,6 +379,58 @@ const ProjectEdit: React.FC = () => {
             label="允许触发时覆盖环境变量"
             tooltip="关闭后 Hook / CLI / 网页触发的 env 参数会被忽略"
           />
+        </Card>
+
+        <Card title="项目类型与依赖构建" style={{ marginBottom: 16 }}>
+          <ProFormRadio.Group
+            name="kind"
+            label="项目类型"
+            width="md"
+            options={PROJECT_KIND_OPTIONS}
+            tooltip="应用项目=常规的构建/部署单元；构建项目=产出被依赖的产物（底层库），只有构建项目能作为别的项目的依赖"
+            rules={[{ required: true, message: '请选择项目类型' }]}
+          />
+          <Alert
+            style={{ marginBottom: 12 }}
+            type="info"
+            showIcon
+            message={PROJECT_KIND_META[(kind as ProjectKind) || 'app'].text}
+            description={
+              (kind || 'app') === 'lib'
+                ? '构建项目：被别的项目依赖时先构建它，它自己也可以依赖更底层的构建项目（多模块/父 pom 场景）。命令通常是 mvn install / go build 之类产生产物的步骤。'
+                : '应用项目：可声明依赖的构建项目，执行时先按顺序构建它们（网页上点「执行」默认含依赖）。'
+            }
+          />
+          <ProFormSelect
+            name="dependencies"
+            label="依赖的构建项目"
+            width="xl"
+            mode="multiple"
+            allowClear
+            options={dependencyOptions}
+            placeholder="可多选；只列出「构建项目」"
+            tooltip="含依赖执行时，先按依赖顺序构建这些项目，全部成功后才执行本项目。直接依赖会自动递归展开；构建项目之间也可以互相依赖（例如 tio-boot-admin 依赖 tio-boot）。"
+            fieldProps={{ optionFilterProp: 'label' }}
+          />
+          {isEdit && dependencyPlan.order.length > 0 ? (
+            dependencyPlan.ok ? (
+              <Alert
+                style={{ marginBottom: 12 }}
+                type="success"
+                showIcon
+                message="构建顺序（含依赖执行时）"
+                description={dependencyPlan.order.join('  →  ') + `  →  ${editKey}`}
+              />
+            ) : (
+              <Alert
+                style={{ marginBottom: 12 }}
+                type="error"
+                showIcon
+                message="依赖配置当前不可用"
+                description={dependencyPlan.error}
+              />
+            )
+          ) : null}
         </Card>
 
         <Card title="Git 准备阶段" style={{ marginBottom: 16 }}>

@@ -67,7 +67,7 @@ func (a *AuthManager) Parse(raw string) (*Claims, error) {
 	var claims Claims
 	_, err := jwt.ParseWithClaims(raw, &claims, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("签名算法不符")
+			return nil, errors.New("unexpected signing method")
 		}
 		return a.secret, nil
 	})
@@ -98,7 +98,7 @@ func (a *AuthManager) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		raw := tokenFromRequest(c)
 		if raw == "" {
-			Unauthorized(c, "未登录或登录已过期")
+			Unauthorized(c, "not logged in or session expired")
 			return
 		}
 
@@ -106,7 +106,7 @@ func (a *AuthManager) Middleware() gin.HandlerFunc {
 		if strings.HasPrefix(raw, "dk_") {
 			u, err := a.userByAPIToken(raw)
 			if err != nil {
-				Unauthorized(c, "接口令牌无效或已过期")
+				Unauthorized(c, "API token is invalid or expired")
 				return
 			}
 			c.Set(ContextKeyUser, u)
@@ -116,16 +116,16 @@ func (a *AuthManager) Middleware() gin.HandlerFunc {
 
 		claims, err := a.Parse(raw)
 		if err != nil {
-			Unauthorized(c, "未登录或登录已过期")
+			Unauthorized(c, "not logged in or session expired")
 			return
 		}
 		var u store.User
 		if err := a.st.DB().First(&u, claims.UserID).Error; err != nil {
-			Unauthorized(c, "账号不存在")
+			Unauthorized(c, "account not found")
 			return
 		}
 		if u.Status != "active" {
-			Forbidden(c, "账号已被禁用")
+			Forbidden(c, "account is disabled")
 			return
 		}
 		c.Set(ContextKeyUser, &u)
@@ -141,14 +141,14 @@ func (a *AuthManager) userByAPIToken(raw string) (*store.User, error) {
 	}
 	now := time.Now()
 	if t.ExpiresAt != nil && now.After(*t.ExpiresAt) {
-		return nil, errors.New("令牌已过期")
+		return nil, errors.New("token expired")
 	}
 	var u store.User
 	if err := a.st.DB().First(&u, t.UserID).Error; err != nil {
 		return nil, err
 	}
 	if u.Status != "active" {
-		return nil, errors.New("账号已禁用")
+		return nil, errors.New("account disabled")
 	}
 	// 记录最后使用时间，失败不影响本次请求。
 	go func() {
@@ -163,7 +163,7 @@ func RequireAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		u := CurrentUser(c)
 		if u == nil || u.Role != "admin" {
-			Forbidden(c, "需要管理员权限")
+			Forbidden(c, "admin privileges required")
 			return
 		}
 		c.Next()

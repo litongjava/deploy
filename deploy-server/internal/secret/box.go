@@ -25,7 +25,7 @@ type Box struct {
 // 这里用 SHA-256 派生出固定 32 字节，避免要求用户提供恰好 32 字节的密钥。
 func New(masterKey string) (*Box, error) {
 	if masterKey == "" {
-		return nil, errors.New("主密钥为空")
+		return nil, errors.New("master key is empty")
 	}
 	sum := sha256.Sum256([]byte(masterKey))
 	block, err := aes.NewCipher(sum[:])
@@ -59,17 +59,17 @@ func (b *Box) Decrypt(encoded string) (string, error) {
 	}
 	raw, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return "", fmt.Errorf("密文不是合法 base64: %w", err)
+		return "", fmt.Errorf("ciphertext is not valid base64: %w", err)
 	}
 	ns := b.aead.NonceSize()
 	if len(raw) < ns {
-		return "", errors.New("密文长度不足")
+		return "", errors.New("ciphertext is too short")
 	}
 	nonce, ct := raw[:ns], raw[ns:]
 	plain, err := b.aead.Open(nil, nonce, ct, nil)
 	if err != nil {
 		// 最常见的原因是换了 secret.key：明确提示，别让人以为是程序坏了。
-		return "", fmt.Errorf("解密失败（密钥可能已变更）: %w", err)
+		return "", fmt.Errorf("decryption failed (the key may have changed): %w", err)
 	}
 	return string(plain), nil
 }

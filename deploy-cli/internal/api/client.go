@@ -26,7 +26,7 @@ const (
 
 // Client 是 API 契约的 HTTP 客户端。
 type Client struct {
-	// BaseURL 是不含 /api/v1 的站点根，例如 http://127.0.0.1:8080
+	// BaseURL 是不含 /api/v1 的站点根，例如 http://127.0.0.1:10055
 	BaseURL   string
 	Token     string
 	HTTP      *http.Client

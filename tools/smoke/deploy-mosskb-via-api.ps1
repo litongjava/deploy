@@ -1,4 +1,4 @@
-﻿# 用平台的 REST API 完成 mosskb-website 的部署。
+# 用平台的 REST API 完成 mosskb-website 的部署。
 #
 # 存在的意义有两个：
 #   1. 可复现 —— 浏览器点一遍是给人看的，脚本跑一遍是给 CI 与回归用的。
@@ -15,7 +15,7 @@
 #   3. shell 脚本一律用单引号 here-string（@'...'@）。双引号 here-string 里
 #      $(...) 会被 PowerShell 当成子表达式先执行一遍，脚本内容会被改坏。
 param(
-    [string]$Base = "http://192.168.31.97:8080/api/v1",
+    [string]$Base = "http://192.168.31.97:10055/api/v1",
     [string]$User = "admin",
     [string]$Pass = "admin12345",
     [string]$SiteRoot = "/var/www/maxkb.xyz",

@@ -33,6 +33,21 @@ const (
 	TriggerRerun = "rerun"
 )
 
+// 项目类型。
+const (
+	// KindApp 应用项目：常规的构建 / 部署单元。
+	KindApp = "app"
+	// KindLib 构建项目：作为依赖被别的项目先构建（例如底层库、父 pom 模块）。
+	// 只有这一类型可以被选为依赖，避免把带部署命令的项目当依赖跑。
+	KindLib = "lib"
+)
+
+// Run 在依赖流水线里的角色。
+const (
+	RoleMain       = "main"       // 流水线的目标项目
+	RoleDependency = "dependency" // 为满足依赖而先构建的项目
+)
+
 // 并发策略。
 const (
 	ConcurrencyQueue      = "queue"
@@ -103,6 +118,11 @@ type Project struct {
 	Archived     bool   `gorm:"default:false" json:"archived"`
 	AllowEnvOver bool   `gorm:"default:true" json:"allowEnvOverride"`
 
+	// 项目类型：app（应用项目，默认）| lib（构建项目，可被别的项目依赖）
+	Kind string `gorm:"size:16;default:app" json:"kind"`
+	// 依赖的构建项目 key，JSON 数组。构建本项目前会按拓扑序先构建它们。
+	Dependencies string `gorm:"type:text" json:"-"`
+
 	UseGit          bool   `gorm:"default:false" json:"useGit"`
 	GitURL          string `gorm:"size:512" json:"gitUrl"`
 	GitBranch       string `gorm:"size:128" json:"gitBranch"`
@@ -172,6 +192,12 @@ type Run struct {
 	TriggerUA    string `gorm:"size:256" json:"triggerUa"`
 	RequestedRef string `gorm:"size:128" json:"requestedRef"`
 	ParamsJSON   string `gorm:"type:text" json:"-"`
+
+	// 依赖构建流水线：同一个 pipeline_id 下的 Run 属于同一次触发。
+	// 目标项目的 Run 是 main，为满足依赖先构建的是 dependency。
+	PipelineID    string `gorm:"size:32;index" json:"pipelineId"`
+	PipelineRole  string `gorm:"size:16" json:"pipelineRole"`
+	PipelineOrder int    `json:"pipelineOrder"`
 
 	PrepareStatus     string `gorm:"size:16" json:"prepareStatus"`
 	PrepareDurationMs int64  `json:"prepareDurationMs"`

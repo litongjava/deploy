@@ -6,7 +6,7 @@
 set -uo pipefail
 
 CLI=/usr/local/bin/deploy-cli
-BASE=http://127.0.0.1:8080
+BASE=http://127.0.0.1:10055
 
 [ -x "$CLI" ] || { echo "缺少 $CLI"; exit 1; }
 

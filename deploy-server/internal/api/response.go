@@ -130,7 +130,7 @@ func boolQuery(c *gin.Context, key string, def bool) bool {
 func idParam(c *gin.Context, name string) (uint, bool) {
 	v, err := strconv.ParseUint(c.Param(name), 10, 64)
 	if err != nil || v == 0 {
-		BadRequest(c, "路径参数 "+name+" 不是合法的 ID")
+		BadRequest(c, "path parameter "+name+" is not a valid ID")
 		return 0, false
 	}
 	return uint(v), true

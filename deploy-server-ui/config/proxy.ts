@@ -6,9 +6,9 @@
  */
 export default {
   dev: {
-    // localhost:8000/api/** -> http://127.0.0.1:8080/api/**
+    // localhost:8000/api/** -> http://127.0.0.1:10055/api/**
     '/api/': {
-      target: 'http://127.0.0.1:8080',
+      target: 'http://127.0.0.1:10055',
       changeOrigin: true,
       // WebSocket 日志流也要走代理（/api/v1/ws/runs/{id}）
       ws: true,

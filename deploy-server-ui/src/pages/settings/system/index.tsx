@@ -1,4 +1,5 @@
 import { DoctorPanelWithFetch } from '@/components/DoctorPanel';
+import ToolchainPanel from '@/components/ToolchainPanel';
 import { systemApi } from '@/services/system';
 import type { SystemSettings } from '@/services/types';
 import { formatBytes } from '@/utils/constants';
@@ -194,8 +195,11 @@ const SystemSettingsPage: React.FC = () => {
 
       <DoctorPanelWithFetch />
 
+      <ToolchainPanel />
+
       <div style={{ marginTop: 12, color: '#999', fontSize: 12 }}>
         提示：日志清理与并发上限都由服务端热读取这些配置；修改后立即生效，无需重启。
+        工具链安装同样在服务端执行，装完在「环境自检」里点「重新检测」即可看到结果。
       </div>
     </PageContainer>
   );

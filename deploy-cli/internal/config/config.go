@@ -18,7 +18,7 @@ const (
 	// DefaultContext 是未显式切换时使用的 context 名。
 	DefaultContext = "default"
 	// DefaultServer 是没有任何配置时的兜底服务端地址。
-	DefaultServer = "http://127.0.0.1:8080"
+	DefaultServer = "http://127.0.0.1:10055"
 	// EnvServer / EnvToken / EnvConfig 是支持的环境变量。
 	EnvServer = "DEPLOY_SERVER"
 	EnvToken  = "DEPLOY_TOKEN"

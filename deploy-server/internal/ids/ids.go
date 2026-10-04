@@ -18,7 +18,7 @@ func randomString(n int) string {
 		v, err := rand.Int(rand.Reader, max)
 		if err != nil {
 			// crypto/rand 失败属于系统级故障，没有合理降级方案。
-			panic("crypto/rand 不可用: " + err.Error())
+			panic("crypto/rand unavailable: " + err.Error())
 		}
 		buf[i] = alphabet[v.Int64()]
 	}
@@ -36,6 +36,10 @@ func NewHookToken() (plain, prefix string) {
 	plain = "hk_" + randomString(32)
 	return plain, plain[:8]
 }
+
+// NewPipelineID 生成一次「含依赖构建」触发的流水线 ID。
+// 同一次触发产生的多条 Run 用它串在一起，便于展示与联动取消。
+func NewPipelineID() string { return "pl_" + randomString(16) }
 
 // HashToken 是令牌的落库形式。令牌是高熵随机串，
 // 用 SHA-256 足够（不需要 bcrypt 那种抗暴力破解的慢哈希）。

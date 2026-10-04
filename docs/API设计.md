@@ -167,12 +167,22 @@
   "gitClean": false,
   "gitSubmodule": false,
   "allowEnvOverride": true,
+  "kind": "app",
+  "dependencies": ["tio-boot-admin"],
   "lastRunAt": "2026-01-01T10:00:00+08:00",
   "lastRunStatus": "success",
   "runCount": 12,
   "canEdit": true,
   "commands": [Command],
   "envs": [EnvVar],
+  "dependencyPlan": {
+    "ok": true,
+    "order": [
+      { "key": "tio-boot", "name": "tio-boot", "kind": "lib", "archived": false, "order": 1 },
+      { "key": "tio-boot-admin", "name": "tio-boot-admin", "kind": "lib", "archived": false, "order": 2 }
+    ]
+  },
+  "dependents": [ { "key": "myprofessor-backend", "name": "我的后端", "kind": "app", "archived": false } ],
   "createdAt": "...",
   "updatedAt": "..."
 }
@@ -180,7 +190,9 @@
 - `shell`: `auto` | `bash` | `sh` | `pwsh` | `cmd`
 - `concurrency`: `queue`（同项目串行，默认）| `allow`（并行）| `cancelPrev`
 - `canEdit`：服务端算好的权限标记，前端不用自己判断
-- 列表接口（`GET /projects`）**不返回** `commands` / `envs`，减少体积
+- `kind`: `app`（应用项目，默认）| `lib`（构建项目，可被别的项目依赖），见 §4.5
+- `dependencies`：直接依赖的**构建项目** key 列表（声明顺序）；详情接口另给 `dependencyPlan`（递归展开后的实际构建顺序，`ok=false` 时 `error` 说明原因）与 `dependents`（谁依赖了我）
+- 列表接口（`GET /projects`）**不返回** `commands` / `envs` / `dependencyPlan` / `dependents`，减少体积
 
 ### 4.2 Command 对象
 ```json
@@ -204,9 +216,9 @@
 
 | 方法 | 路径 | 请求 | 说明 |
 |---|---|---|---|
-| GET | `/projects?page&pageSize&keyword&archived&mine` | — | 分页；`archived` 不传=未归档 |
+| GET | `/projects?page&pageSize&keyword&archived&mine&kind` | — | 分页；`archived` 三态：不传/`false`=未归档、`true`=已归档、`all`=全部；`kind=lib` 只取构建项目 |
 | POST | `/projects` | `ProjectInput` | 创建，key 唯一 |
-| GET | `/projects/{key}` | — | 详情 |
+| GET | `/projects/{key}` | — | 详情（含 `dependencyPlan` / `dependents`） |
 | PUT | `/projects/{key}` | `ProjectInput` | 更新（owner/admin） |
 | DELETE | `/projects/{key}` | — | 删除（连带 runs 与日志文件，owner/admin） |
 | POST | `/projects/{key}/archive` | `{archived:true}` | 归档 / 取消归档 |
@@ -225,11 +237,13 @@
   "archived":false, "useGit":false, "gitUrl":"", "gitBranch":"main",
   "gitCredentialId":null, "gitSubdir":"", "gitDepth":0, "gitClean":false,
   "gitSubmodule":false, "allowEnvOverride":true,
+  "kind":"app", "dependencies":["tio-boot-admin"],
   "commands":[CommandInput], "envs":[EnvVarInput] }
 ```
 > `POST /projects` 与 `PUT /projects/{key}` **都接受 `commands` 与 `envs` 内联**：前端一个表单一次提交完（有 `id` 的就是更新，没有的就是新建，缺失的删除）。这样前端不用编排多次请求。
+> `kind` 省略按 `app`；`dependencies` 省略表示不改（`PUT`），传 `[]` 表示清空。
 
-`GET /projects/{key}/preview` 响应：
+#### `GET /projects/{key}/preview` 响应：
 ```json
 { "workdir": "/srv/workspaces/my-app",
   "git": { "enabled": true, "url": "...", "branch": "main", "subdir": "" },
@@ -237,6 +251,54 @@
   "builtinEnvs": [ { "key":"BUILD_NUMBER", "value":"13" }, { "key":"PROJECT_KEY", "value":"my-app" } ],
   "script": "# 1. 拉取代码\ncd /srv/workspaces/my-app\ngit pull\n\n# 2. 构建\n..." }
 ```
+
+### 4.5 项目类型与依赖构建
+
+多模块项目里，上层项目构建前必须先构建它依赖的底层库（例如 `myprofessor-backend`
+依赖 `tio-boot-admin`，而 `tio-boot-admin` 又依赖 `tio-boot`、`java-openai`）。
+平台用**项目类型 + 依赖列表**表达这件事，触发时按拓扑序自动先构建依赖。
+
+**项目类型（`kind`）**
+
+| 取值 | 含义 | 能否被选为依赖 |
+|---|---|---|
+| `app` | 应用项目：常规的构建 / 部署单元（默认） | 否 |
+| `lib` | 构建项目：产出被依赖的产物（`mvn install` 之类） | 是 |
+
+**依赖规则**
+
+- 依赖只能指向 `lib` 类型且**存在**的项目；不能依赖自己。
+- 保存时校验**不成环**：加入这条边后若从自己出发能绕回自己，返回 `40000`。
+- 依赖允许指向已归档的项目（便于临时归档），但**触发时会拒绝**并说明是哪个依赖归档了，绝不静默跳过。
+- 同一层内按 `dependencies` 数组顺序；整体按深度优先展开，同一个项目**只构建一次**（菱形依赖不重复构建）。
+
+**构建顺序示例**：`myprofessor-backend` → `tio-boot-admin` → {`tio-boot`, `java-openai`}，
+实际执行顺序为 `tio-boot`、`java-openai`、`tio-boot-admin`、`myprofessor-backend`。
+
+**触发时**（`POST /projects/{key}/run`、Hook）：
+
+| 字段 | 说明 |
+|---|---|
+| `withDependencies` | `true` 时先按上面的顺序构建依赖，全部成功后 D 目标项目才执行；默认 `false`（只跑本项目） |
+
+语义细节：
+
+- 一次带依赖的触发会产生**多条 Run**（每个依赖项目一条 + 目标项目一条），它们共享同一个 `pipelineId`：目标是 `pipelineRole=main`，依赖是 `pipelineRole=dependency`，`pipelineOrder` 从 1 开始。
+- 目标项目的 Run 在依赖构建期间保持 `queued`，**不占用**全局并发闸门；每条 Run 各自进出闸门，因此不会自锁。
+- 依赖用**同一个分支 / Tag**（`branch` 透传），但**不继承**触发时传入的 `env` 覆盖（那是给目标项目的参数）。
+- 任何一条依赖不是 `success`：后面的依赖与目标项目都不再执行。目标 Run 直接落成终态 —— 依赖被取消时为 `canceled`，其余为 `failed`，`errorMsg` 写明 `dependency build <key> failed (run #N, status <s>)`，并写一条日志说明「未执行」。
+- 取消流水线里的任意一条 Run 会**连带取消**同一条流水线里还在跑 / 排队的其它 Run。
+- 单条命令触发（`commandId` / `commandIds`）与 `withDependencies` 不能同时用，返回 `40000`。
+- 服务重启时，未完成的依赖流水线与普通 Run 一样被标记为中断（`error`）。
+
+`POST /projects/{key}/run` 带依赖时的响应在原有字段外多了：
+```json
+{ "runId": 88, "buildNumber": 13, "status": "queued", "projectKey": "myprofessor-backend",
+  "pipelineId": "pl_xxxxxxxxxxxxxxxx",
+  "dependencyCount": 3,
+  "dependencies": [ { "key": "tio-boot", "runId": 85, "buildNumber": 4 } ] }
+```
+`GET /runs/{id}` 也会返回同一条流水线的全部 Run（`pipeline` 数组，见 §7.1），运行详情页据此展示「前置构建」。
 
 ---
 
@@ -295,10 +357,13 @@ Body (可省略):
   "branch": "main",
   "env": { "TAG": "v1.2.3" },
   "commandIds": [10, 11],
+  "withDependencies": false,
   "async": true,
   "idempotencyKey": "optional"
 }
 ```
+> `withDependencies: true` 时先按依赖顺序构建依赖的构建项目，全部成功后才执行本项目（见 §4.5）。
+> 依赖与目标共用同一个 `branch`，但触发时传入的 `env` 只作用于目标项目。
 
 > **两种方式的关系**：路径优先。若路径里带了令牌，请求头会被忽略
 > （所以「路径写错 + 头部正确」仍然是 401，避免两处凭据打架）。
@@ -346,12 +411,23 @@ Token 错 → `40100`；项目归档 → `40300`；超限 → `42900`。
   "startedAt": "...", "finishedAt": "...", "durationMs": 8123,
   "exitCode": 0, "errorMsg": "",
   "logSize": 20481,
+  "pipelineId": "pl_xxxxxxxxxxxxxxxx",
+  "pipelineRole": "main",
+  "pipelineOrder": 0,
+  "pipeline": [
+    { "runId": 85, "projectKey": "tio-boot", "projectName": "tio-boot", "buildNumber": 4,
+      "status": "success", "pipelineRole": "dependency", "pipelineOrder": 1, "durationMs": 4210 },
+    { "runId": 88, "projectKey": "myprofessor-backend", "projectName": "我的后端", "buildNumber": 13,
+      "status": "running", "pipelineRole": "main", "pipelineOrder": 0, "durationMs": 0 }
+  ],
   "steps": [RunStep]
 }
 ```
 `status`: `queued` | `running` | `success` | `failed` | `canceled` | `timeout` | `error`
 `triggerType`: `web` | `api` | `cli` | `hook` | `rerun`
 `prepareStatus`: `skipped` | `running` | `success` | `failed`
+`pipelineId` / `pipelineRole` / `pipelineOrder`：只有依赖构建流水线里的 Run 才有（见 §4.5）；不带依赖触发时这三个字段为空。
+`pipeline`：仅在 `GET /runs/{id}` 详情里返回，列出同一条流水线的全部 Run（按 `pipelineOrder` 升序，主项目排最后）。
 
 ### 7.2 RunStep 对象
 ```json
@@ -366,9 +442,9 @@ Token 错 → `40100`；项目归档 → `40300`；超限 → `42900`。
 
 | 方法 | 路径 | 请求 | 说明 |
 |---|---|---|---|
-| POST | `/projects/{key}/run` | `{branch?,env?,commandIds?,commandId?}` | 触发，返回 `{runId,buildNumber,status,logUrl}` |
-| GET | `/runs?page&pageSize&projectKey&status` | — | 分页列表（不含 steps） |
-| GET | `/runs/{id}` | — | 详情（含 steps） |
+| POST | `/projects/{key}/run` | `{branch?,env?,commandIds?,commandId?,withDependencies?}` | 触发，返回 `{runId,buildNumber,status,pipelineId,dependencies[],logUrl}`；`withDependencies=true` 时先构建依赖（§4.5） |
+| GET | `/runs?page&pageSize&projectKey&status` | — | 分页列表（不含 steps 与 pipeline） |
+| GET | `/runs/{id}` | — | 详情（含 steps 与 pipeline） |
 | GET | `/runs/{id}/log?offset=0&limit=65536` | — | `{offset,nextOffset,eof,data}`，`data` 为字符串 |
 | GET | `/runs/{id}/log/download` | — | `text/plain` 附件 |
 | POST | `/runs/{id}/cancel` | — | 取消（幂等） |
@@ -411,7 +487,109 @@ GET /api/v1/ws/runs/{id}?token=<jwt>&offset=<n>
     {"name":"nginx","found":false,"version":"","path":"","hint":"若要托管静态站点，请自行安装：apt install -y nginx"}
   ] }
 ```
-> `checks` 是「自检」而非「安装」——对应需求 D6：平台不装工具链，只报告缺失并给安装提示。
+> `checks` 是「自检」而非「安装」：平台默认不主动装工具链，只报告缺失并给安装提示；
+> 需要自动装时用下面的「工具链一键安装」。
+
+### `GET /api/v1/system/toolchains` （登录）
+列出可一键安装的工具链组件与各自当前状态（安装动作仅 admin，见下）。
+```json
+{ "supported": true, "platform": "linux/amd64",
+  "missing": ["go","node","pnpm"],
+  "scriptPath": "/srv/deploy/data/toolchain/install.sh",
+  "scriptUrl": "/api/v1/system/toolchains/script",
+  "projectKey": "system-toolchain",
+  "hint": "安装以普通 Run 的形式执行，可以在运行详情页看实时日志、取消或重跑",
+  "installCmd": "bash /srv/deploy/data/toolchain/install.sh --only <组件>",
+  "components": [
+    { "key":"cc", "name":"C 工具链（gcc / g++ / make）", "note":"编译原生扩展、cargo 链接、make 构建都要它",
+      "estimate":"约 200 MB", "installed":true, "version":"13", "path":"/usr/bin/gcc",
+      "probes":[ {"name":"gcc","found":true,"version":"13","path":"/usr/bin/gcc"} ] },
+    { "key":"go", "name":"Go", "note":"装到 /usr/local/go 并软链到 /usr/local/bin；GOPROXY 指向 goproxy.cn",
+      "estimate":"约 120 MB", "installed":false, "version":"", "path":"", "probes":[] }
+  ] }
+```
+`supported=false`（非 Linux 服务端）时只有 dry-run 可用。
+
+### `POST /api/v1/system/toolchains/install` （**仅 admin**）
+触发一次安装。**安装以普通 Run 执行**：立即返回 `runId`，实时日志走
+`GET /api/v1/runs/{id}/log` 与 `WS /api/v1/ws/runs/{id}`，取消用 `POST /runs/{id}/cancel`。
+```json
+// 请求
+{ "components": ["go","pnpm"],   // 省略/空数组 = 所有缺失的组件
+  "dryRun": false,               // true = 预演：只打印将执行的动作，不做任何修改
+  "force": false,                // true = 已安装的也重装
+  "mirror": "cn" }               // "off" = 不用国内镜像
+```
+```json
+// 响应
+{ "runId": 42, "buildNumber": 1, "status": "queued",
+  "projectKey": "system-toolchain",
+  "components": ["go","pnpm"], "dryRun": false,
+  "command": "bash '/srv/deploy/data/toolchain/install.sh' --only go,pnpm",
+  "logUrl": "/api/v1/runs/42/log" }
+```
+说明：
+
+- 组件 key 走白名单（`cc java maven nvm node pnpm go rust`），未知 key 返回 `40000`（组件名会进命令行，必须挡住注入）。
+- 内置项目 `system-toolchain`（名称「环境工具链安装（系统）」）会在首次使用时自动创建，
+  **命令只有一条且每次触发时更新**为最新的组件选择；该项目 `hookEnabled=false`，不能被 Hook 触发。
+- 全部组件都已安装时返回 `{ "runId": 0, "nothingToDo": true }`。
+- 非 Linux 服务端：真安装返回 `40000`，`dryRun` 仍可用于预览。
+- 安装会调用包管理器与下载 JDK/Go/Rust/Node（几百 MB），因此限 admin；系统内并发受项目 `queue` 策略约束，不会并发装。
+
+### `GET /api/v1/system/toolchains/script` （**仅 admin**）
+以 `text/x-shellscript` 返回内嵌的安装脚本，供人工审查或拷到 Linux 机器上手动执行：
+```bash
+bash install-toolchains.sh                       # 装全部（已装的跳过）
+bash install-toolchains.sh --only java,maven     # 只装指定组件
+bash install-toolchains.sh --dry-run             # 预演
+bash install-toolchains.sh --list                # 只列状态
+```
+
+### `GET /api/v1/system/info` （登录）
+
+服务器基本信息与资源占用，供顶层菜单「服务器」（`/server-info`）页面使用。
+
+```json
+{ "time":"2026-10-04T20:45:58+08:00", "hostname":"MiWiFi-R4A-srv",
+  "os":"linux", "arch":"amd64", "osName":"Debian GNU/Linux 12 (bookworm)",
+  "kernel":"6.1.0-13-amd64", "uptimeSec":1234567,
+  "load":{"available":true,"avg1":0.42,"avg5":0.35,"avg15":0.28},
+  "cpu":{"model":"Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz",
+         "cores":4,"physicalCores":2,"mhz":2400,
+         "available":true,"usagePercent":12.5,"sampleWindowSec":3,
+         "busySec":1.5,"totalSec":12,"userSec":1.1,"systemSec":0.3,
+         "idleSec":10.2,"iowaitSec":0.1},
+  "memory":{"totalBytes":8363282432,"usedBytes":1642340352,
+            "freeBytes":5720993792,"availableBytes":6720942080,
+            "usagePercent":19.6,
+            "swapTotalBytes":1073737728,"swapUsedBytes":0,"swapFreeBytes":1073737728,
+            "swapKind":"swap","swapLabel":"交换分区"},
+  "disks":[
+    {"path":"/","device":"/dev/sda1","fstype":"ext4",
+     "totalBytes":21369978880,"usedBytes":8724152320,
+     "freeBytes":12645826560,"usagePercent":40.8,"status":"ok"}
+  ],
+  "warnings":[] }
+```
+
+数据由 `internal/metrics` 的后台采样协程每 3 秒刷新一份内存快照，这个接口只读快照，
+不做任何系统调用，因此前端可以放心高频轮询（默认 5 秒）。几个**容易踩的点**，改动前先读：
+
+| 字段 | 说明 |
+|---|---|
+| `cpu.usagePercent` | 是**两次采样之间的差分**，不是「开机至今的平均值」。后者在长期运行的机器上几乎恒为 30% 左右，看着像坏了。 |
+| `cpu.available` | 服务刚启动、第一次差分还没形成时为 `false`，前端显示「采样中」而不是 0%。 |
+| `cpu.busySec` / `totalSec` / `userSec` / `idleSec` / `iowaitSec` | 是**所有核心累加**的时间，不是墙上时钟：16 核跑满 1 秒 → `totalSec ≈ 16`。`usagePercent = busySec / totalSec`，分子分母同口径，自动消掉核心数。 |
+| `cpu.physicalCores` | Windows 上没有便宜的 API 能拿到物理核数，恒为 `0`（前端隐藏该项）。 |
+| `load.available` | Windows 没有 load average，为 `false`（前端隐藏该项）。 |
+| `memory.usedBytes` | Linux 上是 `MemTotal - MemAvailable`（**不是** `MemFree`）。用 `MemFree` 会把可回收的 page cache 算成占用，正常机器上直接虚报 90%+，是最常见的监控误报来源。 |
+| `memory.swapKind` / `swapLabel` | `swap*` 三个字段两个平台的**口径不同**，所以标题必须照 `swapLabel` 显示，不要硬写「交换分区」：Linux 是 `swap` /「交换分区」（`/proc/meminfo`），Windows 是 `commit` /「提交内存」（`CommitTotal` vs `CommitLimit`，即「物理内存 + 页面文件」的承诺量）。Windows 的页面文件**大小**不是已用交换量，拿它当交换分区会在一台 16 GB 内存的机器上显示 42 GB 交换。 |
+| `disks[].path` | Linux 是挂载点（`/`、`/home`），Windows 是卷根（`C:\`）。Linux 上只列设备名以 `/dev/` 开头的真实文件系统，`tmpfs` / `cgroup` / `overlay` 等伪文件系统、以及容器内的 overlay 根都会被过滤掉（不过滤的话页面上是一屏 0 字节的噪音）；根分区永远排第一。 |
+| `disks[].freeBytes` | Linux 上是**非特权用户可用**（`statfs.Bavail`，比 `Bfree` 小——后者含 root 保留块），与 `df` 的 `Avail` 列口径一致。 |
+| `disks[].status` | `ok` / `warn`；`warn` = 使用率 ≥75% 或剩余 <2GiB。阈值算在后端，是为了将来做通知/告警时口径统一，前端不必重复实现。 |
+| `warnings` | 采集失败的条目说明（例如该平台不支持 CPU 采集），前端用它解释「某项为什么是空的」，而不是让用户对着 0 猜。 |
+| 权限 | 任意登录用户可见（与 `/system/doctor` 一致）。**刻意不返回** `webRoot` / `dataDir` / `serverUrl` 等配置细节——那些只出现在 admin 关心的自检里。 |
 
 ### `GET /api/v1/system/settings` / `PUT /api/v1/system/settings` （PUT 仅 admin）
 ```json

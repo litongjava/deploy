@@ -252,7 +252,12 @@ const LogTerminal = React.forwardRef<LogTerminalHandle, LogTerminalProps>(
       if (!container) return;
 
       const term = new Terminal({
-        convertEol: false,
+        // convertEol 必须为 true：日志文件是按 `\n`（LF）写的，而 xterm 默认的
+        // convertEol:false 会让 LF 只下移一行、**不回列首** —— 结果是每一行都接在
+        // 上一行末尾继续画，出现"阶梯"式错位，长行还会在终端宽度处被从中间切断
+        // （例如 `Started : 2026-10` 换行成 `-04T20:21:21+08:00`）。
+        // 打开后 LF 等价于 CRLF，行首对齐；`\r` 进度条语义不受影响。
+        convertEol: true,
         cursorBlink: false,
         disableStdin: true,
         scrollback: 20000,

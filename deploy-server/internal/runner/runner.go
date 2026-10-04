@@ -187,31 +187,9 @@ func (e *Executor) Submit(req SubmitRequest) (*store.Run, error) {
 	if p.Archived {
 		return nil, ErrProjectArchived
 	}
-
-	run := store.Run{
-		ProjectID:    p.ID,
-		ProjectKey:   p.Key,
-		ProjectName:  p.Name,
-		Status:       store.RunQueued,
-		TriggerType:  req.TriggerType,
-		TriggerUser:  req.TriggerUser,
-		TriggerUID:   req.TriggerUID,
-		TriggerIP:    req.TriggerIP,
-		TriggerUA:    truncate(req.TriggerUA, 250),
-		RequestedRef: req.Ref,
-		ParamsJSON:   encodeParams(req.Params),
-	}
-	if err := e.st.DB().Transaction(func(tx *gorm.DB) error {
-		var maxNo int64
-		row := tx.Model(&store.Run{}).Where("project_id = ?", p.ID).
-			Select("COALESCE(MAX(build_number), 0)").Row()
-		if err := row.Scan(&maxNo); err != nil {
-			return err
-		}
-		run.BuildNumber = maxNo + 1
-		return tx.Create(&run).Error
-	}); err != nil {
-		return nil, fmt.Errorf("创建运行记录失败: %w", err)
+	run, err := e.createRun(p, req, "", "", 0)
+	if err != nil {
+		return nil, err
 	}
 
 	// cancelPrev：先取消同项目正在跑的，再排自己。
@@ -229,11 +207,48 @@ func (e *Executor) Submit(req SubmitRequest) (*store.Run, error) {
 		defer e.wg.Done()
 		e.execute(run.ID, req)
 	}()
+	return run, nil
+}
+
+// createRun 分配构建号并落库，但不启动执行。
+//
+// 拆出来是给依赖流水线用的：流水线要先把「依赖 + 目标」的 Run 记录一次建好
+// （这样界面上立刻能看到整条构建计划），再按顺序逐个执行。
+func (e *Executor) createRun(p *store.Project, req SubmitRequest, pipelineID, role string, order int) (*store.Run, error) {
+	run := store.Run{
+		ProjectID:    p.ID,
+		ProjectKey:   p.Key,
+		ProjectName:  p.Name,
+		Status:       store.RunQueued,
+		TriggerType:  req.TriggerType,
+		TriggerUser:  req.TriggerUser,
+		TriggerUID:   req.TriggerUID,
+		TriggerIP:    req.TriggerIP,
+		TriggerUA:    truncate(req.TriggerUA, 250),
+		RequestedRef: req.Ref,
+		ParamsJSON:   encodeParams(req.Params),
+
+		PipelineID:    pipelineID,
+		PipelineRole:  role,
+		PipelineOrder: order,
+	}
+	if err := e.st.DB().Transaction(func(tx *gorm.DB) error {
+		var maxNo int64
+		row := tx.Model(&store.Run{}).Where("project_id = ?", p.ID).
+			Select("COALESCE(MAX(build_number), 0)").Row()
+		if err := row.Scan(&maxNo); err != nil {
+			return err
+		}
+		run.BuildNumber = maxNo + 1
+		return tx.Create(&run).Error
+	}); err != nil {
+		return nil, fmt.Errorf("failed to create run record: %w", err)
+	}
 	return &run, nil
 }
 
 // ErrProjectArchived 表示项目已归档，不可执行。
-var ErrProjectArchived = errors.New("项目已归档，不能执行")
+var ErrProjectArchived = errors.New("the project is archived and cannot run")
 
 // Wait 等待所有正在执行/排队的 Run 结束（优雅关闭用）。
 func (e *Executor) Wait(timeout time.Duration) bool {
@@ -248,7 +263,26 @@ func (e *Executor) Wait(timeout time.Duration) bool {
 }
 
 // Cancel 取消一个 Run。返回 false 表示它已经结束或不存在。
+//
+// 属于依赖流水线的 Run 会连带取消同一条流水线里还在跑的其它 Run：
+// 否则取消主项目后，为它先构建的依赖还会继续跑下去。
 func (e *Executor) Cancel(runID uint) bool {
+	var run store.Run
+	if err := e.st.DB().Select("id", "pipeline_id").First(&run, runID).Error; err == nil && run.PipelineID != "" {
+		var ids []uint
+		e.st.DB().Model(&store.Run{}).
+			Where("pipeline_id = ? AND id <> ? AND status IN ?",
+				run.PipelineID, runID, []string{store.RunRunning, store.RunQueued}).
+			Pluck("id", &ids)
+		for _, id := range ids {
+			e.cancelOne(id)
+		}
+	}
+	return e.cancelOne(runID)
+}
+
+// cancelOne 只取消这一个 Run 的进程，不碰流水线里的其它 Run。
+func (e *Executor) cancelOne(runID uint) bool {
 	e.mu.Lock()
 	h := e.running[runID]
 	e.mu.Unlock()
@@ -279,7 +313,7 @@ func (e *Executor) RecoverInterrupted() (int64, error) {
 		Where("status IN ?", []string{store.RunRunning, store.RunQueued}).
 		Updates(map[string]any{
 			"status":      store.RunError,
-			"error_msg":   "服务重启导致本次执行中断",
+			"error_msg":   "interrupted because the server restarted",
 			"finished_at": now,
 		})
 	if res.Error != nil {
@@ -294,7 +328,7 @@ func (e *Executor) RecoverInterrupted() (int64, error) {
 func (e *Executor) loadProject(id uint) (*store.Project, error) {
 	var p store.Project
 	if err := e.st.DB().First(&p, id).Error; err != nil {
-		return nil, fmt.Errorf("项目不存在: %w", err)
+		return nil, fmt.Errorf("project not found: %w", err)
 	}
 	return &p, nil
 }
@@ -386,14 +420,14 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, p *s
 	actualWorkdir := workdir
 
 	fmt.Fprintf(w, "=== Deploy Run #%d ===\n", run.BuildNumber)
-	fmt.Fprintf(w, "项目    : %s (%s)\n", p.Name, p.Key)
-	fmt.Fprintf(w, "工作目录: %s\n", workdir)
-	fmt.Fprintf(w, "触发方式: %s by %s", run.TriggerType, run.TriggerUser)
+	fmt.Fprintf(w, "Project : %s (%s)\n", p.Name, p.Key)
+	fmt.Fprintf(w, "Workdir : %s\n", workdir)
+	fmt.Fprintf(w, "Trigger : %s by %s", run.TriggerType, run.TriggerUser)
 	if run.TriggerIP != "" {
 		fmt.Fprintf(w, " from %s", run.TriggerIP)
 	}
 	fmt.Fprintln(w)
-	fmt.Fprintf(w, "开始时间: %s\n", started.Format(time.RFC3339))
+	fmt.Fprintf(w, "Started : %s\n", started.Format(time.RFC3339))
 	if p.UseGit {
 		fmt.Fprintf(w, "Git     : %s @ %s\n", p.GitURL, firstNonEmpty(run.RequestedRef, p.GitBranch))
 	}
@@ -405,14 +439,14 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, p *s
 	if p.UseGit {
 		prepareStart := time.Now()
 		step := store.RunStep{
-			RunID: run.ID, Phase: store.PhasePrepare, Name: "Git 准备",
+			RunID: run.ID, Phase: store.PhasePrepare, Name: "Git prepare",
 			SortOrder: 0, Status: store.StepRunning, StartedAt: &prepareStart,
 			Script: fmt.Sprintf("git clone/fetch %s @ %s", p.GitURL, firstNonEmpty(run.RequestedRef, p.GitBranch)),
 		}
 		e.st.DB().Create(&step)
 		*steps = append(*steps, step)
 
-		fmt.Fprintf(w, "\n=== [prepare] Git 准备 ===\n")
+		fmt.Fprintf(w, "\n=== [prepare] Git prepare ===\n")
 		pctx, pcancel := context.WithTimeout(ctx, time.Duration(e.cfg.GitPrepareTimeoutS)*time.Second)
 		info, geSecrets, gerr := e.prepareGit(pctx, p, run.RequestedRef, workdir, w)
 		pcancel()
@@ -425,7 +459,7 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, p *s
 
 		finishStep(e.st, &step, gerr, 0, 0)
 		if gerr != nil {
-			fmt.Fprintf(w, "\n*** Git 准备失败，已中止，不执行任何用户命令 ***\n%v\n", gerr)
+			fmt.Fprintf(w, "\n*** Git prepare failed, aborted without running any user command ***\n%v\n", gerr)
 			outcome.status = store.RunFailed
 			outcome.errMsg = gerr.Error()
 			e.st.DB().Model(&store.Run{}).Where("id = ?", run.ID).Update("prepare_status", store.RunFailed)
@@ -444,7 +478,7 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, p *s
 			actualWorkdir = filepath.Join(workdir, p.GitSubdir)
 		}
 		dur := time.Since(prepareStart).Milliseconds()
-		fmt.Fprintf(w, "\n--- prepare 完成：%s (%s)，用时 %dms ---\n",
+		fmt.Fprintf(w, "\n--- prepare done: %s (%s), took %dms ---\n",
 			info.CommitShort, info.Branch, dur)
 		e.st.DB().Model(&store.Run{}).Where("id = ?", run.ID).Updates(map[string]any{
 			"prepare_status":      store.RunSuccess,
@@ -459,9 +493,9 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, p *s
 
 	// 工作目录不存在则创建：否则用户第一条命令就会莫名其妙地失败。
 	if err := os.MkdirAll(actualWorkdir, 0o750); err != nil {
-		fmt.Fprintf(w, "\n*** 创建工作目录失败: %v ***\n", err)
+		fmt.Fprintf(w, "\n*** failed to create workdir: %v ***\n", err)
 		outcome.status = store.RunError
-		outcome.errMsg = "创建工作目录失败: " + err.Error()
+		outcome.errMsg = "failed to create workdir: " + err.Error()
 		return outcome
 	}
 
@@ -477,7 +511,7 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, p *s
 	}
 	q.Order("sort_order asc, id asc").Find(&cmds)
 	if len(cmds) == 0 {
-		fmt.Fprintln(w, "\n*** 该项目没有启用任何命令，本次执行只做了 Git 准备 ***")
+		fmt.Fprintln(w, "\n*** this project has no enabled commands; only the Git prepare phase ran ***")
 	}
 
 	builtins := map[string]string{
@@ -503,7 +537,7 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, p *s
 		Box:         e.box,
 	})
 	if err != nil {
-		fmt.Fprintf(w, "\n*** 解析环境变量失败: %v ***\n", err)
+		fmt.Fprintf(w, "\n*** failed to resolve environment variables: %v ***\n", err)
 		outcome.status = store.RunError
 		outcome.errMsg = err.Error()
 		return outcome
@@ -519,24 +553,24 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, p *s
 	for i, c := range cmds {
 		if ctx.Err() != nil {
 			outcome.status = store.RunCanceled
-			outcome.errMsg = "执行被取消"
+			outcome.errMsg = "execution cancelled"
 			return outcome
 		}
 		if !deadline.IsZero() && time.Now().After(deadline) {
-			fmt.Fprintf(w, "\n*** 项目总超时（%ds）已到，中止 ***\n", p.TimeoutSec)
+			fmt.Fprintf(w, "\n*** project timeout (%ds) reached, aborting ***\n", p.TimeoutSec)
 			outcome.status = store.RunTimeout
-			outcome.errMsg = fmt.Sprintf("项目总超时 %ds", p.TimeoutSec)
+			outcome.errMsg = fmt.Sprintf("project timed out after %ds", p.TimeoutSec)
 			return outcome
 		}
 
-		fmt.Fprintf(w, "\n=== [%d/%d] %s ===\n", i+1, total, firstNonEmpty(c.Name, fmt.Sprintf("命令 %d", i+1)))
+		fmt.Fprintf(w, "\n=== [%d/%d] %s ===\n", i+1, total, firstNonEmpty(c.Name, fmt.Sprintf("command %d", i+1)))
 		fmt.Fprintf(w, "$ %s\n", strings.TrimRight(c.Script, "\n"))
 
 		stepStart := time.Now()
 		offStart := w.Size()
 		step := store.RunStep{
 			RunID: run.ID, Phase: store.PhaseCommand, CommandID: c.ID,
-			Name:      firstNonEmpty(c.Name, fmt.Sprintf("命令 %d", i+1)),
+			Name:      firstNonEmpty(c.Name, fmt.Sprintf("command %d", i+1)),
 			SortOrder: i + 1, Status: store.StepRunning, StartedAt: &stepStart,
 			LogOffsetStart: offStart, Script: c.Script,
 		}
@@ -560,30 +594,30 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, p *s
 
 		switch {
 		case runErr != nil && errors.Is(runErr, context.Canceled):
-			fmt.Fprintf(w, "\n*** 执行被取消 ***\n")
+			fmt.Fprintf(w, "\n*** execution cancelled ***\n")
 			outcome.status = store.RunCanceled
-			outcome.errMsg = "执行被取消"
+			outcome.errMsg = "execution cancelled"
 			return outcome
 		case runErr != nil && errors.Is(runErr, context.DeadlineExceeded):
-			fmt.Fprintf(w, "\n*** 步骤超时 ***\n")
+			fmt.Fprintf(w, "\n*** step timed out ***\n")
 			outcome.status = store.RunTimeout
-			outcome.errMsg = fmt.Sprintf("步骤「%s」超时", step.Name)
+			outcome.errMsg = fmt.Sprintf("step '%s' timed out", step.Name)
 			outcome.exitCode = code
 			return outcome
 		case runErr != nil:
-			fmt.Fprintf(w, "\n*** 启动命令失败: %v ***\n", runErr)
+			fmt.Fprintf(w, "\n*** failed to start the command: %v ***\n", runErr)
 			outcome.status = store.RunError
 			outcome.errMsg = runErr.Error()
 			return outcome
 		case code != 0:
 			if c.FailStrategy == store.FailContinue {
-				fmt.Fprintf(w, "\n--- 步骤 %d 失败（退出码 %d），按策略继续 ---\n", i+1, code)
+				fmt.Fprintf(w, "\n--- step %d failed (exit code %d), continuing per policy ---\n", i+1, code)
 				continue
 			}
-			fmt.Fprintf(w, "\n*** 步骤 %d 失败（退出码 %d），中止后续步骤 ***\n", i+1, code)
+			fmt.Fprintf(w, "\n*** step %d failed (exit code %d), aborting the remaining steps ***\n", i+1, code)
 			outcome.status = store.RunFailed
 			outcome.exitCode = code
-			outcome.errMsg = fmt.Sprintf("步骤「%s」失败，退出码 %d", step.Name, code)
+			outcome.errMsg = fmt.Sprintf("step '%s' failed with exit code %d", step.Name, code)
 			return outcome
 		}
 	}
@@ -635,13 +669,13 @@ func (e *Executor) finish(runID uint, outcome execOutcome, _ []store.RunStep) {
 	if h := e.lookupHandle(runID); h != nil && h.canceledByUser() {
 		if outcome.status != store.RunCanceled {
 			outcome.status = store.RunCanceled
-			outcome.errMsg = "执行被用户取消"
+			outcome.errMsg = "cancelled by the user"
 		}
 	}
 	if outcome.status == "" || outcome.status == store.RunQueued {
 		outcome.status = store.RunError
 		if outcome.errMsg == "" {
-			outcome.errMsg = "执行异常结束"
+			outcome.errMsg = "execution ended unexpectedly"
 		}
 	}
 

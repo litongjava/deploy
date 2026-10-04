@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -19,6 +20,8 @@ type triggerReq struct {
 	Env        map[string]string `json:"env"`
 	CommandIDs []uint            `json:"commandIds"`
 	CommandID  uint              `json:"commandId"`
+	// WithDependencies 为真时先按依赖顺序构建依赖的构建项目（见 §4.5）。
+	WithDependencies bool `json:"withDependencies"`
 }
 
 // triggerRun 是 Web / CLI 触发的入口。
@@ -28,7 +31,7 @@ func (s *Server) triggerRun(c *gin.Context) {
 		return
 	}
 	if p.Archived {
-		BadRequest(c, "项目已归档，不能执行。请先取消归档")
+		BadRequest(c, "the project is archived and cannot run; unarchive it first")
 		return
 	}
 	var req triggerReq
@@ -39,7 +42,13 @@ func (s *Server) triggerRun(c *gin.Context) {
 		ids = append(ids, req.CommandID)
 	}
 
-	run, err := s.exec.Submit(runner.SubmitRequest{
+	// 命令筛选与依赖构建不能同时用：只跑部分命令时，依赖也没法判断该不该重建。
+	if req.WithDependencies && len(ids) > 0 {
+		BadRequest(c, "single-command runs cannot be combined with withDependencies")
+		return
+	}
+
+	res, err := s.exec.SubmitWithDependencies(runner.SubmitRequest{
 		ProjectID:   p.ID,
 		Ref:         req.Branch,
 		Params:      req.Env,
@@ -49,16 +58,34 @@ func (s *Server) triggerRun(c *gin.Context) {
 		TriggerUID:  u.ID,
 		TriggerIP:   ClientIP(c),
 		TriggerUA:   c.GetHeader("User-Agent"),
-	})
+	}, req.WithDependencies)
 	if err != nil {
-		Internal(c, "触发失败: "+err.Error())
+		switch {
+		case errors.Is(err, runner.ErrProjectArchived):
+			BadRequest(c, err.Error())
+		case errors.Is(err, runner.ErrDependency):
+			BadRequest(c, err.Error())
+		default:
+			Internal(c, "trigger failed: "+err.Error())
+		}
 		return
 	}
+	run := res.Main
 	s.audit(c, "trigger-run", p.Key, "run="+strconv.Itoa(int(run.ID)))
+
+	deps := make([]gin.H, 0, len(res.Deps))
+	for _, d := range res.Deps {
+		deps = append(deps, gin.H{
+			"key": d.ProjectKey, "runId": d.ID, "buildNumber": d.BuildNumber,
+		})
+	}
 	OK(c, gin.H{
 		"runId": run.ID, "buildNumber": run.BuildNumber, "status": run.Status,
-		"projectKey": p.Key,
-		"logUrl":     "/api/v1/runs/" + strconv.Itoa(int(run.ID)) + "/log",
+		"projectKey":      p.Key,
+		"pipelineId":      res.PipelineID,
+		"dependencies":    deps,
+		"dependencyCount": len(deps),
+		"logUrl":          "/api/v1/runs/" + strconv.Itoa(int(run.ID)) + "/log",
 	})
 }
 
@@ -116,6 +143,18 @@ func (s *Server) getRun(c *gin.Context) {
 	for _, st := range steps {
 		d.Steps = append(d.Steps, toStepDTO(st))
 	}
+	// 依赖构建流水线：把同一次触发里的其它 Run 一并带上，详情页要展示「前置构建」。
+	if run.PipelineID != "" {
+		var siblings []store.Run
+		// 依赖在前、目标项目排最后：这个顺序本身就说明了「先构建谁」。
+		s.st.DB().Where("pipeline_id = ?", run.PipelineID).
+			Order("CASE WHEN pipeline_role = 'main' THEN 1 ELSE 0 END asc, pipeline_order asc, id asc").
+			Find(&siblings)
+		d.Pipeline = make([]pipelineRun, 0, len(siblings))
+		for _, sr := range siblings {
+			d.Pipeline = append(d.Pipeline, toPipelineRun(sr))
+		}
+	}
 	OK(c, d)
 }
 
@@ -127,14 +166,14 @@ func (s *Server) loadRunFor(c *gin.Context) (*store.Run, bool) {
 	}
 	var run store.Run
 	if err := s.st.DB().First(&run, id).Error; err != nil {
-		NotFound(c, "运行记录不存在")
+		NotFound(c, "run not found")
 		return nil, false
 	}
 	u := CurrentUser(c)
 	if u.Role != "admin" && s.visibilityMode() == "ownerOnly" {
 		var p store.Project
 		if err := s.st.DB().First(&p, run.ProjectID).Error; err == nil && p.OwnerID != u.ID {
-			NotFound(c, "运行记录不存在")
+			NotFound(c, "run not found")
 			return nil, false
 		}
 	}
@@ -159,7 +198,7 @@ func (s *Server) getRunLog(c *gin.Context) {
 
 	data, next, eof, err := runlog.ReadRange(s.logPathOf(run), offset, limit)
 	if err != nil {
-		Internal(c, "读取日志失败: "+err.Error())
+		Internal(c, "failed to read the log: "+err.Error())
 		return
 	}
 	OK(c, gin.H{
@@ -175,7 +214,7 @@ func (s *Server) downloadRunLog(c *gin.Context) {
 	}
 	path := s.logPathOf(run)
 	if _, err := os.Stat(path); err != nil {
-		NotFound(c, "日志文件不存在（可能已被清理）")
+		NotFound(c, "log file not found (it may have been pruned)")
 		return
 	}
 	name := fmt.Sprintf("%s-%d.log", run.ProjectKey, run.BuildNumber)
@@ -203,16 +242,16 @@ func (s *Server) rerun(c *gin.Context) {
 	}
 	var p store.Project
 	if err := s.st.DB().First(&p, run.ProjectID).Error; err != nil {
-		NotFound(c, "原项目已不存在")
+		NotFound(c, "the original project no longer exists")
 		return
 	}
 	u := CurrentUser(c)
 	if !s.canEdit(u, &p) {
-		Forbidden(c, "只有项目负责人或管理员可以重新执行")
+		Forbidden(c, "only the project owner or an admin can re-run this")
 		return
 	}
 	if p.Archived {
-		BadRequest(c, "项目已归档，不能执行")
+		BadRequest(c, "the project is archived and cannot run")
 		return
 	}
 
@@ -231,7 +270,7 @@ func (s *Server) rerun(c *gin.Context) {
 		TriggerUA:   c.GetHeader("User-Agent"),
 	})
 	if err != nil {
-		Internal(c, "重新执行失败: "+err.Error())
+		Internal(c, "re-run failed: "+err.Error())
 		return
 	}
 	s.audit(c, "rerun", p.Key, "from="+strconv.Itoa(int(run.ID)))

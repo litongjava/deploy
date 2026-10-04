@@ -263,6 +263,78 @@ const RunDetail: React.FC = () => {
         />
       ) : null}
 
+      {(run?.pipeline || []).length > 0 ? (
+        <Card
+          title="依赖构建流水线"
+          style={{ marginBottom: 16 }}
+          extra={<span style={{ color: '#999', fontSize: 12 }}>pipelineId: {run?.pipelineId}</span>}
+        >
+          <Table
+            rowKey="runId"
+            size="small"
+            pagination={false}
+            dataSource={run?.pipeline || []}
+            columns={[
+              {
+                title: '顺序',
+                dataIndex: 'pipelineOrder',
+                width: 70,
+                render: (v: number, row) => (row.pipelineRole === 'main' ? '目标' : v),
+              },
+              {
+                title: '角色',
+                dataIndex: 'pipelineRole',
+                width: 100,
+                render: (v: string) =>
+                  v === 'main' ? <Tag color="blue">目标项目</Tag> : <Tag color="purple">依赖构建</Tag>,
+              },
+              {
+                title: '项目',
+                dataIndex: 'projectName',
+                render: (_, row) => (
+                  <Space size={6}>
+                    <a onClick={() => history.push(`/projects/${row.projectKey}`)}>
+                      {row.projectName || row.projectKey}
+                    </a>
+                    <span style={{ color: '#999', fontSize: 12 }}>{row.projectKey}</span>
+                  </Space>
+                ),
+              },
+              {
+                title: '构建',
+                dataIndex: 'buildNumber',
+                width: 90,
+                render: (v: number, row) => <a onClick={() => history.push(`/runs/${row.runId}`)}>#{v}</a>,
+              },
+              {
+                title: '状态',
+                dataIndex: 'status',
+                width: 100,
+                render: (v: Run['status']) => (
+                  <Tag color={RUN_STATUS_META[v]?.color}>{RUN_STATUS_META[v]?.text || v}</Tag>
+                ),
+              },
+              {
+                title: '耗时',
+                dataIndex: 'durationMs',
+                width: 100,
+                render: (v: number) => formatDuration(v),
+              },
+              {
+                title: '操作',
+                width: 100,
+                render: (_, row) =>
+                  row.runId === Number(id) ? (
+                    <span style={{ color: '#999' }}>当前</span>
+                  ) : (
+                    <a onClick={() => history.push(`/runs/${row.runId}`)}>查看日志</a>
+                  ),
+              },
+            ]}
+          />
+        </Card>
+      ) : null}
+
       {run?.prepareStatus === 'failed' ? (
         <Alert
           style={{ marginBottom: 16 }}

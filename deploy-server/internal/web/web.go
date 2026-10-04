@@ -1,6 +1,6 @@
 // Package web 把构建好的前端静态资源嵌进二进制。
 //
-// 这样交付物就是一个可执行文件：解压、启动、访问 8080 就有完整 UI
+// 这样交付物就是一个可执行文件：解压、启动、访问 10055 就有完整 UI
 // （需求 D4：SQLite + 单二进制 + 前端 embed）。
 package web
 
@@ -47,7 +47,7 @@ func Register(r *gin.Engine) error {
 		if strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/playwright/") {
 			c.JSON(http.StatusNotFound, gin.H{
 				"success": false, "data": nil,
-				"errorCode": 40400, "errorMessage": "接口不存在: " + p,
+				"errorCode": 40400, "errorMessage": "endpoint not found: " + p,
 			})
 			return
 		}

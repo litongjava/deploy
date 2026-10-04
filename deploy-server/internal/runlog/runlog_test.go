@@ -184,7 +184,7 @@ func TestWriterTruncatesAtLimit(t *testing.T) {
 	if int64(len(raw)) > 120 {
 		t.Fatalf("日志没有被限制住，长度 %d", len(raw))
 	}
-	if !strings.Contains(string(raw), "日志已达上限") {
+	if !strings.Contains(string(raw), "log size limit reached") {
 		t.Fatalf("缺少截断提示: %q", string(raw))
 	}
 }

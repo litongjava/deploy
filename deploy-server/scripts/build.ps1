@@ -86,23 +86,26 @@ $($uiCandidates | ForEach-Object { "  - $_" } | Out-String)
 $uiDist = Join-Path $uiRepo "dist"
 
 function Step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
-Write-Host "前端仓库: $uiRepo" -ForegroundColor DarkGray
+Write-Host "Frontend repo: $uiRepo" -ForegroundColor DarkGray
 
-# 1) 把前端产物拷进 embed 目录
+# 1) Copy the frontend build output into the embed directory
 if (-not $SkipUI) {
     if (-not (Test-Path (Join-Path $uiDist "index.html"))) {
-        throw "前端还没构建（找不到 $uiDist\index.html）。请先执行: cd '$uiRepo'; pnpm.cmd install; pnpm.cmd build"
+        throw "The frontend is not built yet (cannot find $uiDist\index.html). Run first: cd '$uiRepo'; pnpm.cmd install; pnpm.cmd build"
     }
-    Step "拷贝前端产物到内嵌目录"
+    Step "Copying frontend build output into the embed directory"
     if (Test-Path $embedDir) { Remove-Item -Recurse -Force $embedDir }
     New-Item -ItemType Directory -Path $embedDir -Force | Out-Null
 
-    # 逐个复制而不是整目录 Copy-Item：要顺手排掉两类不该进生产的东西。
+    # Copy file by file instead of Copy-Item on the whole directory: this lets us skip
+    # the two kinds of things that must not ship to production.
     #
-    #   *.map          source map，实测在 dist 里能占到一半体积（24 个文件 20.8MB），
-    #                  打进二进制既浪费又不必要地暴露源码结构。
-    #   *hot-update*   `max dev` 的开发态热更新产物。它**直接往 dist/ 里写**，
-    #                  一旦误拷进去，二进制里就混进了开发构建，行为难以预料。
+    #   *.map          source maps; measured at up to half the size of dist/ (24 files, 20.8MB),
+    #                  embedding them into the binary is both wasteful and needlessly
+    #                  exposes the source structure.
+    #   *hot-update*   dev-mode hot-update artifacts from `max dev`. It writes them **straight
+    #                  into dist/**; once copied in by mistake, the binary contains a dev build
+    #                  and behaves unpredictably.
     $copied = 0; $skippedMap = 0; $skippedHot = 0
     Get-ChildItem -Recurse -File $uiDist | ForEach-Object {
         if ($_.Extension -eq ".map") { $skippedMap++; return }
@@ -114,15 +117,16 @@ if (-not $SkipUI) {
         Copy-Item -Force $_.FullName $dest
         $copied++
     }
-    Write-Host "    已拷入 $copied 个文件（跳过 $skippedMap 个 .map、$skippedHot 个热更新产物）"
+    Write-Host "    copied $copied files (skipped $skippedMap .map files, $skippedHot hot-update artifacts)"
 
-    # 没拷到入口文件说明前端产物不完整，早点报错比部署出白屏好。
+    # Missing the entry file means the frontend build output is incomplete;
+    # failing early beats deploying a blank page.
     if (-not (Test-Path (Join-Path $embedDir "index.html"))) {
-        throw "embed 目录里没有 index.html —— 前端产物不完整。请先 cd '$uiRepo'; pnpm.cmd build"
+        throw "No index.html in the embed directory - the frontend build output is incomplete. Run first: cd '$uiRepo'; pnpm.cmd build"
     }
 }
 else {
-    Step "跳过前端拷贝（-SkipUI）"
+    Step "Skipping frontend copy (-SkipUI)"
 }
 
 # 切到 deploy-server 再编译：`go build ./cmd/server` 的相对路径是相对当前目录的。

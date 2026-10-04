@@ -7,6 +7,22 @@ import (
 	"deploy-server/internal/store"
 )
 
+// defaultKind 兜底：老数据（迁移前建的项目）没有 kind 字段，按应用项目算。
+func defaultKind(k string) string {
+	if k == "" {
+		return store.KindApp
+	}
+	return k
+}
+
+// nonNilKeys 让 JSON 里出现 [] 而不是 null，前端少写一层判空。
+func nonNilKeys(keys []string) []string {
+	if keys == nil {
+		return []string{}
+	}
+	return keys
+}
+
 // ---------- User ----------
 
 type userDTO struct {
@@ -87,6 +103,10 @@ type projectDTO struct {
 	HookEnabled bool   `json:"hookEnabled"`
 	Archived    bool   `json:"archived"`
 
+	// 项目类型与依赖构建（见 docs/API设计.md §4.5）
+	Kind         string   `json:"kind"`
+	Dependencies []string `json:"dependencies"`
+
 	UseGit          bool   `json:"useGit"`
 	GitURL          string `json:"gitUrl"`
 	GitBranch       string `json:"gitBranch"`
@@ -105,8 +125,29 @@ type projectDTO struct {
 	Commands []commandDTO `json:"commands,omitempty"`
 	Envs     []envDTO     `json:"envs,omitempty"`
 
+	// 只有详情接口会带上这三项：构建计划、依赖我的项目、以及计划是否可用。
+	DependencyPlan *depPlanDTO  `json:"dependencyPlan,omitempty"`
+	Dependents     []depNodeDTO `json:"dependents,omitempty"`
+
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// depNodeDTO 是依赖图里的一个节点。
+type depNodeDTO struct {
+	Key      string `json:"key"`
+	Name     string `json:"name"`
+	Kind     string `json:"kind"`
+	Archived bool   `json:"archived"`
+	Order    int    `json:"order,omitempty"`
+}
+
+// depPlanDTO 是「含依赖构建时按什么顺序构建」的计算结果。
+// ok=false 时 error 说明原因（依赖被删、改成应用项目、归档或成环）。
+type depPlanDTO struct {
+	OK    bool         `json:"ok"`
+	Error string       `json:"error,omitempty"`
+	Order []depNodeDTO `json:"order"`
 }
 
 // projectStats 是列表页需要的「最近一次运行」聚合结果。
@@ -122,7 +163,9 @@ func toProjectDTO(p *store.Project, canEdit bool, st *projectStats) projectDTO {
 		OwnerID: p.OwnerID, OwnerName: p.OwnerName,
 		Workdir: p.Workdir, Shell: p.Shell, TimeoutSec: p.TimeoutSec,
 		Concurrency: p.Concurrency, HookEnabled: p.HookEnabled, Archived: p.Archived,
-		UseGit: p.UseGit, GitURL: p.GitURL, GitBranch: p.GitBranch,
+		Kind:         defaultKind(p.Kind),
+		Dependencies: nonNilKeys(store.ParseDependencies(p.Dependencies)),
+		UseGit:       p.UseGit, GitURL: p.GitURL, GitBranch: p.GitBranch,
 		GitCredentialID: p.GitCredentialID, GitSubdir: p.GitSubdir, GitDepth: p.GitDepth,
 		GitClean: p.GitClean, GitSubmodule: p.GitSubmodule, AllowEnvOver: p.AllowEnvOver,
 		CanEdit: canEdit, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
@@ -180,6 +223,12 @@ type runDTO struct {
 	RequestedRef string            `json:"requestedRef"`
 	Params       map[string]string `json:"params,omitempty"`
 
+	// 依赖构建流水线：pipelineId 相同的一组 Run 属于同一次触发。
+	PipelineID    string        `json:"pipelineId,omitempty"`
+	PipelineRole  string        `json:"pipelineRole,omitempty"`
+	PipelineOrder int           `json:"pipelineOrder,omitempty"`
+	Pipeline      []pipelineRun `json:"pipeline,omitempty"`
+
 	PrepareStatus     string `json:"prepareStatus"`
 	PrepareDurationMs int64  `json:"prepareDurationMs"`
 	GitCommit         string `json:"gitCommit"`
@@ -197,12 +246,34 @@ type runDTO struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+// pipelineRun 是流水线里的一条 Run 的摘要，供运行详情页展示「前置构建」。
+type pipelineRun struct {
+	RunID         uint   `json:"runId"`
+	ProjectKey    string `json:"projectKey"`
+	ProjectName   string `json:"projectName"`
+	BuildNumber   int64  `json:"buildNumber"`
+	Status        string `json:"status"`
+	PipelineRole  string `json:"pipelineRole"`
+	PipelineOrder int    `json:"pipelineOrder"`
+	DurationMs    int64  `json:"durationMs"`
+}
+
+func toPipelineRun(r store.Run) pipelineRun {
+	return pipelineRun{
+		RunID: r.ID, ProjectKey: r.ProjectKey, ProjectName: r.ProjectName,
+		BuildNumber: r.BuildNumber, Status: r.Status,
+		PipelineRole: r.PipelineRole, PipelineOrder: r.PipelineOrder,
+		DurationMs: r.DurationMs,
+	}
+}
+
 func toRunDTO(r *store.Run) runDTO {
 	d := runDTO{
 		ID: r.ID, ProjectID: r.ProjectID, ProjectKey: r.ProjectKey,
 		ProjectName: r.ProjectName, BuildNumber: r.BuildNumber, Status: r.Status,
 		TriggerType: r.TriggerType, TriggerUID: r.TriggerUID, TriggerUser: r.TriggerUser,
 		TriggerIP: r.TriggerIP, TriggerUA: r.TriggerUA, RequestedRef: r.RequestedRef,
+		PipelineID: r.PipelineID, PipelineRole: r.PipelineRole, PipelineOrder: r.PipelineOrder,
 		PrepareStatus: r.PrepareStatus, PrepareDurationMs: r.PrepareDurationMs,
 		GitCommit: r.GitCommit, GitCommitShort: r.GitCommitShort,
 		GitBranchResolved: r.GitBranchResolved,

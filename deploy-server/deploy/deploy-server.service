@@ -1,5 +1,5 @@
 [Unit]
-Description=Deploy Server (轻量命令式 CI/CD 平台)
+Description=Deploy Server (lightweight imperative CI/CD platform)
 Documentation=https://gitee.com/ppnt/deploy
 After=network-online.target
 Wants=network-online.target
@@ -9,28 +9,32 @@ Type=simple
 User=root
 WorkingDirectory=/srv/deploy
 
-# 服务器本机时区若不是东八区，日志与运行时间会整体偏移，
-# 排查「什么时候部署的」时很容易看错，所以显式固定。
+# If the host's timezone is not UTC+8, logs and run timestamps are all shifted,
+# which makes it easy to misread when a deployment actually happened,
+# so it is pinned explicitly.
 Environment=TZ=Asia/Shanghai
 
-# 监听 0.0.0.0 是有意的：局域网内的 CLI 与浏览器要能直接访问。
-# 如果这台机器有公网入口，请改成 127.0.0.1 并让 nginx 反代 + 加 HTTPS ——
-# 本服务本质是远程命令执行，裸奔在公网等于把服务器交出去。
+# Listening on 0.0.0.0 is intentional: CLI clients and browsers on the LAN need
+# direct access. If this machine has a public entry point, change it to 127.0.0.1
+# and put nginx in front of it with HTTPS -
+# this service is remote command execution by nature; running it naked on the
+# public internet is the same as handing the server over.
 ExecStart=/usr/local/bin/deploy-server \
-    -listen 0.0.0.0:8080 \
+    -listen 0.0.0.0:10055 \
     -data-dir /srv/deploy/data \
     -web-root /srv/deploy/workspaces \
-    -server-url http://192.168.31.97:8080
+    -server-url http://192.168.31.97:10055
 
 Restart=on-failure
 RestartSec=3
 
-# 这是「远程命令执行」类服务，原则上不该被沙箱束缚（用户就是要跑任意脚本），
-# 所以这里的加固只做「降低误伤」，不做真正隔离。
+# This is a "remote command execution" service and in principle should not be
+# constrained by a sandbox (running arbitrary scripts is the whole point), so the
+# hardening below only reduces accidental damage, it does not provide real isolation.
 NoNewPrivileges=true
 LimitNOFILE=65535
 
-# 优雅关闭：给正在跑的部署留出收尾时间。
+# Graceful shutdown: leave in-flight deployments time to finish.
 KillSignal=SIGTERM
 TimeoutStopSec=90
 

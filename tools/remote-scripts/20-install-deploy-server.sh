@@ -41,8 +41,8 @@ sleep 2
 
 echo "=== [5/5] 校验 ==="
 systemctl is-active deploy-server
-(ss -lnt | grep -q ':8080 ') && echo "已监听 8080"
-curl -fsS http://127.0.0.1:8080/api/v1/healthz
+(ss -lnt | grep -q ':10055 ') && echo "已监听 10055"
+curl -fsS http://127.0.0.1:10055/api/v1/healthz
 echo
 echo "最近日志："
 journalctl -u deploy-server -n 8 --no-pager || true

@@ -53,11 +53,11 @@ func (s *Server) loadProjectFor(c *gin.Context, key string) (*store.Project, *st
 	u := CurrentUser(c)
 	var p store.Project
 	if err := s.st.DB().Where("key = ?", key).First(&p).Error; err != nil {
-		NotFound(c, "项目不存在: "+key)
+		NotFound(c, "project not found: "+key)
 		return nil, nil, false
 	}
 	if !s.canView(u, &p) {
-		NotFound(c, "项目不存在: "+key) // 不可见时也返回 404，不泄露项目是否存在
+		NotFound(c, "project not found: "+key) // 不可见时也返回 404，不泄露项目是否存在
 		return nil, nil, false
 	}
 	return &p, u, true
@@ -70,7 +70,7 @@ func (s *Server) loadProjectForEdit(c *gin.Context, key string) (*store.Project,
 		return nil, nil, false
 	}
 	if !s.canEdit(u, p) {
-		Forbidden(c, "只有项目负责人或管理员可以修改/执行该项目")
+		Forbidden(c, "only the project owner or an admin can modify or run this project")
 		return nil, nil, false
 	}
 	return p, u, true

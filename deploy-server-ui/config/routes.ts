@@ -41,6 +41,14 @@ export default [
     component: './dashboard',
   },
   {
+    // 服务器自身的资源占用（CPU/内存/磁盘）。后端数据来自 GET /api/v1/system/info，
+    // 任意登录用户可见——只暴露聚合指标，不含工作目录、密钥等配置细节。
+    path: '/server-info',
+    name: '服务器',
+    icon: 'CloudServerOutlined',
+    component: './server-info',
+  },
+  {
     path: '/projects',
     name: '项目',
     icon: 'AppstoreOutlined',
@@ -48,6 +56,15 @@ export default [
       {
         path: '/projects',
         component: './projects',
+      },
+      {
+        // 新建项目必须有独立的静态子路由：只靠 /projects/:key 会把 /projects/edit
+        // 当成 key=edit 的项目详情页，然后去查一个不存在的项目。
+        // 静态段在路由排序里优先于 :key，所以 'new' 是保留字，不能用作项目 Key。
+        path: '/projects/new',
+        hideInMenu: true,
+        name: '新建项目',
+        component: './projects/edit',
       },
       {
         path: '/projects/:key/edit',

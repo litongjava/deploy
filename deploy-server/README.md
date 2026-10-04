@@ -21,10 +21,10 @@
 ```bash
 # 本机开发
 go build -o bin/deploy-server ./cmd/server
-./bin/deploy-server -data-dir ./data -web-root ./workspaces -listen 127.0.0.1:8080
+./bin/deploy-server -data-dir ./data -web-root ./workspaces -listen 127.0.0.1:10055
 ```
 
-首次访问 `http://127.0.0.1:8080` 会引导创建管理员账号。
+首次访问 `http://127.0.0.1:10055` 会引导创建管理员账号。
 
 带前端一起构建 —— **Windows**：
 
@@ -54,7 +54,7 @@ cd ../deploy-server && make ui && make linux           # make ui 就是"拷贝�
 
 | 参数 | 环境变量 | 默认值 | 说明 |
 |---|---|---|---|
-| `-listen` | `DEPLOY_LISTEN` | `127.0.0.1:8080` | 监听地址 |
+| `-listen` | `DEPLOY_LISTEN` | `127.0.0.1:10055` | 监听地址 |
 | `-data-dir` | `DEPLOY_DATA_DIR` | `./data` | 数据库、日志、密钥 |
 | `-web-root` | `DEPLOY_WEB_ROOT` | `./workspaces` | 项目工作目录根（项目里用 `${WORKSPACE_ROOT}` 引用） |
 | `-server-url` | `DEPLOY_SERVER_URL` | 由 listen 推导 | 注入给命令的 `DEPLOY_SERVER_URL` |
