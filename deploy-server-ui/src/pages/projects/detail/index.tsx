@@ -1,0 +1,652 @@
+import { projectApi } from '@/services/project';
+import { runApi } from '@/services/run';
+import type { HookToken, HookTokenCreated, Project, Run } from '@/services/types';
+import {
+  PREPARE_STATUS_META,
+  RUN_STATUS_META,
+  SECRET_PLACEHOLDER,
+  formatDuration,
+  formatTime,
+} from '@/utils/constants';
+import {
+  CopyOutlined,
+  PlayCircleOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons';
+import type { ActionType, ProColumns } from '@ant-design/pro-components';
+import {
+  PageContainer,
+  ProCard,
+  ProDescriptions,
+  ProTable,
+} from '@ant-design/pro-components';
+import { history, useParams } from '@umijs/max';
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Descriptions,
+  Empty,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Popconfirm,
+  Space,
+  Table,
+  Tag,
+  Typography,
+  message,
+} from 'antd';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+
+const { Text, Paragraph } = Typography;
+
+const ProjectDetail: React.FC = () => {
+  const { key = '' } = useParams<{ key: string }>();
+  const [project, setProject] = useState<Project | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [hooks, setHooks] = useState<HookToken[]>([]);
+  const [hookLoading, setHookLoading] = useState(false);
+  const [plainToken, setPlainToken] = useState<HookTokenCreated | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [messageApi, contextHolder] = message.useMessage();
+  const runTableRef = useRef<ActionType>();
+  const [hookForm] = Form.useForm();
+
+  const load = useCallback(async () => {
+    if (!key) return;
+    setLoading(true);
+    try {
+      const data = await projectApi.detail(key);
+      setProject(data);
+    } catch (e) {
+      setProject(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [key]);
+
+  const loadHooks = useCallback(async () => {
+    if (!key) return;
+    setHookLoading(true);
+    try {
+      const list = await projectApi.hooks(key);
+      setHooks(list || []);
+    } catch (e) {
+      setHooks([]);
+    } finally {
+      setHookLoading(false);
+    }
+  }, [key]);
+
+  useEffect(() => {
+    load();
+    loadHooks();
+  }, [load, loadHooks]);
+
+  const handleRun = async (commandId?: number) => {
+    setRunning(true);
+    try {
+      const res = await projectApi.run(key, commandId ? { commandId } : undefined);
+      messageApi.success(`已触发构建 #${res.buildNumber}`);
+      history.push(`/runs/${res.runId}`);
+    } catch (e) {
+      // 统一提示
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const copy = async (text: string, tip = '已复制') => {
+    try {
+      await navigator.clipboard.writeText(text);
+      messageApi.success(tip);
+      return;
+    } catch (e) {
+      // 降级方案：clipboard API 在非 HTTPS 下不可用
+      const el = document.createElement('textarea');
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      try {
+        document.execCommand('copy');
+        messageApi.success(tip);
+      } catch (err) {
+        messageApi.error('复制失败，请手动选择文本');
+      }
+      document.body.removeChild(el);
+    }
+  };
+
+  const createHook = async () => {
+    const values = await hookForm.validateFields();
+    try {
+      const res = await projectApi.createHook(key, {
+        name: values.name,
+        expiresInDays: values.expiresInDays || undefined,
+      });
+      setCreateOpen(false);
+      hookForm.resetFields();
+      setPlainToken(res);
+      loadHooks();
+    } catch (e) {
+      // 统一提示
+    }
+  };
+
+  const resetHook = async (id: number) => {
+    try {
+      const res = await projectApi.resetHook(id);
+      setPlainToken(res);
+      loadHooks();
+    } catch (e) {
+      // 统一提示
+    }
+  };
+
+  const removeHook = async (id: number) => {
+    try {
+      await projectApi.removeHook(id);
+      messageApi.success('已删除');
+      loadHooks();
+    } catch (e) {
+      // 统一提示
+    }
+  };
+
+  const baseUrl =
+    typeof window !== 'undefined' ? window.location.origin : 'https://deploy.example.com';
+  const hookExample = `curl -X POST ${baseUrl}/api/v1/hooks/<HOOK_TOKEN> \\
+  -H 'Content-Type: application/json' \\
+  -d '{"branch":"main","env":{"TAG":"v1.2.3"},"async":true}'`;
+  const headerExample = `curl -X POST ${baseUrl}/api/v1/hooks/ \\
+  -H 'X-Deploy-Token: <HOOK_TOKEN>' \\
+  -H 'Content-Type: application/json' \\
+  -d '{"async":false}'`;
+
+  const runColumns: ProColumns<Run>[] = [
+    {
+      title: '构建号',
+      dataIndex: 'buildNumber',
+      width: 90,
+      render: (_, row) => <a onClick={() => history.push(`/runs/${row.id}`)}>#{row.buildNumber}</a>,
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      width: 100,
+      render: (_, row) => (
+        <Tag color={RUN_STATUS_META[row.status]?.color}>{RUN_STATUS_META[row.status]?.text}</Tag>
+      ),
+    },
+    {
+      title: '触发',
+      dataIndex: 'triggerUserName',
+      width: 140,
+      render: (_, row) => `${row.triggerType} / ${row.triggerUserName || '-'}`,
+    },
+    { title: '分支', dataIndex: 'requestedRef', width: 110 },
+    {
+      title: '耗时',
+      dataIndex: 'durationMs',
+      width: 100,
+      render: (_, row) => formatDuration(row.durationMs),
+    },
+    {
+      title: '开始时间',
+      dataIndex: 'startedAt',
+      width: 170,
+      render: (_, row) => formatTime(row.startedAt),
+    },
+    {
+      title: '操作',
+      valueType: 'option',
+      width: 100,
+      render: (_, row) => [
+        <a key="log" onClick={() => history.push(`/runs/${row.id}`)}>
+          查看日志
+        </a>,
+      ],
+    },
+  ];
+
+  return (
+    <PageContainer
+      loading={loading}
+      title={project ? `${project.name}` : key}
+      subTitle={key}
+      onBack={() => history.push('/projects')}
+      extra={[
+        <Button
+          key="run"
+          type="primary"
+          icon={<PlayCircleOutlined />}
+          loading={running}
+          disabled={!project || project.archived || !project.canEdit}
+          onClick={() => handleRun()}
+        >
+          执行
+        </Button>,
+        <Button
+          key="edit"
+          disabled={!project || !project.canEdit}
+          onClick={() => history.push(`/projects/${key}/edit`)}
+        >
+          编辑
+        </Button>,
+      ]}
+    >
+      {contextHolder}
+      {project?.archived ? (
+        <Alert
+          style={{ marginBottom: 16 }}
+          type="warning"
+          showIcon
+          message="该项目已归档，无法执行"
+          description="如需继续使用，请在项目列表取消归档。"
+        />
+      ) : null}
+
+      <ProCard gutter={16} wrap>
+        <ProCard colSpan={{ xs: 24, lg: 14 }} title="基本信息" bordered>
+          <ProDescriptions<Project>
+            column={2}
+            dataSource={project || undefined}
+            columns={[
+              { title: '项目 Key', dataIndex: 'key', copyable: true },
+              { title: '名称', dataIndex: 'name' },
+              {
+                title: '工作目录',
+                dataIndex: 'workdir',
+                span: 2,
+                copyable: true,
+              },
+              { title: 'Shell', dataIndex: 'shell' },
+              { title: '并发策略', dataIndex: 'concurrency' },
+              {
+                title: '归属',
+                dataIndex: 'ownerName',
+              },
+              {
+                title: '默认超时',
+                dataIndex: 'timeoutSec',
+                render: (v) => (v ? `${v} 秒` : '不限制'),
+              },
+              {
+                title: 'Hook 触发',
+                dataIndex: 'hookEnabled',
+                render: (v) => (v ? <Badge status="success" text="已启用" /> : '已关闭'),
+              },
+              {
+                title: 'Git 准备',
+                dataIndex: 'useGit',
+                render: (v, row) =>
+                  v ? (
+                    <Space direction="vertical" size={0}>
+                      <Text>{row.gitUrl}</Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        分支 {row.gitBranch}
+                        {row.gitSubdir ? ` · 子目录 ${row.gitSubdir}` : ''}
+                        {row.gitDepth ? ` · 深度 ${row.gitDepth}` : ''}
+                      </Text>
+                    </Space>
+                  ) : (
+                    '未启用'
+                  ),
+              },
+              {
+                title: '累计运行',
+                dataIndex: 'runCount',
+              },
+              {
+                title: '上次运行',
+                dataIndex: 'lastRunAt',
+                span: 2,
+                render: (v, row) =>
+                  v ? (
+                    <Space>
+                      <Tag color={RUN_STATUS_META[row.lastRunStatus as Run['status']]?.color}>
+                        {RUN_STATUS_META[row.lastRunStatus as Run['status']]?.text ||
+                          row.lastRunStatus}
+                      </Tag>
+                      <span>{formatTime(v)}</span>
+                    </Space>
+                  ) : (
+                    '从未运行'
+                  ),
+              },
+            ]}
+          />
+        </ProCard>
+
+        <ProCard colSpan={{ xs: 24, lg: 10 }} title="环境变量" bordered>
+          {(project?.envs || []).length === 0 ? (
+            <Empty description="没有环境变量" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          ) : (
+            <Table
+              rowKey={(r) => String(r.id ?? r.key)}
+              size="small"
+              pagination={false}
+              dataSource={project?.envs || []}
+              columns={[
+                { title: '变量名', dataIndex: 'key' },
+                {
+                  title: '值',
+                  dataIndex: 'value',
+                  render: (_, row) =>
+                    row.isSecret ? <Text code>{SECRET_PLACEHOLDER}</Text> : <Text code>{row.value}</Text>,
+                },
+                {
+                  title: '类型',
+                  dataIndex: 'isSecret',
+                  width: 90,
+                  render: (v) => (v ? <Tag color="orange">Secret</Tag> : <Tag>普通</Tag>),
+                },
+              ]}
+            />
+          )}
+        </ProCard>
+      </ProCard>
+
+      <Card
+        title="命令列表"
+        style={{ marginTop: 16 }}
+        extra={
+          project?.canEdit ? (
+            <Button onClick={() => history.push(`/projects/${key}/edit`)}>编辑命令</Button>
+          ) : null
+        }
+      >
+        {(project?.commands || []).length === 0 ? (
+          <Empty description="还没有配置命令，去编辑页添加" />
+        ) : (
+          <Table
+            rowKey="id"
+            size="small"
+            pagination={false}
+            dataSource={project?.commands || []}
+            expandable={{
+              expandedRowRender: (row) => (
+                <Paragraph>
+                  <pre
+                    style={{
+                      margin: 0,
+                      padding: 12,
+                      background: '#fafafa',
+                      borderRadius: 4,
+                      maxHeight: 320,
+                      overflow: 'auto',
+                      fontFamily: 'Menlo, Consolas, monospace',
+                      fontSize: 12,
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    {row.script}
+                  </pre>
+                </Paragraph>
+              ),
+            }}
+            columns={[
+              { title: '顺序', dataIndex: 'sortOrder', width: 70 },
+              { title: '名称', dataIndex: 'name' },
+              {
+                title: '启用',
+                dataIndex: 'enabled',
+                width: 80,
+                render: (v) => (v ? '是' : <Text type="secondary">否</Text>),
+              },
+              {
+                title: '失败策略',
+                dataIndex: 'failStrategy',
+                width: 110,
+                render: (v) => (v === 'continue' ? '继续' : '中止'),
+              },
+              {
+                title: '覆盖项',
+                width: 220,
+                render: (_, row) => (
+                  <Space size={4} wrap>
+                    {row.workdirOverride ? <Tag>cwd: {row.workdirOverride}</Tag> : null}
+                    {row.timeoutSec ? <Tag>超时 {row.timeoutSec}s</Tag> : null}
+                    {row.shellOverride ? <Tag>shell: {row.shellOverride}</Tag> : null}
+                    {!row.workdirOverride && !row.timeoutSec && !row.shellOverride ? (
+                      <Text type="secondary">-</Text>
+                    ) : null}
+                  </Space>
+                ),
+              },
+              {
+                title: '操作',
+                width: 110,
+                render: (_, row) => (
+                  <Button
+                    type="link"
+                    size="small"
+                    disabled={!project?.canEdit || project?.archived}
+                    onClick={() => handleRun(row.id)}
+                  >
+                    单独执行
+                  </Button>
+                ),
+              },
+            ]}
+          />
+        )}
+      </Card>
+
+      <Card title="Hook Token" style={{ marginTop: 16 }}>
+        <Alert
+          style={{ marginBottom: 16 }}
+          type="info"
+          showIcon
+          message="Hook 触发地址（免登录，凭 token）"
+          description={
+            <Space direction="vertical" style={{ width: '100%' }} size={8}>
+              <Paragraph style={{ margin: 0 }}>
+                POST <Text code>{`${baseUrl}/api/v1/hooks/{token}`}</Text>，也可以把 token 放在请求头{' '}
+                <Text code>X-Deploy-Token</Text>，请求体可省略。默认异步返回 202；加{' '}
+                <Text code>?wait=true</Text> 或 <Text code>"async": false</Text> 走同步等待。
+              </Paragraph>
+              <pre
+                style={{
+                  margin: 0,
+                  padding: 12,
+                  background: '#fafafa',
+                  borderRadius: 4,
+                  fontFamily: 'Menlo, Consolas, monospace',
+                  fontSize: 12,
+                  whiteSpace: 'pre-wrap',
+                }}
+              >
+                {hookExample}
+              </pre>
+              <Space>
+                <Button size="small" icon={<CopyOutlined />} onClick={() => copy(hookExample, '示例已复制')}>
+                  复制示例
+                </Button>
+                <Button size="small" onClick={() => copy(headerExample, '示例已复制')}>
+                  复制 Header 方式示例
+                </Button>
+              </Space>
+            </Space>
+          }
+        />
+
+        <Space style={{ marginBottom: 12 }}>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            disabled={!project?.canEdit}
+            onClick={() => setCreateOpen(true)}
+          >
+            新建 Hook Token
+          </Button>
+          <Button icon={<ReloadOutlined />} onClick={loadHooks} loading={hookLoading}>
+            刷新
+          </Button>
+        </Space>
+
+        <Table<HookToken>
+          rowKey="id"
+          size="small"
+          loading={hookLoading}
+          pagination={false}
+          dataSource={hooks}
+          locale={{ emptyText: <Empty description="还没有 Hook Token" /> }}
+          columns={[
+            { title: '名称', dataIndex: 'name' },
+            { title: '前缀', dataIndex: 'prefix', render: (v) => <Text code>{v}…</Text> },
+            {
+              title: '状态',
+              dataIndex: 'enabled',
+              width: 90,
+              render: (v) => (v ? <Tag color="green">启用</Tag> : <Tag>禁用</Tag>),
+            },
+            {
+              title: '过期时间',
+              dataIndex: 'expiresAt',
+              width: 170,
+              render: (v) => (v ? formatTime(v) : '永不过期'),
+            },
+            {
+              title: '调用次数',
+              dataIndex: 'callCount',
+              width: 100,
+            },
+            {
+              title: '最后使用',
+              dataIndex: 'lastUsedAt',
+              width: 220,
+              render: (_, row) =>
+                row.lastUsedAt ? (
+                  <Space size={6}>
+                    <span>{formatTime(row.lastUsedAt)}</span>
+                    {row.lastUsedIp ? <Text type="secondary">{row.lastUsedIp}</Text> : null}
+                  </Space>
+                ) : (
+                  <Text type="secondary">从未使用</Text>
+                ),
+            },
+            {
+              title: '操作',
+              width: 160,
+              render: (_, row) => (
+                <Space>
+                  <Popconfirm
+                    title="重置后原 token 立即失效"
+                    description="确定重新生成该 Hook Token 吗？"
+                    onConfirm={() => resetHook(row.id)}
+                    okText="重置"
+                    cancelText="取消"
+                  >
+                    <a>重置</a>
+                  </Popconfirm>
+                  <Popconfirm
+                    title="删除后使用该 token 的调用方会失败"
+                    onConfirm={() => removeHook(row.id)}
+                    okText="删除"
+                    okButtonProps={{ danger: true }}
+                    cancelText="取消"
+                  >
+                    <a style={{ color: '#ff4d4f' }}>删除</a>
+                  </Popconfirm>
+                </Space>
+              ),
+            },
+          ]}
+        />
+      </Card>
+
+      <Card title="运行历史" style={{ marginTop: 16 }}>
+        <ProTable<Run>
+          rowKey="id"
+          actionRef={runTableRef}
+          search={false}
+          options={{ density: false, setting: false }}
+          pagination={{ pageSize: 10, showSizeChanger: true }}
+          request={async (params) => {
+            const res = await runApi.list({
+              page: params.current || 1,
+              pageSize: params.pageSize || 10,
+              projectKey: key,
+            });
+            return { data: res?.list || [], total: res?.total || 0, success: true };
+          }}
+          columns={runColumns}
+        />
+      </Card>
+
+      {/* 明文 token 只显示一次 */}
+      <Modal
+        open={!!plainToken}
+        title="Hook Token 已生成（明文仅显示这一次）"
+        onCancel={() => setPlainToken(null)}
+        footer={[
+          <Button key="ok" type="primary" onClick={() => setPlainToken(null)}>
+            我已保存
+          </Button>,
+        ]}
+        width={640}
+      >
+        <Alert
+          style={{ marginBottom: 12 }}
+          type="warning"
+          showIcon
+          message="请立即复制保存"
+          description="服务端只保存哈希，关闭后无法再次查看明文，只能重置生成新的 token。"
+        />
+        {plainToken ? (
+          <Descriptions column={1} size="small" bordered>
+            <Descriptions.Item label="名称">{plainToken.name}</Descriptions.Item>
+            <Descriptions.Item label="明文 Token">
+              <Space>
+                <Text code copyable style={{ wordBreak: 'break-all' }}>
+                  {plainToken.token}
+                </Text>
+                <Button
+                  size="small"
+                  icon={<CopyOutlined />}
+                  onClick={() => copy(plainToken.token, 'Token 已复制')}
+                >
+                  复制
+                </Button>
+              </Space>
+            </Descriptions.Item>
+            <Descriptions.Item label="过期时间">
+              {plainToken.expiresAt ? formatTime(plainToken.expiresAt) : '永不过期'}
+            </Descriptions.Item>
+          </Descriptions>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={createOpen}
+        title="新建 Hook Token"
+        onCancel={() => setCreateOpen(false)}
+        onOk={createHook}
+        okText="创建"
+        cancelText="取消"
+        destroyOnClose
+      >
+        <Form form={hookForm} layout="vertical" preserve={false}>
+          <Form.Item
+            name="name"
+            label="名称"
+            rules={[{ required: true, message: '请填写名称，便于识别调用方' }]}
+          >
+            <Input placeholder="例如 gitee-push" />
+          </Form.Item>
+          <Form.Item name="expiresInDays" label="有效天数" tooltip="留空表示永不过期">
+            <InputNumber min={1} style={{ width: '100%' }} placeholder="例如 90" />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </PageContainer>
+  );
+};
+
+export default ProjectDetail;

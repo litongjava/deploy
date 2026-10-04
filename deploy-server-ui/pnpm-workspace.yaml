@@ -1,0 +1,7 @@
+allowBuilds:
+  '@antv/l7-react': true
+  core-js: true
+  core-js-pure: true
+  es5-ext: true
+  esbuild: true
+  puppeteer-core: false

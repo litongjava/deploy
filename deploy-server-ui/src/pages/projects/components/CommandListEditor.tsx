@@ -1,0 +1,193 @@
+import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import { ProFormSelect, ProFormSwitch } from '@ant-design/pro-components';
+import { Button, Card, Col, Form, Input, InputNumber, Row, Space } from 'antd';
+import React from 'react';
+
+export interface CommandDraft {
+  id?: number;
+  name: string;
+  script: string;
+  enabled: boolean;
+  failStrategy: 'abort' | 'continue';
+  workdirOverride?: string;
+  timeoutSec?: number;
+  shellOverride?: string;
+  sortOrder?: number;
+}
+
+const newCommand = (): CommandDraft => ({
+  name: '',
+  script: '',
+  enabled: true,
+  failStrategy: 'abort',
+  workdirOverride: '',
+  timeoutSec: 0,
+  shellOverride: '',
+});
+
+/**
+ * 命令列表编辑器。
+ * 用 antd 的 Form.List 管理顺序（可上移/下移/删除/新增），
+ * sortOrder 在提交时按数组下标重新生成，见项目编辑页的 handleSubmit。
+ */
+const CommandListEditor: React.FC<{
+  /** 项目详情页只读展示时使用 */
+  readonly?: boolean;
+}> = ({ readonly }) => {
+  return (
+    <Form.List name="commands">
+      {(fields, { add, remove, move }, { errors }) => (
+        <div>
+          {fields.length === 0 ? (
+            <Card size="small" style={{ marginBottom: 12, textAlign: 'center', color: '#999' }}>
+              还没有命令，点击下方「新增命令」添加第一条
+            </Card>
+          ) : null}
+
+          {fields.map((field, index) => (
+            <Card
+              key={field.key}
+              size="small"
+              style={{ marginBottom: 12 }}
+              title={
+                <Space>
+                  <span>命令 {index + 1}</span>
+                  <Form.Item noStyle shouldUpdate>
+                    {({ getFieldValue }) => {
+                      const enabled = getFieldValue(['commands', field.name, 'enabled']);
+                      return enabled === false ? (
+                        <span style={{ color: '#999', fontSize: 12 }}>（已禁用，不会执行）</span>
+                      ) : null;
+                    }}
+                  </Form.Item>
+                </Space>
+              }
+              extra={
+                readonly ? null : (
+                  <Space>
+                    <Button
+                      size="small"
+                      disabled={index === 0}
+                      onClick={() => move(index, index - 1)}
+                    >
+                      上移
+                    </Button>
+                    <Button
+                      size="small"
+                      disabled={index === fields.length - 1}
+                      onClick={() => move(index, index + 1)}
+                    >
+                      下移
+                    </Button>
+                    <Button
+                      size="small"
+                      danger
+                      icon={<MinusCircleOutlined />}
+                      onClick={() => remove(field.name)}
+                    >
+                      删除
+                    </Button>
+                  </Space>
+                )
+              }
+            >
+              {/* 隐藏字段：编辑时保留 id，提交时保留 id 才能走「更新」而不是「新建」 */}
+              <Form.Item name={[field.name, 'id']} hidden>
+                <Input />
+              </Form.Item>
+
+              <Row gutter={12}>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label="名称"
+                    name={[field.name, 'name']}
+                    rules={[{ required: true, message: '请填写命令名称' }]}
+                  >
+                    <Input placeholder="例如：拉取代码 / 构建 / 重启服务" />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item label="失败策略" name={[field.name, 'failStrategy']}>
+                    <ProFormSelect
+                      options={[
+                        { label: '失败即停（abort）', value: 'abort' },
+                        { label: '忽略错误继续（continue）', value: 'continue' },
+                      ]}
+                      fieldProps={{ style: { width: '100%' } }}
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              <Form.Item
+                label="脚本"
+                name={[field.name, 'script']}
+                rules={[{ required: true, message: '请填写脚本内容' }]}
+                extra="按 sh / bash 语法编写；平台会把内置变量以环境变量注入（${WORKDIR}、${BUILD_NUMBER} 等）"
+              >
+                <Input.TextArea
+                  autoSize={{ minRows: 3, maxRows: 16 }}
+                  placeholder={'#!/bin/sh\ncd "$WORKDIR"\ngit pull\ngo build ./...'}
+                  style={{ fontFamily: 'Menlo, Consolas, monospace' }}
+                />
+              </Form.Item>
+
+              <Row gutter={12}>
+                <Col xs={24} md={10}>
+                  <Form.Item label="启用" name={[field.name, 'enabled']} valuePropName="checked">
+                    <ProFormSwitch />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={14} />
+              </Row>
+
+              <Row gutter={12}>
+                <Col xs={24} md={8}>
+                  <Form.Item
+                    label="工作目录覆盖"
+                    name={[field.name, 'workdirOverride']}
+                    tooltip="留空使用项目工作目录"
+                  >
+                    <Input placeholder="可选" />
+                  </Form.Item>
+                </Col>
+                <Col xs={12} md={8}>
+                  <Form.Item
+                    label="超时（秒）"
+                    name={[field.name, 'timeoutSec']}
+                    tooltip="0 表示使用项目默认超时"
+                  >
+                    <InputNumber min={0} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col xs={12} md={8}>
+                  <Form.Item
+                    label="Shell 覆盖"
+                    name={[field.name, 'shellOverride']}
+                    tooltip="留空使用项目设置"
+                  >
+                    <Input placeholder="可选：bash / sh / pwsh / cmd" />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Card>
+          ))}
+
+          {readonly ? null : (
+            <Button
+              type="dashed"
+              block
+              icon={<PlusOutlined />}
+              onClick={() => add(newCommand())}
+            >
+              新增命令
+            </Button>
+          )}
+          <Form.ErrorList errors={errors} />
+        </div>
+      )}
+    </Form.List>
+  );
+};
+
+export default CommandListEditor;
