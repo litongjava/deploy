@@ -1,0 +1,9 @@
+# 构建产物
+deploy
+deploy.exe
+deploy-*
+!deploy-cli/
+*.exe
+
+# 本地日志
+*.log

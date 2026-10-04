@@ -1,0 +1,42 @@
+# 构建产物
+deploy-server/bin/
+deploy-server/deploy-server
+deploy-server/deploy-server.exe
+deploy-cli/deploy
+deploy-cli/deploy.exe
+deploy-cli/deploy-*
+tools/sshpoke/sshpoke
+tools/sshpoke/sshpoke.exe
+
+# 运行时数据（数据库、日志、密钥）——绝不能提交
+.run/
+deploy-server/data/
+deploy-server/workspaces/
+*/data/
+*/workspaces/
+*.db
+*.db-wal
+*.db-shm
+*.key
+
+# 前端
+deploy-server-ui/node_modules/
+deploy-server-ui/dist/
+deploy-server-ui/src/.umi/
+deploy-server-ui/src/.umi-production/
+deploy-server-ui/.build.txt
+
+# 内嵌目录：只保留占位页，真实产物由构建脚本拷入
+deploy-server/internal/web/dist/*
+!deploy-server/internal/web/dist/index.html
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# 临时产物
+*.log
+tmp/
