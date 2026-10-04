@@ -1,8 +1,12 @@
 # 多阶段构建：先构建前端，再构建后端，最后只留一个二进制。
 #
-# 用法：
-#   docker build -t deploy-server:0.1.0 -f deploy-server/Dockerfile .
-#   注意构建上下文是**仓库根目录**（因为要同时看到 deploy-server 与 deploy-server-ui）。
+# 用法（在**含两个仓库的父目录**里执行；前端仓库 deploy-server-ui 与平台仓库 deploy/ 是同级目录，
+# 与 java-mosskb / java-mosskb-ui 的组织方式一致）：
+#
+#   cd <父目录>            # 这个目录下要能同时看到 deploy/ 和 deploy-server-ui/
+#   docker build -t deploy-server:0.1.0 -f deploy/deploy-server/Dockerfile .
+#
+# 也可用 make：cd deploy/deploy-server && make docker
 
 # ---------- 前端 ----------
 FROM node:22-bookworm-slim AS ui
@@ -11,15 +15,15 @@ RUN corepack enable
 COPY deploy-server-ui/package.json deploy-server-ui/pnpm-lock.yaml deploy-server-ui/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY deploy-server-ui/ ./
-# Pro 模板里带了一堆示例页与 mock，构建时不需要它们联网
+# 前端仓库里带了一堆示例页与 mock，构建时不需要它们联网
 RUN pnpm build
 
 # ---------- 后端 ----------
 FROM golang:1.24-bookworm AS build
 WORKDIR /src/deploy-server
-COPY deploy-server/go.mod deploy-server/go.sum ./
+COPY deploy/deploy-server/go.mod deploy/deploy-server/go.sum ./
 RUN go mod download
-COPY deploy-server/ ./
+COPY deploy/deploy-server/ ./
 # 用前端产物替换占位页，让 embed 打进真实 UI
 RUN rm -rf internal/web/dist && mkdir -p internal/web/dist
 COPY --from=ui /src/deploy-server-ui/dist/ ./internal/web/dist/

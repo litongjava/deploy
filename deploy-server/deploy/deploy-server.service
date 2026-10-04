@@ -1,6 +1,6 @@
 [Unit]
 Description=Deploy Server (轻量命令式 CI/CD 平台)
-Documentation=https://github.com/litongjava/deploy-server
+Documentation=https://gitee.com/ppnt/deploy
 After=network-online.target
 Wants=network-online.target
 

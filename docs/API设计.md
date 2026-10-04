@@ -282,8 +282,14 @@
 
 ### 6.2 触发（**免登录**）
 ```
+# 方式一：令牌放路径
 POST /api/v1/hooks/{token}
-Header: X-Deploy-Token: <token>   // 二选一，与 path 等价
+
+# 方式二：令牌放请求头（路径里不带令牌）
+POST /api/v1/hooks
+Header: X-Deploy-Token: <token>
+
+# 两种方式都可选带 Body
 Body (可省略):
 {
   "branch": "main",
@@ -293,6 +299,15 @@ Body (可省略):
   "idempotencyKey": "optional"
 }
 ```
+
+> **两种方式的关系**：路径优先。若路径里带了令牌，请求头会被忽略
+> （所以「路径写错 + 头部正确」仍然是 401，避免两处凭据打架）。
+> 头部方式的好处是**令牌不出现在 URL 里**，也就不会落进 nginx 的 `access_log`。
+>
+> 实现提醒：请求头方式必须有一条**不带路径参数**的路由（`POST /hooks`）。
+> handler 里虽然有「路径没有 token 就读请求头」的退回逻辑，但如果只注册 `/hooks/:token`，
+> 那么 `/hooks/` 会 404、而 `/hooks/xxx` 的路径参数永远非空 —— 退回逻辑就成了永远走不到的死代码。
+> 这个坑实际踩过：契约写了支持请求头，实测仅请求头返回 404、路径错+头对返回 401。
 
 异步（默认，`?wait=true` 或 `"async": false` 走同步）→ **HTTP 202**：
 ```json

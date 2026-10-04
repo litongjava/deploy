@@ -30,7 +30,11 @@ param(
 
     # 额外构建 Windows 版本，用于本机起服务调试。
     # 不加这个只产出 Linux/amd64（生产部署用）。
-    [switch]$Local
+    [switch]$Local,
+
+    # 前端仓库（deploy-server-ui）的位置。
+    # 不传就按候选路径自动探测，见下面的 $uiCandidates。
+    [string]$UiDir
 )
 
 $ErrorActionPreference = "Stop"
@@ -49,16 +53,45 @@ Linux/macOS 请改用 Makefile：
 }
 
 $root = Split-Path -Parent $PSScriptRoot   # deploy-server/
-$uiDist = Join-Path (Split-Path -Parent $root) "deploy-server-ui\dist"
 $embedDir = Join-Path $root "internal\web\dist"
 $binDir = Join-Path $root "bin"
 
+# 定位前端仓库 deploy-server-ui。
+#
+# 目录约定是「前端仓库与平台仓库同级」（和 java-mosskb / java-mosskb-ui 一样），
+# 但平台自身可能再套一层（例如仓库根是 deploy/，而前端在它的上一级），
+# 所以按候选顺序探测，而不是写死一层 ../。用 -UiDir 可以显式覆盖。
+$uiCandidates = @()
+if ($UiDir) { $uiCandidates += $UiDir }
+$uiCandidates += @(
+    (Join-Path $root "..\deploy-server-ui")       # 前端与 deploy-server 同级
+    (Join-Path $root "..\..\deploy-server-ui")    # 前端与「平台仓库」同级（当前布局）
+    (Join-Path $root "deploy-server-ui")          # 前端被放在 deploy-server 里面
+    (Join-Path $root "..\..\..\deploy-server-ui")
+)
+
+$uiRepo = $null
+foreach ($cand in $uiCandidates) {
+    if (Test-Path (Join-Path $cand "package.json")) { $uiRepo = (Resolve-Path $cand).Path; break }
+}
+if (-not $uiRepo) {
+    throw @"
+找不到前端仓库 deploy-server-ui（判定依据：目录里有 package.json）。
+已尝试：
+$($uiCandidates | ForEach-Object { "  - $_" } | Out-String)
+请用 -UiDir <路径> 显式指定，例如：
+  powershell -File .\scripts\build.ps1 -UiDir D:\code\project\project-deploy\deploy-server-ui
+"@
+}
+$uiDist = Join-Path $uiRepo "dist"
+
 function Step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
+Write-Host "前端仓库: $uiRepo" -ForegroundColor DarkGray
 
 # 1) 把前端产物拷进 embed 目录
 if (-not $SkipUI) {
     if (-not (Test-Path (Join-Path $uiDist "index.html"))) {
-        throw "前端还没构建（找不到 $uiDist\index.html）。请先执行: cd deploy-server-ui; pnpm.cmd install; pnpm.cmd build"
+        throw "前端还没构建（找不到 $uiDist\index.html）。请先执行: cd '$uiRepo'; pnpm.cmd install; pnpm.cmd build"
     }
     Step "拷贝前端产物到内嵌目录"
     if (Test-Path $embedDir) { Remove-Item -Recurse -Force $embedDir }
@@ -85,7 +118,7 @@ if (-not $SkipUI) {
 
     # 没拷到入口文件说明前端产物不完整，早点报错比部署出白屏好。
     if (-not (Test-Path (Join-Path $embedDir "index.html"))) {
-        throw "embed 目录里没有 index.html —— 前端产物不完整。请先 cd deploy-server-ui; pnpm.cmd build"
+        throw "embed 目录里没有 index.html —— 前端产物不完整。请先 cd '$uiRepo'; pnpm.cmd build"
     }
 }
 else {

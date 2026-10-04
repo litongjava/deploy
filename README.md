@@ -20,14 +20,28 @@
 | ↳ 配置 | `gopkg.in/yaml.v3`；命令行 > 环境变量 > 配置文件 > 默认值 |
 | ↳ 前端托管 | 标准库 **`embed`**，支持 SPA 路由回退；`/api/` 下的 404 仍返回 JSON |
 | [`deploy-cli/`](deploy-cli/) | CLI：登录、触发部署、跟随日志；Go 1.24 / cobra |
-| [`deploy-server-ui/`](deploy-server-ui/) | Web 界面：React 18 / Umi Max 4 / Ant Design 5，裁剪自 Ant Design Pro |
+| [`deploy-server-ui/`](../deploy-server-ui/) | Web 界面（**独立仓库，与平台仓库同级**）：React 18 / Umi Max 4 / Ant Design 5，裁剪自 Ant Design Pro |
 | [`tools/`](tools/) | 运维与冒烟脚本：`sshpoke` 做密码认证 SSH 执行/传文件；`remote-scripts` 初始化和校验服务器；`smoke` 验证进程树终止及 API 部署 |
+
+> **目录约定**：前端是独立仓库，与平台仓库（本 README 所在目录）**同级**放置，和
+> `java-mosskb` / `java-mosskb-ui` 的组织方式一致：
+>
+> ```
+> <父目录>/
+>   deploy/              ← 平台仓库：https://gitee.com/ppnt/deploy
+>                          （本 README、deploy-server、deploy-cli、tools、docs）
+>   deploy-server-ui/    ← 前端仓库：https://gitee.com/ppnt/deploy-server-ui
+> ```
+>
+> 构建脚本会**自动探测**前端仓库位置（找带 `package.json` 的 `../deploy-server-ui` 或
+> `../../deploy-server-ui`），所以把两者换个层级也不会断；必要时可用
+> `-UiDir <路径>`（Windows）或 `UI_DIR=<路径>`（make）显式指定。
 
 命令在**服务端所在机器**执行，模型预留 Runner 字段；Git 准备是项目级开关；`admin` / `user` 按项目归属判权。
 交付采用 SQLite + 单二进制，也支持 Docker，无需 Redis 或消息队列；工具链由用户安装，平台只自检并提示。
 完整决策 D1–D6、需求与验收见[需求规格说明](docs/需求规格说明.md)。
 
-文档：[API 契约](docs/API设计.md)（接口唯一事实来源，改接口先改这里）、[部署记录](docs/部署记录.md)（真实部署与验收证据）、[服务端说明](deploy-server/README.md)、[CLI 说明](deploy-cli/README.md)。
+文档：[API 契约](docs/API设计.md)（接口唯一事实来源，改接口先改这里）、[服务端说明](deploy-server/README.md)、[CLI 说明](deploy-cli/README.md)。
 
 核心能力：
 
@@ -59,11 +73,16 @@ curl -s http://127.0.0.1:8080/api/v1/system/doctor -H 'Authorization: <你的tok
 本节使用 `pnpm.cmd`，避开 PowerShell 执行策略对 `pnpm.ps1` 的限制。
 
 ```powershell
+# 1) 构建前端（前端是独立仓库，与平台仓库 deploy\ 同级）
 cd D:\code\project\project-deploy\deploy-server-ui
 pnpm.cmd install
 pnpm.cmd build
-cd ..\deploy-server
+
+# 2) 构建后端（脚本会自动探测前端仓库位置）
+cd ..\deploy\deploy-server
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build.ps1 -Version 0.1.0 -Local
+
+# 3) 启动本机版本
 .\bin\deploy-server.exe `
     -listen 127.0.0.1:8080 `
     -data-dir .\data `
@@ -85,14 +104,15 @@ Windows 安装 PowerShell 7 时可将 `powershell` 换成 `pwsh`；含中文的 
 
 ### Linux/macOS 开发机
 
-一律使用 `make ui && make linux`；在仓库根目录执行：
+一律使用 `make ui && make linux`。前端仓库与平台仓库同级，所以在平台仓库根目录（即本 README 所在目录）这样执行：
 
 ```bash
-cd deploy-server-ui && pnpm install && pnpm build
-cd ../deploy-server && make ui && make linux
+cd ../deploy-server-ui && pnpm install && pnpm build   # 构建前端（独立仓库）
+cd ../deploy/deploy-server && make ui && make linux     # 拷前端 + 交叉编译
 ```
 
-产物为 `deploy-server/bin/deploy-server-linux-amd64`。ARM 服务器使用 `make linux-arm64`（对应 `GOARCH=arm64`）。
+`make ui` 会自动探测 `../deploy-server-ui` 或 `../../deploy-server-ui`；也可以用 `make ui UI_DIR=<路径>` 指定。
+产物为 `deploy/deploy-server/bin/deploy-server-linux-amd64`。ARM 服务器使用 `make linux-arm64`（对应 `GOARCH=arm64`）。
 本机试跑可在 `deploy-server` 下执行 `make run`；要部署服务器则继续下一节。
 
 ### 只有 Linux 服务器时就地构建
@@ -107,9 +127,12 @@ export PATH=$PATH:/usr/local/go/bin
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt-get install -y nodejs
 corepack enable && corepack prepare pnpm@latest --activate
-cd /srv && git clone '<你的仓库地址>' project-deploy && cd project-deploy
+# 两个仓库是同级目录，分别 clone（换成你自己的地址；当前地址见文首「目录约定」）
+cd /srv
+git clone https://gitee.com/ppnt/deploy.git deploy
+git clone https://gitee.com/ppnt/deploy-server-ui.git deploy-server-ui
 cd deploy-server-ui && pnpm install && pnpm build
-cd ../deploy-server && make ui && make linux
+cd ../deploy/deploy-server && make ui && make linux
 ```
 
 后续会话需确保 `/usr/local/go/bin` 在 PATH 中。也可上传已有源码，省去 clone。
@@ -186,14 +209,17 @@ curl -fsS http://127.0.0.1:8080/api/v1/healthz
 
 ### Docker 部署
 
-**构建上下文必须是仓库根目录**，Dockerfile 要同时看到 `deploy-server` 和 `deploy-server-ui`：
+**构建上下文必须是同时含两个仓库的父目录**（Dockerfile 要同时看到平台仓库 `deploy/` 与前端仓库 `deploy-server-ui/`，而它们是同级目录）：
 
 ```bash
-docker build -t deploy-server:1.0.0 -f deploy-server/Dockerfile .
+cd <父目录>       # 这个目录下要能同时看到 deploy/ 和 deploy-server-ui/
+docker build -t deploy-server:1.0.0 -f deploy/deploy-server/Dockerfile .
 docker run -d --name deploy-server -p 8080:8080 \
   -v /srv/deploy/data:/data -v /srv/deploy/workspaces:/workspaces \
   --restart unless-stopped deploy-server:1.0.0
 ```
+
+也可以直接用 make（它会自己切到父目录）：`cd deploy/deploy-server && make docker`。
 
 镜像预装 `git bash curl rsync openssh-client`。容器里执行的是**容器内的命令**，部署到宿主机需挂载目录或 `docker.sock`；容器内无法 `systemctl reload nginx`，因为没有宿主机 systemd。
 部署本机优先 systemd；Docker 更适合构建并把产物输出到挂载卷。公网部署同样遵守上面的监听与反代要求。
@@ -386,9 +412,15 @@ curl -X POST 'http://<服务器地址>:8080/api/v1/hooks/<Hook令牌>?wait=true'
   -H 'Content-Type: application/json' -d '{"async":false}'
 # 请求体也可以省略
 curl -X POST 'http://<服务器地址>:8080/api/v1/hooks/<Hook令牌>'
+# 令牌改放请求头（不出现在 URL 里，也就不会落进 nginx 的 access_log）
+curl -X POST 'http://<服务器地址>:8080/api/v1/hooks' \
+  -H 'X-Deploy-Token: <Hook令牌>' \
+  -H 'Content-Type: application/json' -d '{"async":true}'
 ```
 
-契约允许 token 放入 `X-Deploy-Token` 头；当前处理器有读取逻辑，但路由只注册 `/hooks/:token`，因此目前请使用路径 token，不能直接照抄仅请求头的调用。
+两种方式**路径优先**：路径里带了令牌时请求头会被忽略，所以「路径写错 + 头部正确」仍是 401，避免两处凭据打架。
+
+令牌放路径或请求头 `X-Deploy-Token` 均可（后者对应不带路径参数的 `POST /api/v1/hooks`）。
 
 字段：`branch` 覆盖分支、`env` 覆盖变量（需项目开启「允许参数覆盖」）、`commandIds` 选命令、`async` 选择异步。
 默认按令牌限流 **60 次/分钟**，超限业务码 `42900`；记录来源 IP 和 User-Agent，供运行历史追溯。
