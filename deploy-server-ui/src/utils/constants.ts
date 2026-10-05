@@ -11,7 +11,11 @@ import type {
 } from '@/services/types';
 
 /** 状态 → 颜色 + 中文 */
-export const RUN_STATUS_META: Record<RunStatus, { color: string; text: string }> = {
+type RunStatusMeta = { color: string; text: string };
+
+// 空字符串表示尚无运行状态，映射中没有对应项，保留调用处的回退显示。
+export const RUN_STATUS_META: Record<RunStatus, RunStatusMeta> &
+  Partial<Record<'', RunStatusMeta>> = {
   queued: { color: 'default', text: '排队中' },
   running: { color: 'processing', text: '运行中' },
   success: { color: 'success', text: '成功' },

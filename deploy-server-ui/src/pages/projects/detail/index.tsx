@@ -301,7 +301,7 @@ const ProjectDetail: React.FC = () => {
                   </Tag>
                 ))}
                 <span>→</span>
-                <Tag color={PROJECT_KIND_META[(project.kind as any) || 'app']?.color}>
+                <Tag color={PROJECT_KIND_META[project.kind || 'app']?.color}>
                   {project.key}
                 </Tag>
               </Space>
@@ -420,7 +420,7 @@ const ProjectDetail: React.FC = () => {
                         {RUN_STATUS_META[row.lastRunStatus as Run['status']]?.text ||
                           row.lastRunStatus}
                       </Tag>
-                      <span>{formatTime(v)}</span>
+                      <span>{formatTime(row.lastRunAt)}</span>
                     </Space>
                   ) : (
                     '从未运行'

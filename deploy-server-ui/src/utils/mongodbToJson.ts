@@ -1,10 +1,9 @@
-// @ts-ignore
 import {request} from '@umijs/max';
 import {download} from "@/utils/downloadUtils";
 
 
-export async function pageRequest(tableName: string, data: any): Promise<API.Result> {
-  return request<API.Result>(`/mongodb/json/${tableName}/page`, {
+export async function pageRequest(tableName: string, data: any): Promise<API.Result<API.TablePage>> {
+  return request<API.Result<API.TablePage>>(`/mongodb/json/${tableName}/page`, {
     method: 'POST',
     data,
   });

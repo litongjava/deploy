@@ -105,8 +105,8 @@ const Tasks: React.FC = () => {
       render: (_, row) =>
         row.lastRunAt ? (
           <Space size={6}>
-            <Tag color={RUN_STATUS_META[row.lastRunStatus as never]?.color || 'default'}>
-              {RUN_STATUS_META[row.lastRunStatus as never]?.text || row.lastRunStatus}
+            <Tag color={RUN_STATUS_META[row.lastRunStatus]?.color || 'default'}>
+              {RUN_STATUS_META[row.lastRunStatus]?.text || row.lastRunStatus}
             </Tag>
             <span style={{ fontSize: 12 }}>{formatTime(row.lastRunAt)}</span>
           </Space>

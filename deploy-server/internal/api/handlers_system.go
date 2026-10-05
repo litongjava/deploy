@@ -1,12 +1,14 @@
 package api
 
 import (
+	"encoding/binary"
 	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/gin-gonic/gin"
 
@@ -105,8 +107,12 @@ func probeTool(p toolProbe, env []string) checkDTO {
 	cmd.Env = append(append([]string{}, env...), "GIT_TERMINAL_PROMPT=0")
 	done := make(chan string, 1)
 	go func() {
-		out, _ := cmd.CombinedOutput()
-		done <- string(out)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			done <- ""
+			return
+		}
+		done <- normalizeProbeOutput(out)
 	}()
 	select {
 	case out := <-done:
@@ -118,13 +124,51 @@ func probeTool(p toolProbe, env []string) checkDTO {
 	return dto
 }
 
+// normalizeProbeOutput handles UTF-16 emitted by some Windows tools, including
+// BOM-less ASCII output with NUL bytes concentrated on one byte parity.
+func normalizeProbeOutput(out []byte) string {
+	var order binary.ByteOrder
+	if len(out) >= 2 && out[0] == 0xff && out[1] == 0xfe {
+		order = binary.LittleEndian
+		out = out[2:]
+	} else if len(out) >= 2 && out[0] == 0xfe && out[1] == 0xff {
+		order = binary.BigEndian
+		out = out[2:]
+	} else if len(out) >= 2 {
+		var zeros [2]int
+		for i, b := range out {
+			if b == 0 {
+				zeros[i%2]++
+			}
+		}
+		// At least 40% NUL bytes, with at least 80% on the high-byte side.
+		total := zeros[0] + zeros[1]
+		if total*5 >= len(out)*2 {
+			if zeros[1] > zeros[0] && zeros[1]*5 >= total*4 {
+				order = binary.LittleEndian
+			} else if zeros[0] > zeros[1] && zeros[0]*5 >= total*4 {
+				order = binary.BigEndian
+			}
+		}
+	}
+	if order == nil {
+		return strings.ToValidUTF8(string(out), "")
+	}
+	units := make([]uint16, len(out)/2)
+	for i := range units {
+		units[i] = order.Uint16(out[2*i : 2*i+2])
+	}
+	return string(utf16.Decode(units))
+}
+
 func firstLine(s string) string {
 	s = strings.TrimSpace(s)
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
 		s = s[:i]
 	}
-	if len(s) > 200 {
-		s = s[:200]
+	runes := []rune(s)
+	if len(runes) > 200 {
+		s = string(runes[:200])
 	}
 	return strings.TrimSpace(s)
 }

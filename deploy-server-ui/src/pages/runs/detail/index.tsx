@@ -414,12 +414,12 @@ const RunDetail: React.FC = () => {
                 </Space>
               ),
             },
-            { title: '开始时间', dataIndex: 'startedAt', render: (v) => formatTime(v) },
-            { title: '结束时间', dataIndex: 'finishedAt', render: (v) => formatTime(v) },
+            { title: '开始时间', dataIndex: 'startedAt', render: (_, row) => formatTime(row.startedAt) },
+            { title: '结束时间', dataIndex: 'finishedAt', render: (_, row) => formatTime(row.finishedAt) },
             {
               title: '耗时',
               dataIndex: 'durationMs',
-              render: (v) => formatDuration(v),
+              render: (_, row) => formatDuration(row.durationMs),
             },
             {
               title: '退出码',
@@ -429,7 +429,7 @@ const RunDetail: React.FC = () => {
             {
               title: '日志大小',
               dataIndex: 'logSize',
-              render: (v) => formatBytes(v),
+              render: (_, row) => formatBytes(row.logSize),
             },
           ]}
         />

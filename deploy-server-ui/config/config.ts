@@ -7,7 +7,7 @@ import routes from './routes';
 
 const { REACT_APP_ENV = 'dev' } = process.env;
 
-let config = {
+const config: ReturnType<typeof defineConfig> = defineConfig({
   base: baseConfig.basePath,
   publicPath: baseConfig.basePath,
 
@@ -108,6 +108,5 @@ let config = {
   // 生产环境也从来不提供它。关掉后 dist 从 14.42 MB 降到 3.19 MB，
   // 构建也明显更快。
   devtool: false,
-};
-// @ts-ignore
-export default defineConfig(config);
+});
+export default config;

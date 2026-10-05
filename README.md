@@ -33,9 +33,6 @@
 >   tools/                ← 服务器初始化与冒烟脚本
 >   docs/                 ← 需求规格说明、API 契约
 > ```
->
-> 构建脚本会**自动探测**前端目录位置（找带 `package.json` 的 `../deploy-server-ui` 等候选路径），
-> 所以调整目录层级不会让它断掉；必要时也可用 `-UiDir <路径>`（Windows）或 `UI_DIR=<路径>`（make）显式指定。
 
 命令在**服务端所在机器**执行，模型预留 Runner 字段；Git 准备是项目级开关；`admin` / `user` 按项目归属判权。
 交付采用 SQLite + 单二进制，也支持 Docker，无需 Redis 或消息队列；工具链由用户安装，平台只自检并提示。
@@ -112,7 +109,7 @@ cd deploy-server-ui && pnpm install && pnpm build   # 构建前端
 cd ../deploy-server && make ui && make linux        # 拷前端 + 交叉编译
 ```
 
-`make ui` 会自动探测前端目录（`../deploy-server-ui` 等候选路径）；也可以用 `make ui UI_DIR=<路径>` 指定。
+`make ui` 会自动探测前端源码目录（`../deploy-server-ui` 等候选路径）；也可以用 `make ui UI_DIR=<路径>` 指定。
 产物为 `deploy-server/bin/deploy-server-linux-amd64`。ARM 服务器使用 `make linux-arm64`（对应 `GOARCH=arm64`）。
 本机试跑可在 `deploy-server` 下执行 `make run`；要部署服务器则继续下一节。
 
@@ -135,6 +132,15 @@ cd ../deploy-server && make ui && make linux
 ```
 
 后续会话需确保 `/usr/local/go/bin` 在 PATH 中。也可上传已有源码，省去 clone。
+
+> **前端 Node 版本**：`deploy-server-ui` 的 umi 已从 4.4.12 升到 **4.7.22**，`.npmrc` 把 Node 钉在 **25.2.1**（`.nvmrc` 同步）。
+> 背景：umi 4.4.x 的依赖链 `spdy → http-deceiver` 在 require 时调用 Node 24 已移除的私有 API
+> `process.binding('http_parser')`，于是 Node >= 24 上 `pnpm install` 的 `max setup` 会 fatal：
+> `Error: No such module: http_parser`；4.7.22 起 `@umijs/bundler-utils` 在 Node >= 24 时不再 require `spdy`
+> （umijs/umi#13256），Node 22/25 都能构建。`.npmrc` 的 `use-node-version=25.2.1` 让 pnpm 自己下载并使用
+> 该版本（走 npmmirror 镜像，与服务器 nvm 默认版本无关），所以工具链按默认 `--lts` 装的 Node 24/26 也能构建；
+> 不想让它下载就 `NODE_VERSION=25.2.1 bash install.sh --only node,pnpm`（或手动 `nvm install 25.2.1 && nvm alias default 25.2.1`）。
+> 详见 `deploy-server-ui/README.md`。
 
 ## 部署到服务器
 

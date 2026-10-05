@@ -1,6 +1,6 @@
 import { configUmiAlias, createConfig } from '@umijs/max/test';
 
-export default async () => {
+export default async (): ReturnType<typeof configUmiAlias> => {
   const config = await configUmiAlias({
     ...createConfig({
       target: 'browser',

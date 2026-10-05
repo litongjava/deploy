@@ -295,8 +295,8 @@ const TaskDetail: React.FC = () => {
             <ProDescriptions.Item label="上次运行">
               {task?.lastRunAt ? (
                 <Space size={6}>
-                  <Tag color={RUN_STATUS_META[task.lastRunStatus as never]?.color || 'default'}>
-                    {RUN_STATUS_META[task.lastRunStatus as never]?.text || task.lastRunStatus}
+                  <Tag color={RUN_STATUS_META[task.lastRunStatus]?.color || 'default'}>
+                    {RUN_STATUS_META[task.lastRunStatus]?.text || task.lastRunStatus}
                   </Tag>
                   <span>{formatTime(task.lastRunAt)}</span>
                 </Space>
@@ -459,7 +459,6 @@ const TaskDetail: React.FC = () => {
             },
             {
               title: '操作',
-              valueType: 'option',
               render: (_: any, row: HookToken) => [
                 <Popconfirm
                   key="reset"

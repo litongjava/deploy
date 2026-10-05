@@ -1,9 +1,8 @@
-// @ts-ignore
 import {request} from '@umijs/max';
 import {download} from "@/utils/downloadUtils";
 
-export async function pageRequest(data: any, tableName?: string): Promise<API.Result> {
-  return request<API.Result>(`/api/table/${tableName}/page`, {
+export async function pageRequest(data: any, tableName?: string): Promise<API.Result<API.TablePage>> {
+  return request<API.Result<API.TablePage>>(`/api/table/${tableName}/page`, {
     method: 'POST',
     data,
   });
