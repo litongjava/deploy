@@ -26,8 +26,8 @@ func readHostInfo() hostInfo {
 	}
 }
 
-func readCPUTimes() (cpuTimes, error) {
-	return cpuTimes{}, syscall.ENOSYS
+func readCPUTimes() (cpuTimes, []cpuTimes, error) {
+	return cpuTimes{}, nil, syscall.ENOSYS
 }
 
 func readLoad() Load { return Load{} }

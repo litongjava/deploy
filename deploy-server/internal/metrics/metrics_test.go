@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"runtime"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -92,6 +93,63 @@ func TestCPUSnapshotIsConsistent(t *testing.T) {
 			t.Errorf("usagePercent=%.1f 与 busy/total 推出的 %.1f 不一致",
 				cpu.UsagePercent, recomputed)
 		}
+	}
+
+	checkPerCore(t, cpu)
+}
+
+// checkPerCore 校验逐核使用率：这是「每个小核心的使用率」那排小进度条的数据源。
+//
+// 最关键的一条是「各核心的累计时间之和 ≈ 整机累计时间」——
+// 它保证逐核与整机用的是同一套口径（同一份计数、同一套换算），
+// 否则页面上会出现「各核心加起来 40% 而整机写 12%」这种自相矛盾的画面。
+func checkPerCore(t *testing.T, cpu CPU) {
+	t.Helper()
+
+	if len(cpu.CoreUsage) == 0 {
+		// Linux 走 /proc/stat、Windows 走 NtQuerySystemInformation，两者都应拿到逐核。
+		// 只有兜底平台（host_other.go）才会真的没有——那种情况下后端已经
+		// 在 warnings 里说明了，这里不算失败。
+		if runtime.GOOS == "linux" || runtime.GOOS == "windows" {
+			t.Errorf("%s 上应返回逐核使用率（coreUsage），却拿到空数组", runtime.GOOS)
+		}
+		t.Log("当前平台没有返回逐核使用率，跳过逐核校验")
+		return
+	}
+	if len(cpu.CoreUsage) != cpu.Cores {
+		t.Errorf("逐核条数 %d 与逻辑核数 %d 不一致", len(cpu.CoreUsage), cpu.Cores)
+	}
+
+	var sumBusy, sumTotal float64
+	for i, c := range cpu.CoreUsage {
+		if c.Index != i {
+			t.Errorf("第 %d 项的 index 应为 %d，得到 %d", i, i, c.Index)
+		}
+		if want := "CPU" + strconv.Itoa(i); c.IndexLabel != want {
+			t.Errorf("第 %d 项的 indexLabel 应为 %q，得到 %q", i, want, c.IndexLabel)
+		}
+		if c.UsagePercent < 0 || c.UsagePercent > 100 {
+			t.Errorf("CPU%d 使用率超出 0~100: %v", i, c.UsagePercent)
+		}
+		sumBusy += c.BusySec
+		sumTotal += c.TotalSec
+	}
+
+	// 单核的 total 应当约等于采样窗口（一个核心一份时间）。
+	tolerance := cpu.SampleWindowSec*0.3 + 0.5
+	if diff := cpu.CoreUsage[0].TotalSec - cpu.SampleWindowSec; diff > tolerance || diff < -tolerance {
+		t.Errorf("CPU0 的 totalSec=%.2f 与采样窗口 %.2fs 不匹配",
+			cpu.CoreUsage[0].TotalSec, cpu.SampleWindowSec)
+	}
+	// 逐核之和与整机口径必须一致（容差覆盖每项 round2 的累计取整误差）。
+	sumTolerance := cpu.TotalSec*0.1 + float64(len(cpu.CoreUsage))*0.05
+	if diff := sumTotal - cpu.TotalSec; diff > sumTolerance || diff < -sumTolerance {
+		t.Errorf("逐核 totalSec 之和 %.2f 与整机 %.2f 不一致（容差 %.2f）",
+			sumTotal, cpu.TotalSec, sumTolerance)
+	}
+	if diff := sumBusy - cpu.BusySec; diff > sumTolerance || diff < -sumTolerance {
+		t.Errorf("逐核 busySec 之和 %.2f 与整机 %.2f 不一致（容差 %.2f）",
+			sumBusy, cpu.BusySec, sumTolerance)
 	}
 }
 

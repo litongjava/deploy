@@ -3,6 +3,8 @@
 package metrics
 
 import (
+	"errors"
+	"fmt"
 	"runtime"
 	"strconv"
 	"strings"
@@ -22,10 +24,17 @@ const cpuUnitPerSec = 1e7
 var (
 	kernel32               = windows.NewLazySystemDLL("kernel32.dll")
 	psapi                  = windows.NewLazySystemDLL("psapi.dll")
+	ntdll                  = windows.NewLazySystemDLL("ntdll.dll")
 	procGetSystemTimes     = kernel32.NewProc("GetSystemTimes")
 	procGetTickCount64     = kernel32.NewProc("GetTickCount64")
 	procGetPerformanceInfo = psapi.NewProc("GetPerformanceInfo")
+	// 逐核 CPU 时间只能从 ntdll 拿：Win32 层没有对应的公开接口。
+	procNtQuerySystemInformation = ntdll.NewProc("NtQuerySystemInformation")
 )
+
+// systemProcessorPerformanceInformation 是 NtQuerySystemInformation 的信息类号，
+// 返回每个逻辑核心的累计时间（SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION 数组）。
+const systemProcessorPerformanceInformation = 8
 
 // performanceInfo 对应 Win32 的 PERFORMANCE_INFORMATION。
 //
@@ -87,12 +96,32 @@ func readCPUModelFromRegistry() (model string, mhz int) {
 	return model, mhz
 }
 
-// readCPUTimes 用 GetSystemTimes 拿三个累计时间。
+// readCPUTimes 取整机与每个逻辑核心的累计 CPU 时间。
+//
+// 整机走 kernel32 的 GetSystemTimes（稳定、无缓冲区约定），
+// 逐核只能走 ntdll 的 NtQuerySystemInformation(SystemProcessorPerformanceInformation)——
+// Win32 层没有提供逐核时间的公开接口。
+func readCPUTimes() (cpuTimes, []cpuTimes, error) {
+	total, err := readTotalCPUTimes()
+	if err != nil {
+		return cpuTimes{}, nil, err
+	}
+	// 逐核是「锦上添花」：拿不到就返回 nil，页面照常显示整机使用率，
+	// 不要因为一个未文档化的 API 失败就让整页 CPU 数据消失。
+	perCore, err := readPerCoreCPUTimes()
+	if err != nil {
+		warn("per-core cpu times unavailable", "err", err)
+		perCore = nil
+	}
+	return total, perCore, nil
+}
+
+// readTotalCPUTimes 用 GetSystemTimes 拿整机的三个累计时间。
 //
 // 三个出参的顺序容易记错：idle、kernel、user。
 // 而且 kernel **包含** idle，所以真正的系统态时间是 kernel - idle——
 // 不减的话使用率会算高一截（在空闲机器上尤其明显）。
-func readCPUTimes() (cpuTimes, error) {
+func readTotalCPUTimes() (cpuTimes, error) {
 	var idle, kernel, user syscall.Filetime
 	r, _, err := procGetSystemTimes.Call(
 		uintptr(unsafe.Pointer(&idle)),
@@ -102,25 +131,117 @@ func readCPUTimes() (cpuTimes, error) {
 	if r == 0 {
 		return cpuTimes{}, err
 	}
+	return combineCPUTimes(filetimeUnits(idle), filetimeUnits(kernel), filetimeUnits(user)), nil
+}
 
-	i := filetimeUnits(idle)
-	k := filetimeUnits(kernel)
-	u := filetimeUnits(user)
-
-	system := k - i
+// combineCPUTimes 把 Win32 的三个累计值折成统一的 cpuTimes。
+// GetSystemTimes 与逐核结构体的字段含义相同，所以共用这一份换算。
+func combineCPUTimes(idle, kernel, user float64) cpuTimes {
+	system := kernel - idle
 	if system < 0 {
 		system = 0
 	}
-	busy := u + system
-	total := busy + i
+	busy := user + system
 	return cpuTimes{
-		user:   u,
+		user:   user,
 		system: system,
-		idle:   i,
+		idle:   idle,
 		iowait: 0, // Windows 没有 iowait 概念
 		busy:   busy,
-		total:  total,
-	}, nil
+		total:  busy + idle,
+	}
+}
+
+// SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION 是 ntdll 的逐核结构体，
+// 每个逻辑核心一项，四个字段都是 LARGE_INTEGER（100ns 单位的累计时间）。
+type systemProcessorPerformanceInfo struct {
+	IdleTime   int64
+	KernelTime int64 // 含 IdleTime
+	UserTime   int64
+	DpcTime    int64
+	// 后面还有 InterruptTime 与三个保留 DWORD，我们不用，但结构体大小必须写全，
+	// 否则 NtQuerySystemInformation 会按元素大小步进、读到错位的垃圾。
+	InterruptTime int64
+	Interrupts    uint32
+	_             uint32
+}
+
+// ntStatusInfoLengthMismatch 是 NtQuerySystemInformation 在缓冲区太小时的返回码，
+// 即 STATUS_INFO_LENGTH_MISMATCH = 0xC0000004。此时 ReturnLength 给出所需字节数。
+//
+// 注意别写成 0x80000005（那是 Win32 的 ERROR_INSUFFICIENT_BUFFER）：
+// NTSTATUS 与 Win32 错误码是两套编号，混用会让这里永远匹配不上，
+// 逐核数据就会静默变成「拿不到」（实测踩过）。
+const ntStatusInfoLengthMismatch = 0xC0000004
+
+// readPerCoreCPUTimes 用 NtQuerySystemInformation 读每个逻辑核心的累计时间。
+//
+// 为什么需要两趟：缓冲区大小取决于逻辑核心数，而这个数只能在调用后从
+// ReturnLength 里知道（runtime.NumCPU() 在 CPU 组/亲和性受限时可能偏小）。
+// 所以第一次故意给一个 0 长度缓冲区，拿回所需大小后再正式查一次。
+// 第一次返回的 error 是 ERROR_INSUFFICIENT_BUFFER，属预期路径，不算失败。
+func readPerCoreCPUTimes() ([]cpuTimes, error) {
+	size, err := querySystemProcessorInfo(nil)
+	if err != nil && size == 0 {
+		return nil, err
+	}
+	// 按元素大小向上取整，留一个元素的余量。
+	itemSize := int(unsafe.Sizeof(systemProcessorPerformanceInfo{}))
+	if itemSize == 0 {
+		return nil, errors.New("unexpected zero-sized processor info struct")
+	}
+	count := (size + itemSize - 1) / itemSize
+	if count <= 0 {
+		return nil, errors.New("NtQuerySystemInformation returned no processors")
+	}
+
+	buf := make([]systemProcessorPerformanceInfo, count)
+	got, err := querySystemProcessorInfo(buf)
+	if err != nil {
+		return nil, err
+	}
+	n := got / itemSize
+	if n > len(buf) {
+		n = len(buf)
+	}
+
+	out := make([]cpuTimes, 0, n)
+	for i := 0; i < n; i++ {
+		p := buf[i]
+		out = append(out, combineCPUTimes(
+			float64(p.IdleTime), float64(p.KernelTime), float64(p.UserTime)))
+	}
+	return out, nil
+}
+
+// querySystemProcessorInfo 调 NtQuerySystemInformation 查询逐核性能信息，
+// 返回写入的字节数（buf 为 nil 时返回所需字节数）。
+func querySystemProcessorInfo(buf []systemProcessorPerformanceInfo) (int, error) {
+	var (
+		ptr    uintptr
+		length uint32
+	)
+	if len(buf) > 0 {
+		ptr = uintptr(unsafe.Pointer(&buf[0]))
+		length = uint32(len(buf) * int(unsafe.Sizeof(buf[0])))
+	}
+
+	var retLen uint32
+	r, _, _ := procNtQuerySystemInformation.Call(
+		uintptr(systemProcessorPerformanceInformation),
+		ptr,
+		uintptr(length),
+		uintptr(unsafe.Pointer(&retLen)),
+	)
+	// NTSTATUS：非负为成功。
+	if int32(r) >= 0 {
+		return int(retLen), nil
+	}
+	if uint32(r) == ntStatusInfoLengthMismatch {
+		// 缓冲区不足：retLen 是所需大小，交给调用方重试。
+		return int(retLen), errors.New("buffer too small")
+	}
+	return 0, fmt.Errorf("NtQuerySystemInformation failed: 0x%08X", uint32(r))
 }
 
 // filetimeUnits 把 FILETIME（100ns 单位，分高低位）转成 float 单位数。

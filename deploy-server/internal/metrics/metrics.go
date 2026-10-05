@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -70,6 +71,13 @@ type CPU struct {
 	Available    bool    `json:"available"`
 	UsagePercent float64 `json:"usagePercent"`
 
+	// CoreUsage 是每个逻辑核心的使用率，长度等于 Cores。
+	//
+	// 注意窗口语义与整机略有不同：它是**两次采样之间的瞬时占用**，
+	// 所以单个核心会看到 0% 和 100% 反复跳（调度器把任务在核心间搬来搬去），
+	// 这是正常的，不是采集有问题。取不到时为 nil。
+	CoreUsage []CoreUsage `json:"coreUsage"`
+
 	// SampleWindowSec 是本次使用率的统计窗口（两次采样之间的秒数）。
 	// 刚启动时为 0。暴露它是为了透明：用户看到的 30% 到底是「最近 3 秒」的
 	// 还是「最近 5 分钟」的，差别很大。
@@ -87,6 +95,17 @@ type CPU struct {
 	SystemSec float64 `json:"systemSec"`
 	IdleSec   float64 `json:"idleSec"`
 	IowaitSec float64 `json:"iowaitSec"`
+}
+
+// CoreUsage 是单个逻辑核心在最近一个采样窗口内的使用率。
+type CoreUsage struct {
+	// Index 是 0 基的核心序号；IndexLabel 是前端直接显示的名字（"CPU0"）。
+	Index        int     `json:"index"`
+	IndexLabel   string  `json:"indexLabel"`
+	UsagePercent float64 `json:"usagePercent"`
+	// BusySec / TotalSec 与整机口径一致，单位秒。
+	BusySec  float64 `json:"busySec"`
+	TotalSec float64 `json:"totalSec"`
 }
 
 // Memory 描述物理内存与交换分区。
@@ -346,7 +365,10 @@ func hostnameOrEmpty() string {
 type cpuProgress struct {
 	at    time.Time
 	times cpuTimes
-	ok    bool
+	// perCore 是各逻辑核心上一次的计数，顺序与 /proc/stat 的 cpuN 行一致。
+	// 核心数变化（极少数情况，如 CPU 热插拔）时长度对不上，按较短的那个比较。
+	perCore []cpuTimes
+	ok      bool
 }
 
 // cpuTimes 是一次 CPU 计数读数，单位由各平台自定义（Linux 是 jiffies，Windows 是 100ns）。
@@ -366,41 +388,78 @@ func readCPU(host *hostInfo) CPU {
 		Cores:         host.cpuCores,
 		PhysicalCores: host.cpuPhys,
 		MHz:           host.cpuMHz,
+		// 必须初始化成空切片：nil 切片会被序列化成 JSON null，
+		// 前端按数组渲染就会炸。契约里写死了 coreUsage 是数组。
+		CoreUsage: []CoreUsage{},
 	}
 	if out.Cores <= 0 {
 		out.Cores = runtime.NumCPU()
 	}
 
 	now := time.Now()
-	cur, err := readCPUTimes()
+	total, perCore, err := readCPUTimes()
 	if err != nil {
 		warn("read cpu times failed", "err", err)
 		return out
 	}
 
 	prev := progress
-	progress = cpuProgress{at: now, times: cur, ok: true}
+	progress = cpuProgress{at: now, times: total, perCore: perCore, ok: true}
 
 	if !prev.ok {
 		return out
 	}
-	busyDelta := cur.busy - prev.times.busy
-	totalDelta := cur.total - prev.times.total
-	// total 不增长说明计数器被重置（极少见），保留 Available=false 等下一轮。
-	if busyDelta < 0 || totalDelta <= 0 {
-		return out
+
+	out.SampleWindowSec = round2(now.Sub(prev.at).Seconds())
+
+	// ---- 整机 ----
+	if used, busySec, totalSec, ok := deltaUsage(prev.times, total); ok {
+		out.Available = true
+		out.UsagePercent = used
+		out.BusySec = busySec
+		out.TotalSec = totalSec
+		out.UserSec = round2((total.user - prev.times.user) / cpuUnitPerSec)
+		out.SystemSec = round2((total.system - prev.times.system) / cpuUnitPerSec)
+		out.IdleSec = round2((total.idle - prev.times.idle) / cpuUnitPerSec)
+		out.IowaitSec = round2((total.iowait - prev.times.iowait) / cpuUnitPerSec)
 	}
 
-	out.Available = true
-	out.UsagePercent = clampPercent(busyDelta / totalDelta * 100)
-	out.SampleWindowSec = round2(now.Sub(prev.at).Seconds())
-	out.BusySec = round2(busyDelta / cpuUnitPerSec)
-	out.TotalSec = round2(totalDelta / cpuUnitPerSec)
-	out.UserSec = round2((cur.user - prev.times.user) / cpuUnitPerSec)
-	out.SystemSec = round2((cur.system - prev.times.system) / cpuUnitPerSec)
-	out.IdleSec = round2((cur.idle - prev.times.idle) / cpuUnitPerSec)
-	out.IowaitSec = round2((cur.iowait - prev.times.iowait) / cpuUnitPerSec)
+	// ---- 每个逻辑核心 ----
+	// 长度取两者较短的一边：核心数变化时只比较对得上的部分，绝不越界。
+	n := len(perCore)
+	if len(prev.perCore) < n {
+		n = len(prev.perCore)
+	}
+	if n > 0 {
+		out.CoreUsage = make([]CoreUsage, 0, n)
+		for i := 0; i < n; i++ {
+			cu := CoreUsage{Index: i, IndexLabel: "CPU" + strconv.Itoa(i)}
+			if used, busySec, totalSec, ok := deltaUsage(prev.perCore[i], perCore[i]); ok {
+				cu.UsagePercent = used
+				cu.BusySec = busySec
+				cu.TotalSec = totalSec
+			}
+			out.CoreUsage = append(out.CoreUsage, cu)
+		}
+	}
 	return out
+}
+
+// deltaUsage 由「上一次」与「这一次」的计数算出使用率与忙/总时间（秒）。
+//
+// 单核心与整机共用这一份算法：口径必须完全一致，
+// 否则会出现「各核心加起来 ≠ 整机使用率」这种自相矛盾的画面。
+func deltaUsage(prev, cur cpuTimes) (usage, busySec, totalSec float64, ok bool) {
+	busyDelta := cur.busy - prev.busy
+	totalDelta := cur.total - prev.total
+	// total 不增长说明计数器被重置（极少见），保留 Available=false 等下一轮。
+	if busyDelta < 0 || totalDelta <= 0 {
+		return 0, 0, 0, false
+	}
+	return clampPercent(busyDelta / totalDelta * 100),
+		round2(busyDelta / cpuUnitPerSec),
+		round2(totalDelta / cpuUnitPerSec),
+		true
 }
 
 // clampPercent 把百分比夹到 [0,100]，并对 -0 做归零。

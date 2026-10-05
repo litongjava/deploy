@@ -406,6 +406,11 @@ myprofessor-backend
 - 依赖被归档 / 删掉 / 改成应用项目后，触发时会明确报错并指出是哪个依赖，不会静默跳过。
 - 依赖项目之间**同一项目串行**（沿用项目的并发策略），协调器本身不占并发额度，因此不会自锁。
 
+> **完整案例**：[docs/cases/mosskb-web-部署案例.md](docs/cases/mosskb-web-部署案例.md) 记录了一次真实的多模块 Java 部署：
+> `mosskb-web`（tio-boot，JDK 21）依赖 5 个必须**源码构建**的库（`tio-boot`、`tio-boot-admin`、`api-table`、
+> `java-openai` 含补丁、`mosskb-business`），数据库留在开发机、应用跑在服务器上。里面写清了每条命令为什么这么写，
+> 以及工作目录必填、SPA 表单残留、依赖未发布到中央仓库、JDK 版本缺失、跨机连库等 8 个坑的修法。
+
 ### 建议安装 build 命令（多模块构建）
 
 平台的每条命令都是一段 shell 脚本，工程一多（不同操作系统、不同 `JAVA_HOME`、`mvn -Pproduction` 之类的参数）把构建命令散落在每个项目里就很难维护。
@@ -593,44 +598,53 @@ deploy version
 监听地址、工作目录等影响进程本身的配置需改配置文件并重启，不在界面热改。
 **凭据管理**支持 `https_token`（用户名 + Token/密码）与 `ssh_key`（私钥），AES-GCM 加密，接口永不返回密文；编辑留空表示不改，被项目引用时禁止删除。
 
-### 一键安装工具链（页面）
+### 一键安装工具链（侧边栏「环境自检」页）
 
-「系统设置 → 环境自检」下面还有一块**「工具链一键安装」**：把常用的构建工具链装到服务端机器上，不用登服务器敲命令。
+侧边栏有一级菜单**「环境自检」**：上半部分是自检清单，下半部分就是**「工具链一键安装」**——把常用构建工具链装到服务端机器上，不用登服务器敲命令。
 
-| 组件 | 装什么 | 大致体积 |
-|---|---|---|
-| `cc` | gcc / g++ / make / pkg-config（apt 的 build-essential） | 约 200 MB |
-| `java` | OpenJDK（默认 17，`--java 11/21` 可换）并写 `JAVA_HOME` 到 `/etc/profile.d/java.sh` | 约 180 MB |
-| `maven` | mvn；顺带写一份阿里云镜像 `~/.m2/settings.xml`（已存在则不覆盖） | 约 30 MB |
-| `nvm` | nvm 本体（装到 `/usr/local/nvm`，写 `/etc/profile.d/nvm.sh`） | 约 5 MB |
-| `node` | 经 nvm 装 LTS 并设为默认版本 | 约 60 MB |
-| `pnpm` | 经 corepack 装到 `/usr/local/bin`，registry 指向 npmmirror | 约 10 MB |
-| `go` | 装到 `/usr/local/go` 并软链到 `/usr/local/bin`，`GOPROXY=goproxy.cn` | 约 120 MB |
-| `rust` | 系统级 rustup（`/usr/local/cargo`），crates 走 rsproxy 镜像 | 约 250 MB |
+| 组件 | 装什么（默认） | 可改的参数 | 大致体积 |
+|---|---|---|---|
+| `cc` | gcc / g++ / make / pkg-config / libssl-dev | `CC_EXTRA_PACKAGES` 额外包（如 `cmake nasm`） | 约 200 MB |
+| `java` | 发行版 OpenJDK 17，写 `JAVA_HOME` 到 `/etc/profile.d/java.sh` | `JAVA_VERSION`（8/11/17/21）、`JDK_URL`（填了就改走压缩包安装）、`JAVA_DIR`（默认 `/usr/local/jdk`） | 约 180 MB |
+| `maven` | 发行版 mvn + 阿里云镜像 `settings.xml`（已存在则不覆盖） | `MAVEN_URL`、`MAVEN_DIR` | 约 30 MB |
+| `nvm` | nvm 本体 → `/usr/local/nvm`，写 `/etc/profile.d/nvm.sh` | `NVM_VERSION`、`NVM_GIT_URL`、`NVM_DIR` | 约 5 MB |
+| `node` | 经 nvm 装 LTS 并设为默认版本 | `NODE_VERSION`（`--lts`/`20`/`v20.11.1`）、`NVM_NODEJS_ORG_MIRROR` | 约 60 MB |
+| `pnpm` | 经 corepack 装到 `/usr/local/bin`，registry 指向 npmmirror | `PNPM_VERSION` | 约 10 MB |
+| `go` | 装到 `/usr/local/go`，软链到 `/usr/local/bin`，`GOPROXY=goproxy.cn` | `GO_VERSION`、`GO_URL`、`GO_DIR` | 约 120 MB |
+| `rust` | 系统级 rustup（`/usr/local/cargo`），crates 走 rsproxy | `RUST_TOOLCHAIN`、`RUSTUP_HOME`、`CARGO_HOME`、`RUSTUP_DIST_SERVER` | 约 250 MB |
 
-用法：勾选要装的组件 →「安装所选」或直接点「一键安装缺失（n）」→ 先弹确认框 → 点确定后**跳到运行详情页看实时日志**。
-实现上安装就是一次**普通运行**（内置项目 `system-toolchain`），所以取消、重跑、下载日志、日志脱敏全都照旧可用。
+**怎么用**
+
+1. 勾选要装的组件 →「安装所选」，或直接点「一键安装缺失（n）」。
+2. 确认框会列出「要装什么 + 当前参数」，确定后**跳到运行详情页看实时日志**（安装就是一次普通运行：可取消、可重跑、可下载日志）。
+3. 想换版本（例如装 **JDK 8**）：点该行「编辑」→ 填 `JDK_URL=https://.../jdk-8uXXX-linux-x64.tar.gz`、`JAVA_DIR=/usr/local/jdk8`（`JAVA_VERSION` 填 8）→ 保存 → 点该行「重装」。
+
+**安装记录**：面板下方列出最近的安装运行（时间 / 装的组件 / 用了哪些参数 / 状态 / 耗时 / 日志入口）；
+「装到哪」在**运行日志末尾的汇总表**（`组件 | 结果 | 版本 | 位置`）和列表的「版本 / 位置」列都能看到。
 
 要点与边界：
 
-- **仅管理员**可触发（真装软件、走 apt），普通账号只能看状态。
+- **仅管理员**可安装或改参数；普通账号能看状态、版本、位置与历史记录。
 - **仅 Linux 服务端**：脚本基于 bash + apt/dnf；其他平台可以点「预演」查看计划，或「下载脚本」拿到 Linux 机器上手动跑。
-- **预演（dry-run）**：只打印将要执行的动作，不做任何修改——第一次用建议先预演。
-- **幂等**：已装好的组件默认跳过（要看强制重装可在页面上勾选后仍走安装；脚本层面是 `--force`）。
+- **预演（dry-run）**：只打印将要执行的动作，不做任何修改——第一次用、或改完参数心里没底时先点它。
+- **幂等**：已装好的组件默认跳过；要换版本就用该行的「重装」（对应 `force`）。
 - **保守修改**：只写 `/usr/local`、`/etc/profile.d` 和工具自己的配置；**不动 apt 源**，**不覆盖**已有的 `~/.m2/settings.xml` 与 `~/.cargo/config.toml`。
-- **默认国内镜像**（`--mirror off` 关闭）：Go 走阿里云/golang.google.cn，Node 走 npmmirror，Rust 走 rsproxy，npm/pnpm registry 指向 npmmirror，Maven 走阿里云。
+- **默认国内镜像**（脚本层 `--mirror off` 可关）：Go 走阿里云/golang.google.cn，Node 走 npmmirror，Rust 走 rsproxy，npm/pnpm registry 指向 npmmirror，Maven 走阿里云。
 - **nvm 的 node 只在 login shell 可见**：平台默认的 `bash -lc` 没问题；项目 Shell 若选了 `sh`，请改成 `bash` 或写绝对路径。`pnpm`/`go`/`rustc` 有 `/usr/local/bin` 软链，任何 shell 都能用。
 - 想手动跑：页面上「下载脚本」，或直接取仓库里的 `deploy-server/internal/toolchain/install.sh`：
 
 ```bash
-bash install.sh --list                 # 只看状态
-bash install.sh --only java,maven,go   # 装指定组件
-bash install.sh --dry-run              # 预演
-bash install.sh --skip rust            # 除 rust 全装
-NODE_VERSION=20 bash install.sh --only node,pnpm   # 指定 Node 大版本
+bash install.sh --list                        # 只看状态（含版本与位置）
+bash install.sh --only java,maven,go          # 装指定组件
+bash install.sh --dry-run                     # 预演
+bash install.sh --skip rust                   # 除 rust 全装
+NODE_VERSION=20 bash install.sh --only node,pnpm                   # 指定 Node
+JDK_URL=https://.../jdk-8u202-linux-x64.tar.gz JAVA_DIR=/usr/local/jdk8 \
+  bash install.sh --only java                                      # 指定 JDK 8
+CC_EXTRA_PACKAGES='cmake nasm' bash install.sh --only cc           # 额外软件包
 ```
 
-- 装完回到「环境自检」点**重新检测**即可看到新的版本与路径。
+- 装完回「环境自检」点**重新检测**即可看到新的版本与路径。
 
 ## 排查与测试
 
@@ -639,7 +653,10 @@ NODE_VERSION=20 bash install.sh --only node,pnpm   # 指定 Node 大版本
 | 现象 | 排查方法 |
 |---|---|
 | 页面正常但实时日志不刷新 | 反代未转发 WebSocket 或开启缓冲，按[反向代理与 HTTPS](#反向代理与-https)补齐配置 |
+| 运行结束后日志"停在一半"、尾巴缺失 | 服务端补日志是分块（128KB）循环读的，必须读到 EOF 才发 `exit`；客户端只认**终态** `exit` 帧，`truncated` 帧或非终态 `exit` 都要按 `nextOffset` 重连补齐。排查见 `deploy-server/internal/api/handlers_ws.go` 的 `drainFile` / `finishStream` 与 `LogTerminal` 的重连状态机 |
+| 日志里中文/emoji 处缺字、重连后错位 | 日志偏移是**字节**、`string.length` 是 UTF-16 码元数，去重必须用帧里的 `offset`（服务端保证落在字符边界），不能用 `nextOffset - data.length` 猜 |
 | 日志每行越来越往右缩进、长行被拦腰截断（"阶梯"错位） | 前端 xterm 必须设 `convertEol: true`（见 `deploy-server-ui/src/components/LogTerminal`）。日志文件是按 `\n` 写的，而 xterm 默认的 `convertEol:false` 遇到 LF 只下移一行、**不回列首**，于是每行都接在上一行末尾继续画 |
+| 「重新执行」跳到新运行后日志一片空白 | 已修：`RunDetail` 里 `<LogTerminal key={id}>` 强制按运行 ID 重挂。**同一条路由换参数时 React 不会重挂组件**，终端里记着旧运行的「已落屏字节数」与旧 WebSocket，新日志会被按 offset 去重整段丢掉。若仍遇到空白，用终端工具条上的「重载日志」（清空并从 0 重拉）或「重连」 |
 | Git 准备失败 | 用项目「测试连接」验证地址、凭据；私有仓库先在凭据管理创建凭据 |
 | 「工作目录已存在且不是 Git 仓库」 | 有意拒绝覆盖以防误删；确认内容后清空或换目录 |
 | `command not found` | systemd 的 PATH 很干净；`bash -lc` 加载 `/etc/profile`，工具在其他位置时写全路径 |

@@ -1,12 +1,15 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +38,17 @@ type toolchainProbeDTO struct {
 	Path    string `json:"path"`
 }
 
+// toolchainFieldDTO 是组件的一个可编辑参数（含当前保存值）。
+type toolchainFieldDTO struct {
+	Key         string `json:"key"`
+	Label       string `json:"label"`
+	Default     string `json:"default"`
+	Placeholder string `json:"placeholder"`
+	Help        string `json:"help"`
+	// Value 是保存过的覆盖值；空串表示「用默认」。
+	Value string `json:"value"`
+}
+
 type toolchainComponentDTO struct {
 	Key       string              `json:"key"`
 	Name      string              `json:"name"`
@@ -44,6 +58,62 @@ type toolchainComponentDTO struct {
 	Version   string              `json:"version"`
 	Path      string              `json:"path"`
 	Probes    []toolchainProbeDTO `json:"probes"`
+	Fields    []toolchainFieldDTO `json:"fields"`
+}
+
+// toolchainSettingKey 是每个组件参数在 settings 表里的键。
+func toolchainSettingKey(component string) string { return "toolchain." + component }
+
+// toolchainOverrides 读某个组件保存过的参数（只含用户改过的键）。
+func (s *Server) toolchainOverrides(component string) map[string]string {
+	out := map[string]string{}
+	raw, ok := s.st.GetSetting(toolchainSettingKey(component))
+	if !ok || strings.TrimSpace(raw) == "" {
+		return out
+	}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return map[string]string{}
+	}
+	return out
+}
+
+// saveToolchainOverrides 保存某个组件的参数；空值会被剔除（等价于回默认）。
+func (s *Server) saveToolchainOverrides(component string, values map[string]string) error {
+	comp, ok := toolchain.Lookup(component)
+	if !ok {
+		return fmt.Errorf("unknown component: %s", component)
+	}
+	allowed := map[string]bool{}
+	for _, f := range comp.Fields {
+		allowed[f.Key] = true
+	}
+	clean := map[string]string{}
+	for k, v := range values {
+		if !allowed[k] {
+			return fmt.Errorf("component %s has no parameter %s", component, k)
+		}
+		v = strings.TrimSpace(v)
+		if v != "" {
+			clean[k] = v
+		}
+	}
+	body, err := json.Marshal(clean)
+	if err != nil {
+		return err
+	}
+	return s.st.SetSetting(toolchainSettingKey(component), string(body))
+}
+
+// installParams 汇总「本次要装的组件」用到的参数：
+// 既作为环境变量注入安装脚本，也存进 Run 的参数里，成为可回看的安装记录。
+func (s *Server) installParams(keys []string) map[string]string {
+	params := map[string]string{"components": strings.Join(keys, ",")}
+	for _, k := range keys {
+		for field, v := range s.toolchainOverrides(k) {
+			params[field] = v
+		}
+	}
+	return params
 }
 
 // probeComponent 检测一个组件是否已安装（全部探针命中才算）。
@@ -116,12 +186,20 @@ func probeVersion(path string, args []string) string {
 	}
 }
 
-// listToolchains 返回可安装组件及其当前状态。
+// listToolchains 返回可安装组件及其当前状态与可编辑参数。
 func (s *Server) listToolchains(c *gin.Context) {
 	list := make([]toolchainComponentDTO, 0, len(toolchain.Components))
 	missing := make([]string, 0, len(toolchain.Components))
 	for _, comp := range toolchain.Components {
 		dto := probeComponent(comp)
+		overrides := s.toolchainOverrides(comp.Key)
+		dto.Fields = make([]toolchainFieldDTO, 0, len(comp.Fields))
+		for _, f := range comp.Fields {
+			dto.Fields = append(dto.Fields, toolchainFieldDTO{
+				Key: f.Key, Label: f.Label, Default: f.Default,
+				Placeholder: f.Placeholder, Help: f.Help, Value: overrides[f.Key],
+			})
+		}
 		if !dto.Installed {
 			missing = append(missing, dto.Key)
 		}
@@ -141,6 +219,52 @@ func (s *Server) listToolchains(c *gin.Context) {
 		"hint":       "安装以普通 Run 的形式执行，可以在运行详情页看实时日志、取消或重跑",
 		"installCmd": "bash " + path + " --only <组件>",
 	})
+}
+
+type toolchainFieldsReq struct {
+	Fields map[string]string `json:"fields"`
+}
+
+// updateToolchainFields 保存某个组件的安装参数（仅 admin）。
+//
+// 空值会被剔除，等价于「回到脚本默认」；保存后再次安装（可勾选重装）即按新参数执行。
+func (s *Server) updateToolchainFields(c *gin.Context) {
+	key := c.Param("key")
+	if _, ok := toolchain.Lookup(key); !ok {
+		BadRequest(c, "unknown component: "+key+" (available: "+strings.Join(toolchain.AllKeys(), ",")+")")
+		return
+	}
+	var req toolchainFieldsReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		BadRequest(c, "request body must look like {\"fields\":{\"JAVA_VERSION\":\"8\"}}")
+		return
+	}
+	if err := s.saveToolchainOverrides(key, req.Fields); err != nil {
+		BadRequest(c, err.Error())
+		return
+	}
+	s.audit(c, "update-toolchain-params", key, strings.Join(keysOfMap(req.Fields), " "))
+
+	comp, _ := toolchain.Lookup(key)
+	overrides := s.toolchainOverrides(key)
+	fields := make([]toolchainFieldDTO, 0, len(comp.Fields))
+	for _, f := range comp.Fields {
+		fields = append(fields, toolchainFieldDTO{
+			Key: f.Key, Label: f.Label, Default: f.Default,
+			Placeholder: f.Placeholder, Help: f.Help, Value: overrides[f.Key],
+		})
+	}
+	OK(c, gin.H{"key": key, "fields": fields, "components": keysOfMap(overrides)})
+}
+
+// keysOfMap 只用来拼审计信息，顺序无所谓。
+func keysOfMap(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // downloadToolchainScript 把内嵌的安装脚本原样返回，供人工审查或手动执行。
@@ -231,10 +355,15 @@ func (s *Server) installToolchains(c *gin.Context) {
 		return
 	}
 
+	// 组件参数（版本/下载地址/安装目录）作为运行参数注入：脚本按环境变量读，
+	// 运行详情页也会把它们列出来 —— 这就是「这次到底按什么参数装的」的记录。
+	params := s.installParams(keys)
+
 	u := CurrentUser(c)
 	run, err := s.exec.Submit(runner.SubmitRequest{
 		ProjectID:   p.ID,
 		CommandIDs:  []uint{cmdID},
+		Params:      params,
 		TriggerType: store.TriggerWeb,
 		TriggerUser: u.Username,
 		TriggerUID:  u.ID,

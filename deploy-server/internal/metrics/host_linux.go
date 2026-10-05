@@ -107,39 +107,64 @@ func readCPUInfo() (model string, cores, phys, mhz int) {
 	return model, cores, phys, mhz
 }
 
-// readCPUTimes 读 /proc/stat 第一行（聚合的 cpu 行）。
-func readCPUTimes() (cpuTimes, error) {
+// readCPUTimes 读 /proc/stat：返回聚合的 cpu 行与每个逻辑核心的 cpuN 行。
+//
+// 逐核数据就是 /proc/stat 里 cpu0/cpu1/... 那些行，和整机行完全同构，
+// 所以两边的口径天然一致（都用 parseStatCPU 解析），
+// 不会出现「各核心加起来 ≠ 整机」这种自相矛盾的画面。
+func readCPUTimes() (cpuTimes, []cpuTimes, error) {
 	f, err := os.Open("/proc/stat")
 	if err != nil {
-		return cpuTimes{}, err
+		return cpuTimes{}, nil, err
 	}
 	defer f.Close()
 
+	var (
+		total   cpuTimes
+		hasSum  bool
+		perCore []cpuTimes
+	)
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		line := sc.Text()
-		if !strings.HasPrefix(line, "cpu ") {
-			continue
+		switch {
+		case strings.HasPrefix(line, "cpu "):
+			total = parseStatCPU(line)
+			hasSum = true
+		case strings.HasPrefix(line, "cpu"):
+			// cpuN：顺序即核心序号，通常 0..N-1 且连续。
+			perCore = append(perCore, parseStatCPU(line))
 		}
-		fields := strings.Fields(line)[1:] // 去掉 "cpu"
-		// 顺序：user nice system idle iowait irq softirq steal guest guest_nice
-		var v [10]float64
-		for i := 0; i < len(fields) && i < len(v); i++ {
-			v[i], _ = strconv.ParseFloat(fields[i], 64)
-		}
-		user := v[0] + v[1]
-		system := v[2] + v[5] + v[6]
-		idle := v[3]
-		iowait := v[4]
-		// steal 也是「被虚拟化层拿走」的时间，算 busy；guest/guest_nice 已含在 user/nice 里，不重复加。
-		busy := user + system + iowait + v[7]
-		total := busy + idle
-		return cpuTimes{
-			user: user, system: system, idle: idle, iowait: iowait,
-			busy: busy, total: total,
-		}, nil
 	}
-	return cpuTimes{}, errors.New("/proc/stat: no aggregate cpu line")
+	if !hasSum {
+		return cpuTimes{}, nil, errors.New("/proc/stat: no aggregate cpu line")
+	}
+	return total, perCore, nil
+}
+
+// parseStatCPU 解析一行 cpu/cpuN 统计。
+//
+// 字段顺序：user nice system idle iowait irq softirq steal guest guest_nice
+// （后两个只在某些内核/配置下出现，缺了按 0 处理）。
+func parseStatCPU(line string) cpuTimes {
+	fields := strings.Fields(line)
+	if len(fields) > 0 {
+		fields = fields[1:] // 去掉开头的 "cpu" / "cpuN"
+	}
+	var v [10]float64
+	for i := 0; i < len(fields) && i < len(v); i++ {
+		v[i], _ = strconv.ParseFloat(fields[i], 64)
+	}
+	user := v[0] + v[1]                   // user + nice
+	system := v[2] + v[5] + v[6]          // system + irq + softirq
+	idle := v[3]                          //
+	iowait := v[4]                        //
+	busy := user + system + iowait + v[7] // v[7]=steal 也算 busy
+	// guest/guest_nice(v[8]/v[9]) 已包含在 user/nice 里，不重复加。
+	return cpuTimes{
+		user: user, system: system, idle: idle, iowait: iowait,
+		busy: busy, total: busy + idle,
+	}
 }
 
 // readLoad 读 /proc/loadavg。

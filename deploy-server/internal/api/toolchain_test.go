@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"runtime"
@@ -148,6 +149,122 @@ func TestToolchainEndpoints(t *testing.T) {
 	})
 	if out["success"] != false || !strings.Contains(out["errorMessage"].(string), "admin") {
 		t.Fatalf("普通用户不应能触发安装: %v", out)
+	}
+}
+
+// 组件的安装参数：能改、能落库、会随安装一起被记录，并且只有管理员能改。
+func TestToolchainParams(t *testing.T) {
+	e := newTestEnv(t)
+	e.mustBootstrap(t)
+
+	// 1) 清单里每个组件都带 fields（java 那几个是本用例要改的）
+	_, out := e.call(t, "GET", "/api/v1/system/toolchains", e.token, nil)
+	comps, _ := dataMap(t, out)["components"].([]any)
+	var java map[string]any
+	for _, item := range comps {
+		m := item.(map[string]any)
+		fields, _ := m["fields"].([]any)
+		if len(fields) == 0 {
+			t.Errorf("组件 %v 没有可编辑参数", m["key"])
+		}
+		if m["key"] == "java" {
+			java = m
+		}
+	}
+	if java == nil {
+		t.Fatal("清单里没有 java 组件")
+	}
+	defaults := map[string]string{}
+	for _, f := range java["fields"].([]any) {
+		fm := f.(map[string]any)
+		defaults[fm["key"].(string)] = fm["default"].(string)
+	}
+	for _, want := range []string{"JAVA_VERSION", "JDK_URL", "JAVA_DIR"} {
+		if _, ok := defaults[want]; !ok {
+			t.Fatalf("java 缺少参数 %s（现有 %v）", want, defaults)
+		}
+	}
+	if defaults["JAVA_VERSION"] != "17" {
+		t.Errorf("JAVA_VERSION 默认值应为 17，实际 %v", defaults["JAVA_VERSION"])
+	}
+
+	// 2) 未知参数名必须拒绝（参数名会作为环境变量注入脚本）
+	_, out = e.call(t, "PUT", "/api/v1/system/toolchains/java", e.token, map[string]any{
+		"fields": map[string]string{"NOT_A_FIELD": "x"},
+	})
+	assertBadRequest(t, out, "has no parameter")
+	_, out = e.call(t, "PUT", "/api/v1/system/toolchains/ghost", e.token, map[string]any{
+		"fields": map[string]string{"A": "b"},
+	})
+	assertBadRequest(t, out, "unknown component")
+
+	// 3) 保存 JDK 8 的参数（下载地址 + 安装目录），再读回来
+	_, out = e.call(t, "PUT", "/api/v1/system/toolchains/java", e.token, map[string]any{
+		"fields": map[string]string{
+			"JAVA_VERSION": "8",
+			"JDK_URL":      "https://example.com/jdk-8u202-linux-x64.tar.gz",
+			"JAVA_DIR":     "/usr/local/jdk8",
+		},
+	})
+	if out["success"] != true {
+		t.Fatalf("保存参数失败: %v", out)
+	}
+	values := map[string]string{}
+	for _, f := range dataMap(t, out)["fields"].([]any) {
+		fm := f.(map[string]any)
+		values[fm["key"].(string)] = fm["value"].(string)
+	}
+	if values["JAVA_VERSION"] != "8" || values["JAVA_DIR"] != "/usr/local/jdk8" {
+		t.Fatalf("保存后的值不对: %v", values)
+	}
+
+	// 4) 安装时这些参数要作为运行参数记录下来（页面「安装记录」据此回看）
+	_, out = e.call(t, "POST", "/api/v1/system/toolchains/install", e.token, map[string]any{
+		"components": []string{"java"}, "dryRun": true,
+	})
+	if out["success"] != true {
+		t.Fatalf("触发安装失败: %v", out)
+	}
+	runID := int(dataMap(t, out)["runId"].(float64))
+	_, out = e.call(t, "GET", fmt.Sprintf("/api/v1/runs/%d", runID), e.token, nil)
+	params, _ := dataMap(t, out)["params"].(map[string]any)
+	if params["JAVA_VERSION"] != "8" {
+		t.Errorf("运行参数里应带上 JAVA_VERSION=8，实际 %v", params)
+	}
+	if params["JDK_URL"] != "https://example.com/jdk-8u202-linux-x64.tar.gz" {
+		t.Errorf("运行参数里应带上 JDK_URL，实际 %v", params)
+	}
+	if params["components"] != "java" {
+		t.Errorf("运行参数里应记录本次装的组件，实际 %v", params["components"])
+	}
+	e.waitRun(t, runID, 60*time.Second)
+
+	// 5) 清空 = 回默认（空值会被剔除）
+	_, out = e.call(t, "PUT", "/api/v1/system/toolchains/java", e.token, map[string]any{
+		"fields": map[string]string{"JAVA_VERSION": "", "JDK_URL": "", "JAVA_DIR": ""},
+	})
+	if out["success"] != true {
+		t.Fatalf("清空参数失败: %v", out)
+	}
+	for _, f := range dataMap(t, out)["fields"].([]any) {
+		if v, _ := f.(map[string]any)["value"].(string); v != "" {
+			t.Errorf("清空后仍有值: %v", f)
+		}
+	}
+
+	// 6) 只有管理员能改参数
+	e.call(t, "POST", "/api/v1/users", e.token, map[string]any{
+		"username": "carol", "password": "carol12345678", "role": "user",
+	})
+	_, out = e.call(t, "POST", "/api/v1/auth/login", "", map[string]any{
+		"username": "carol", "password": "carol12345678",
+	})
+	carolToken, _ := dataMap(t, out)["token"].(string)
+	_, out = e.call(t, "PUT", "/api/v1/system/toolchains/java", carolToken, map[string]any{
+		"fields": map[string]string{"JAVA_VERSION": "8"},
+	})
+	if out["success"] != false {
+		t.Fatalf("普通用户不应能改安装参数: %v", out)
 	}
 }
 

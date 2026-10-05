@@ -1,5 +1,3 @@
-import { DoctorPanelWithFetch } from '@/components/DoctorPanel';
-import ToolchainPanel from '@/components/ToolchainPanel';
 import { systemApi } from '@/services/system';
 import type { SystemSettings } from '@/services/types';
 import { formatBytes } from '@/utils/constants';
@@ -11,7 +9,7 @@ import {
   ProFormSwitch,
   ProFormText,
 } from '@ant-design/pro-components';
-import { useAccess } from '@umijs/max';
+import { history, useAccess } from '@umijs/max';
 import { Alert, Card, Descriptions, Spin, Tag, message } from 'antd';
 import React, { useCallback, useEffect, useState } from 'react';
 
@@ -193,13 +191,21 @@ const SystemSettingsPage: React.FC = () => {
         )}
       </Card>
 
-      <DoctorPanelWithFetch />
-
-      <ToolchainPanel />
+      <Alert
+        style={{ marginBottom: 16 }}
+        type="info"
+        showIcon
+        message="环境自检与工具链安装已独立成菜单"
+        description={
+          <span>
+            服务端环境、缺失工具链与一键安装都在侧边栏的「环境自检」页：
+            <a onClick={() => history.push('/doctor')}> 去环境自检 →</a>
+          </span>
+        }
+      />
 
       <div style={{ marginTop: 12, color: '#999', fontSize: 12 }}>
         提示：日志清理与并发上限都由服务端热读取这些配置；修改后立即生效，无需重启。
-        工具链安装同样在服务端执行，装完在「环境自检」里点「重新检测」即可看到结果。
       </div>
     </PageContainer>
   );

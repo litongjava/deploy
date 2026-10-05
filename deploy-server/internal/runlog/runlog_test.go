@@ -219,3 +219,73 @@ func TestPathForIsConsistent(t *testing.T) {
 		}
 	}
 }
+
+// TestReadRangeKeepsRuneBoundary 验证按字节分块读取不会把多字节字符切断。
+//
+// 为什么重要：残缺的字节进 JSON 会被 Go 替换成 U+FFFD（1 字节变 3 字节），
+// 客户端「nextOffset - len(data) = 本帧起点」的去重推算就会漂移，
+// 表现是重连/补历史时日志缺行或重复。
+func TestReadRangeKeepsRuneBoundary(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "x.log")
+	content := strings.Repeat("中文日志行 abc\n", 5000)
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// 每块只读 7 字节：必然切在汉字（3 字节）中间。
+	var got []byte
+	off := int64(0)
+	for i := 0; i < 200000; i++ {
+		data, next, eof, err := ReadRange(path, off, 7)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !utf8.Valid(data) {
+			t.Fatalf("第 %d 块不是合法 UTF-8（字符被切断）: %q", i, data)
+		}
+		if next-off != int64(len(data)) {
+			t.Fatalf("偏移与数据长度不自洽: next-offset=%d len(data)=%d", next-off, len(data))
+		}
+		if next == off && !eof {
+			t.Fatalf("第 %d 块既没前进也没到 EOF", i)
+		}
+		got = append(got, data...)
+		off = next
+		if eof {
+			break
+		}
+	}
+	if string(got) != content {
+		t.Fatalf("分块拼接结果与原文不一致: %d 字节 != %d 字节", len(got), len(content))
+	}
+}
+
+// TestMaskerBatchesOneEmitPerWrite 一次 Write 里的多行只发一次。
+//
+// 逐行 emit 时，命令一次大块输出（30KB ≈ 上千行）会在瞬间灌满 Broker 的
+// 256 深缓冲，把客户端误判成「跟不上」踢掉 —— 表现就是日志流突然中断。
+func TestMaskerBatchesOneEmitPerWrite(t *testing.T) {
+	emits := 0
+	var total []byte
+	m := NewMasker(nil, func(b []byte) {
+		emits++
+		total = append(total, b...)
+	})
+	_, _ = m.Write([]byte("a\nb\nc\n"))
+	if emits != 1 {
+		t.Fatalf("一次 Write 应只 emit 一次，实际 %d 次", emits)
+	}
+	if string(total) != "a\nb\nc\n" {
+		t.Fatalf("合并 emit 的内容不对: %q", total)
+	}
+	// 没有换行的尾巴要等下一次成行或 Flush。
+	_, _ = m.Write([]byte("d"))
+	if emits != 1 {
+		t.Fatalf("未成行的内容不应提前 emit，实际 %d 次", emits)
+	}
+	m.Flush()
+	if emits != 2 || string(total) != "a\nb\nc\nd" {
+		t.Fatalf("Flush 后内容不对: emits=%d %q", emits, total)
+	}
+}

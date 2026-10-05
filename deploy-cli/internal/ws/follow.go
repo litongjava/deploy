@@ -317,8 +317,7 @@ func readStream(ctx context.Context, conn Conn, opts Options, res *Result, offse
 		}
 		switch frame.Type {
 		case FrameHistory, FrameLog:
-			start := frame.NextOffset - int64(len(frame.Data))
-			if text := dedup(frame.Data, start, *offset); text != "" {
+			if text := dedup(frame.Data, frame.StartOffset(), *offset); text != "" {
 				if _, werr := io.WriteString(opts.Writer, text); werr != nil {
 					return false, "", nil, 0, werr
 				}
@@ -332,9 +331,23 @@ func readStream(ctx context.Context, conn Conn, opts Options, res *Result, offse
 				opts.OnStatus(frame.Status, frame.Step)
 			}
 			logf("运行状态: %s", frame.Status)
+		case FrameTruncated:
+			// 服务端把跟不上的订阅者踢掉了：运行并没有结束，服务端随即会关连接，
+			// 上层按 offset 重连即可续上（这里什么都不做，等 ReadFrame 报错）。
+			if frame.NextOffset > *offset {
+				*offset = frame.NextOffset
+			}
+			logf("日志流被服务端截断（%s），按 offset=%d 重连", frame.Message, *offset)
 		case FrameExit:
 			if frame.NextOffset > *offset {
 				*offset = frame.NextOffset
+			}
+			if !api.IsTerminalStatus(frame.Status) {
+				// exit 帧的契约是「运行已结束」。老版本服务端在踢掉慢订阅者时
+				// 也会发 exit，但那时运行还在跑 —— 当成结束会让日志永久缺尾，
+				// 所以这里只把它当「本次连接到此为止」，等连接断开后按 offset 重连。
+				logf("收到非终态的 exit 帧（status=%s），按 offset=%d 重连", frame.Status, *offset)
+				continue
 			}
 			return true, frame.Status, frame.ExitCode, frame.DurationMs, nil
 		case FrameError:

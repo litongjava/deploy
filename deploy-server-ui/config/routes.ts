@@ -98,6 +98,14 @@ export default [
     ],
   },
   {
+    // 环境自检单独占一个菜单：它回答的是「这台服务器现在什么样、缺什么工具」，
+    // 与「改配置」不是一回事，出问题时也更容易被找到。
+    path: '/doctor',
+    name: '环境自检',
+    icon: 'ToolOutlined',
+    component: './doctor',
+  },
+  {
     path: '/settings',
     name: '设置',
     icon: 'SettingOutlined',

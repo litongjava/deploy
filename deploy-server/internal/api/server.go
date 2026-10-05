@@ -140,6 +140,7 @@ func (s *Server) Router() *gin.Engine {
 			admin.PUT("/system/settings", s.updateSettings)
 			admin.GET("/audit-logs", s.listAuditLogs)
 			admin.POST("/system/toolchains/install", s.installToolchains)
+			admin.PUT("/system/toolchains/:key", s.updateToolchainFields)
 			admin.GET("/system/toolchains/script", s.downloadToolchainScript)
 		}
 	}

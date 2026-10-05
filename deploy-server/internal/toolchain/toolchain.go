@@ -53,6 +53,19 @@ type Probe struct {
 	Paths []string
 }
 
+// Field 是组件的一个可编辑参数。
+//
+// Key 直接就是安装脚本读取的**环境变量名**（例如 JAVA_VERSION、JDK_URL、JAVA_DIR）：
+// 页面保存后，安装时这些值会作为运行参数注入环境，脚本按 `${VAR:-默认值}` 取值。
+// 这样「编辑参数」不需要给脚本设计一套新的配置格式，也不会让值经过命令行拼接。
+type Field struct {
+	Key         string `json:"key"`
+	Label       string `json:"label"`
+	Default     string `json:"default"`
+	Placeholder string `json:"placeholder"`
+	Help        string `json:"help"`
+}
+
 // Component 是页面上可勾选的一项，Key 必须与 install.sh 的 ALL_COMPONENTS 一致。
 type Component struct {
 	Key      string
@@ -60,6 +73,7 @@ type Component struct {
 	Note     string
 	Estimate string
 	Probes   []Probe
+	Fields   []Field
 }
 
 // Components 是可安装的全部组件。
@@ -74,48 +88,99 @@ var Components = []Component{
 			{Name: "gcc", Args: []string{"-dumpversion"}},
 			{Name: "make", Args: []string{"-v"}},
 		},
+		Fields: []Field{
+			{Key: "CC_EXTRA_PACKAGES", Label: "额外软件包（可选）", Default: "",
+				Placeholder: "cmake nasm libssl-dev",
+				Help:        "空格分隔，交给 apt/dnf 与基础工具链一起装；编译某些原生依赖时会用到（例如 cmake、nasm）。"},
+		},
 	},
 	{
 		Key: "java", Name: "Java（OpenJDK）",
-		Note:     "Java / Maven 项目构建；默认装 JDK 17，可改版本",
+		Note:     "Java / Maven 项目构建；默认装 JDK 17，可改版本或改用压缩包安装",
 		Estimate: "约 180 MB",
 		Probes:   []Probe{{Name: "java", Args: []string{"-version"}}},
+		Fields: []Field{
+			{Key: "JAVA_VERSION", Label: "JDK 大版本（apt 安装）", Default: "17",
+				Placeholder: "17", Help: "用发行版包管理器装哪个大版本（Debian 12 / Ubuntu 24.04 一般有 17）。填 8/11/21 时若源里没有会提示可选版本。"},
+			{Key: "JDK_URL", Label: "JDK 压缩包地址（可选，优先于 apt）", Default: "",
+				Placeholder: "https://.../jdk-8uXXX-linux-x64.tar.gz",
+				Help:        "填了就改用 tar.gz 安装（适合 JDK 8 这类 apt 里没有的版本），不再走 apt；SHA/大小不做校验，请自行确认来源可信。"},
+			{Key: "JAVA_DIR", Label: "JDK 安装目录（压缩包方式）", Default: "/usr/local/jdk",
+				Placeholder: "/usr/local/jdk8", Help: "解压到这里，并作为 JAVA_HOME 写入 /etc/profile.d/java.sh。"},
+		},
 	},
 	{
 		Key: "maven", Name: "Maven",
 		Note:     "mvn 构建；顺带写一份阿里云镜像 settings.xml（已有配置则不覆盖）",
 		Estimate: "约 30 MB",
 		Probes:   []Probe{{Name: "mvn", Args: []string{"-v"}}},
+		Fields: []Field{
+			{Key: "MAVEN_URL", Label: "Maven 压缩包地址（可选，优先于 apt）", Default: "",
+				Placeholder: "https://.../apache-maven-3.9.9-bin.tar.gz",
+				Help:        "填了就跳过 apt，直接解压安装。"},
+			{Key: "MAVEN_DIR", Label: "Maven 安装目录（压缩包方式）", Default: "/usr/local/maven",
+				Placeholder: "/usr/local/maven", Help: "解压到这里，并把 mvn 软链到 /usr/local/bin。"},
+		},
 	},
 	{
 		Key: "nvm", Name: "nvm（Node 版本管理）",
 		Note:     "装到 /usr/local/nvm，并写 /etc/profile.d/nvm.sh",
 		Estimate: "约 5 MB",
 		Probes:   []Probe{{Name: "nvm", Paths: []string{"/usr/local/nvm/nvm.sh"}}},
+		Fields: []Field{
+			{Key: "NVM_VERSION", Label: "nvm 版本（git tag）", Default: "v0.40.1", Placeholder: "v0.40.1"},
+			{Key: "NVM_GIT_URL", Label: "nvm 仓库地址", Default: "https://github.com/nvm-sh/nvm.git",
+				Placeholder: "https://gitee.com/.../nvm.git", Help: "克隆不动 github 时换成可达镜像。"},
+			{Key: "NVM_DIR", Label: "nvm 安装目录", Default: "/usr/local/nvm", Placeholder: "/usr/local/nvm"},
+		},
 	},
 	{
 		Key: "node", Name: "Node.js（经 nvm）",
 		Note:     "默认装 LTS；用 nvm 管理，仅 login shell（bash -lc）可见",
 		Estimate: "约 60 MB",
 		Probes:   []Probe{{Name: "node", Args: []string{"--version"}}},
+		Fields: []Field{
+			{Key: "NODE_VERSION", Label: "Node 版本", Default: "--lts", Placeholder: "--lts / 20 / v20.11.1",
+				Help: "交给 nvm install，写成 --lts 就是最新 LTS。"},
+			{Key: "NVM_NODEJS_ORG_MIRROR", Label: "Node 下载镜像", Default: "https://npmmirror.com/mirrors/node",
+				Placeholder: "https://npmmirror.com/mirrors/node", Help: "nvm 下载 node 二进制的镜像。"},
+		},
 	},
 	{
 		Key: "pnpm", Name: "pnpm",
 		Note:     "经 corepack 装到 /usr/local/bin，任何 shell 都可用；registry 指向 npmmirror",
 		Estimate: "约 10 MB",
 		Probes:   []Probe{{Name: "pnpm", Args: []string{"--version"}}},
+		Fields: []Field{
+			{Key: "PNPM_VERSION", Label: "pnpm 版本", Default: "latest", Placeholder: "latest / 9.12.0",
+				Help: "corepack prepare pnpm@<版本>；失败时退回 npm i -g。"},
+		},
 	},
 	{
 		Key: "go", Name: "Go",
 		Note:     "装到 /usr/local/go 并软链到 /usr/local/bin；GOPROXY 指向 goproxy.cn",
 		Estimate: "约 120 MB",
 		Probes:   []Probe{{Name: "go", Args: []string{"version"}}},
+		Fields: []Field{
+			{Key: "GO_VERSION", Label: "Go 版本", Default: "1.24.2", Placeholder: "1.24.2"},
+			{Key: "GO_URL", Label: "Go 压缩包地址（可选）", Default: "",
+				Placeholder: "https://.../go1.24.2.linux-amd64.tar.gz",
+				Help:        "留空则依次尝试阿里云镜像、golang.google.cn、官方源。"},
+			{Key: "GO_DIR", Label: "Go 安装目录", Default: "/usr/local/go", Placeholder: "/usr/local/go"},
+		},
 	},
 	{
 		Key: "rust", Name: "Rust（rustup）",
 		Note:     "系统级 rustup（/usr/local/cargo），crates 走 rsproxy 镜像",
 		Estimate: "约 250 MB",
 		Probes:   []Probe{{Name: "rustc", Args: []string{"--version"}}},
+		Fields: []Field{
+			{Key: "RUST_TOOLCHAIN", Label: "toolchain", Default: "stable", Placeholder: "stable / 1.83.0"},
+			{Key: "RUSTUP_HOME", Label: "RUSTUP_HOME", Default: "/usr/local/rustup", Placeholder: "/usr/local/rustup"},
+			{Key: "CARGO_HOME", Label: "CARGO_HOME", Default: "/usr/local/cargo", Placeholder: "/usr/local/cargo"},
+			{Key: "RUSTUP_DIST_SERVER", Label: "rustup 镜像", Default: "https://rsproxy.cn",
+				Placeholder: "https://rsproxy.cn", Help: "国内加速；留空走官方。"},
+		},
 	},
 }
 

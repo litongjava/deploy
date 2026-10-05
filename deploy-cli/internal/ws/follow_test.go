@@ -244,6 +244,53 @@ func TestFollowReconnectContinuesWithoutDuplicates(t *testing.T) {
 	}
 }
 
+// 老版本服务端会用 exit 帧通知「订阅者跟不上被踢掉」，此时运行并没有结束。
+// 把它当结束处理会让日志永久缺尾，所以这里必须按 offset 继续跟。
+func TestFollowIgnoresNonTerminalExitFrame(t *testing.T) {
+	logs := &fakeLogs{statuses: []string{"running", "running", "success"}, exitCode: intPtr(0)}
+
+	first := &fakeConn{
+		frames: []*Frame{
+			{Type: FrameLog, NextOffset: 5, Data: "AAAAA"},
+			{Type: FrameExit, Status: "running", NextOffset: 5}, // 假 exit：运行还在跑
+		},
+		err: errors.New("connection closed by server"),
+	}
+	second := &fakeConn{
+		frames: []*Frame{
+			{Type: FrameLog, NextOffset: 10, Data: "BBBBB"},
+			{Type: FrameExit, Status: "success", ExitCode: intPtr(0), NextOffset: 10},
+		},
+	}
+	stream := &fakeStream{
+		conns: []*fakeConn{first, second},
+		hooks: []func(){
+			func() { logs.setData("AAAAA") },
+			func() { logs.setData("AAAAABBBBB") },
+		},
+	}
+	var out bytes.Buffer
+	opts := fastOptions(&out)
+	f := &Follower{Logs: logs, Stream: stream}
+
+	res, err := f.Follow(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Follow: %v", err)
+	}
+	if got := out.String(); got != "AAAAABBBBB" {
+		t.Fatalf("日志 = %q, want %q（非终态 exit 后必须继续补齐）", got, "AAAAABBBBB")
+	}
+	if !res.Terminated || res.Status != "success" {
+		t.Fatalf("结果 = %+v", res)
+	}
+	if stream.calls < 2 {
+		t.Fatalf("收到非终态 exit 后应当重连，实际只连了 %d 次", stream.calls)
+	}
+	if res.FinalOffset != 10 {
+		t.Fatalf("FinalOffset = %d", res.FinalOffset)
+	}
+}
+
 // exit 帧直接给出终态。
 func TestFollowExitFrame(t *testing.T) {
 	logs := &fakeLogs{statuses: []string{"running"}}

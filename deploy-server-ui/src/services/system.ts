@@ -8,6 +8,7 @@ import type {
   GitTestResult,
   ServerInfo,
   SystemSettings,
+  ToolchainField,
   ToolchainInstallInput,
   ToolchainInstallResult,
   ToolchainList,
@@ -45,6 +46,14 @@ export const systemApi = {
   /** 触发一次工具链安装：以普通 Run 的形式执行，返回可供跳转看日志的 runId */
   installToolchains(body: ToolchainInstallInput) {
     return postData<ToolchainInstallResult>('/system/toolchains/install', body);
+  },
+
+  /** 保存某个组件的安装参数（版本 / 下载地址 / 安装目录），仅 admin */
+  updateToolchain(key: string, body: { fields: Record<string, string> }) {
+    return putData<{ key: string; fields: ToolchainField[] }>(
+      `/system/toolchains/${encodeURIComponent(key)}`,
+      body,
+    );
   },
 };
 

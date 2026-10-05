@@ -1,5 +1,5 @@
 import { systemApi } from '@/services/system';
-import type { ServerDisk, ServerInfo } from '@/services/types';
+import type { ServerCoreUsage, ServerDisk, ServerInfo } from '@/services/types';
 import { formatBytes } from '@/utils/constants';
 import {
   CloudServerOutlined,
@@ -58,6 +58,91 @@ function usageStroke(percent: number): string | undefined {
   if (percent >= WARN_PERCENT) return '#faad14';
   return '#52c41a';
 }
+
+/**
+ * 每个逻辑核心一个迷你进度条，排在整机仪表盘右边。
+ *
+ * 为什么需要「最多显示 N 个 + 其余折叠」：这台机器的核数可以是 4，也可以是 128，
+ * 全画出来会把卡片撑成一列长条、把内存卡片挤得没法看。所以只显示最忙的若干个
+ * （最忙的正是用户想看的），剩下的用一个提示说明。
+ */
+const MAX_CORE_CELLS = 12;
+
+const CoreUsageGrid: React.FC<{ cores?: ServerCoreUsage[]; available: boolean }> = ({
+  cores,
+  available,
+}) => {
+  const list = cores || [];
+  if (list.length === 0) {
+    return (
+      <Text type="secondary" style={{ fontSize: 12 }}>
+        {available ? '当前平台未提供逐核使用率' : '正在采样…'}
+      </Text>
+    );
+  }
+
+  // 按使用率降序取最忙的几个；序号相同的稳定顺序，避免每 5 秒重排导致画面抖动。
+  const sorted = [...list].sort(
+    (a, b) => b.usagePercent - a.usagePercent || a.index - b.index,
+  );
+  const shown = sorted.slice(0, MAX_CORE_CELLS);
+  const hidden = list.length - shown.length;
+  const busiest = sorted[0];
+
+  return (
+    <Space direction="vertical" size={6} style={{ width: '100%' }}>
+      <Space size={6} wrap>
+        <Text strong style={{ fontSize: 12 }}>
+          各核心使用率
+        </Text>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          按当前占用排序{hidden > 0 ? `，只显示最忙的 ${shown.length} 个（共 ${list.length} 核）` : ''}
+        </Text>
+      </Space>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(78px, 1fr))',
+          gap: '6px 10px',
+        }}
+      >
+        {shown.map((c) => (
+          <Tooltip
+            key={c.index}
+            title={`${c.indexLabel}：本窗口忙 ${c.busySec.toFixed(2)}s / 共 ${c.totalSec.toFixed(2)}s`}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: 11,
+                  lineHeight: '14px',
+                  color: 'rgba(0,0,0,0.45)',
+                }}
+              >
+                <span>{c.indexLabel}</span>
+                <span>{c.usagePercent}%</span>
+              </div>
+              <Progress
+                percent={c.usagePercent}
+                size="small"
+                showInfo={false}
+                strokeColor={usageStroke(c.usagePercent)}
+                style={{ marginBottom: 0 }}
+              />
+            </div>
+          </Tooltip>
+        ))}
+      </div>
+      {busiest && busiest.usagePercent >= DANGER_PERCENT ? (
+        <Text type="danger" style={{ fontSize: 12 }}>
+          {busiest.indexLabel} 当前占用 {busiest.usagePercent}%，已接近满载
+        </Text>
+      ) : null}
+    </Space>
+  );
+};
 
 const ServerInfoPage: React.FC = () => {
   const [info, setInfo] = useState<ServerInfo | null>(null);
@@ -196,31 +281,41 @@ const ServerInfoPage: React.FC = () => {
               }
               loading={loading && !info}
             >
-              <Row gutter={16} align="middle">
-                <Col flex="160px" style={{ textAlign: 'center' }}>
+              <Row gutter={[16, 8]} align="middle" wrap={false}>
+                <Col flex="132px" style={{ textAlign: 'center' }}>
                   {cpu?.available ? (
                     <Progress
                       type="dashboard"
                       percent={cpu.usagePercent}
-                      size={140}
+                      size={124}
                       strokeColor={usageStroke(cpu.usagePercent)}
                       format={(p) => `${p}%`}
                     />
                   ) : (
-                    <Progress type="dashboard" percent={0} size={140} status="normal" format={() => '采样中'} />
+                    <Progress type="dashboard" percent={0} size={124} status="normal" format={() => '采样中'} />
                   )}
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      整机使用率
+                    </Text>
+                  </div>
                 </Col>
-                <Col flex="auto">
-                  <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                    <Statistic
-                      title="逻辑核心"
-                      value={cpu?.cores || 0}
-                      suffix={
-                        cpu?.physicalCores
-                          ? `（物理 ${cpu.physicalCores} 核）`
-                          : undefined
-                      }
-                    />
+                <Col flex="auto" style={{ minWidth: 0 }}>
+                  <CoreUsageGrid cores={cpu?.coreUsage} available={!!cpu?.available} />
+                </Col>
+              </Row>
+              <Row gutter={16} style={{ marginTop: 12 }} align="bottom">
+                <Col flex="none">
+                  <Statistic
+                    title="逻辑核心"
+                    value={cpu?.cores || 0}
+                    suffix={
+                      cpu?.physicalCores ? `（物理 ${cpu.physicalCores} 核）` : undefined
+                    }
+                  />
+                </Col>
+                <Col flex="auto" style={{ minWidth: 0 }}>
+                  <Space direction="vertical" size={4} style={{ width: '100%' }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>
                       使用率按最近 {cpu?.sampleWindowSec || 0} 秒的采样窗口计算，
                       不是开机至今的平均值；服务刚启动时会短暂显示「采样中」。

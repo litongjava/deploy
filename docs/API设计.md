@@ -460,14 +460,28 @@ GET /api/v1/ws/runs/{id}?token=<jwt>&offset=<n>
 
 帧格式（服务端 → 客户端，JSON 文本）：
 ```json
-{"type":"history","runId":88,"data":"已有日志","nextOffset":2048}
-{"type":"log","runId":88,"seq":45,"data":"新日志块","nextOffset":4096}
+{"type":"history","runId":88,"offset":0,"data":"已有日志","nextOffset":2048}
+{"type":"log","runId":88,"seq":45,"offset":2048,"data":"新日志块","nextOffset":4096}
 {"type":"status","runId":88,"status":"running","step":{"name":"构建","sortOrder":2}}
+{"type":"truncated","runId":88,"nextOffset":4096,"status":"running","reason":"subscriber too slow"}
 {"type":"exit","runId":88,"status":"success","exitCode":0,"durationMs":8123}
 {"type":"error","runId":88,"message":"..."}
 ```
 `data` 是**原始字节片段**（可能不含完整行），前端自行按 `\n` 缓冲切分。日志保留 ANSI 转义序列。
-运行已结束时，服务端补完历史后立即发 `exit` 帧并关闭连接。
+
+`offset` 是本帧数据在日志文件里的**起始字节偏移**（`nextOffset` 是结束偏移）。
+客户端去重必须用它，不要用 `nextOffset - data.length` 去猜：JS 的 `string.length` 是 UTF-16 码元数、
+日志偏移是字节数，日志里有中文/emoji 时推算出来的位置是错的（会把该显示的内容裁掉）。
+服务端保证每帧都落在字符边界上（不会把多字节字符切成两半）。
+
+**帧语义（客户端必须按这个状态机走，否则会丢日志）：**
+- `history` / `log`：增量日志，按 `offset` 去重后落屏。
+- `truncated`：**本连接**被服务端截断（订阅者读得太慢，服务端主动踢掉它，避免拖住执行器）。
+  运行**没有**结束，客户端应带着 `nextOffset` 立即重连补齐。
+- `exit`：运行已处于终态（`status` 是 `success|failed|canceled|timeout|error`），服务端在发它之前
+  已经把日志文件补完，客户端收到即可收工。**`status` 不是终态的 `exit` 视为 `truncated`**
+  （老版本服务端会用它通知「订阅被踢」），绝不能就此停止。
+- 连接随时可能被服务端关闭（慢订阅者、写超时、代理超时）：客户端一律按 `nextOffset` 重连补齐。
 
 ---
 
@@ -503,12 +517,42 @@ GET /api/v1/ws/runs/{id}?token=<jwt>&offset=<n>
   "components": [
     { "key":"cc", "name":"C 工具链（gcc / g++ / make）", "note":"编译原生扩展、cargo 链接、make 构建都要它",
       "estimate":"约 200 MB", "installed":true, "version":"13", "path":"/usr/bin/gcc",
-      "probes":[ {"name":"gcc","found":true,"version":"13","path":"/usr/bin/gcc"} ] },
+      "probes":[ {"name":"gcc","found":true,"version":"13","path":"/usr/bin/gcc"} ],
+      "fields":[
+        { "key":"CC_EXTRA_PACKAGES", "label":"额外软件包（可选）", "default":"",
+          "placeholder":"cmake nasm libssl-dev", "help":"空格分隔，交给 apt/dnf 一起装", "value":"" }
+      ] },
     { "key":"go", "name":"Go", "note":"装到 /usr/local/go 并软链到 /usr/local/bin；GOPROXY 指向 goproxy.cn",
-      "estimate":"约 120 MB", "installed":false, "version":"", "path":"", "probes":[] }
+      "estimate":"约 120 MB", "installed":false, "version":"", "path":"", "probes":[],
+      "fields":[
+        { "key":"GO_VERSION", "label":"Go 版本", "default":"1.24.2", "placeholder":"1.24.2", "help":"", "value":"1.24.1" },
+        { "key":"GO_URL", "label":"Go 压缩包地址（可选）", "default":"",
+          "placeholder":"https://.../go1.24.2.linux-amd64.tar.gz", "help":"留空自动依次试镜像", "value":"" },
+        { "key":"GO_DIR", "label":"Go 安装目录", "default":"/usr/local/go", "placeholder":"/usr/local/go", "help":"", "value":"" }
+      ] }
   ] }
 ```
 `supported=false`（非 Linux 服务端）时只有 dry-run 可用。
+
+`fields[].key` 就是安装脚本读的**环境变量名**（`JAVA_VERSION` / `JDK_URL` / `JAVA_DIR` / `GO_URL` / `NODE_VERSION`…），
+`value` 是保存过的覆盖值，空串表示用 `default`。脚本按 `${VAR:-默认值}` 取值，所以「编辑参数」不需要额外的配置格式。
+
+### `PUT /api/v1/system/toolchains/{key}` （**仅 admin**）
+保存某个组件的安装参数（版本 / 下载地址 / 安装目录…）。空串表示回默认；未知字段名或未知组件返回 `40000`。
+```json
+// 请求：装 JDK 8 —— 不走 apt，直接下载压缩包解压到指定目录
+{ "fields": { "JAVA_VERSION": "8",
+              "JDK_URL": "https://example.com/jdk-8u202-linux-x64.tar.gz",
+              "JAVA_DIR": "/usr/local/jdk8" } }
+```
+```json
+// 响应
+{ "key":"java", "components":["JAVA_DIR","JAVA_VERSION","JDK_URL"],
+  "fields":[ { "key":"JAVA_VERSION", "label":"JDK 大版本（apt 安装）", "value":"8",
+               "default":"17", "placeholder":"17", "help":"…" } ] }
+```
+保存后点该组件的「安装 / 重装」即按新参数执行；这些参数会写进那次运行的 `params`
+（在「安装记录」里能回看「这次按什么参数装的」）。
 
 ### `POST /api/v1/system/toolchains/install` （**仅 admin**）
 触发一次安装。**安装以普通 Run 执行**：立即返回 `runId`，实时日志走
@@ -531,9 +575,11 @@ GET /api/v1/ws/runs/{id}?token=<jwt>&offset=<n>
 说明：
 
 - 组件 key 走白名单（`cc java maven nvm node pnpm go rust`），未知 key 返回 `40000`（组件名会进命令行，必须挡住注入）。
+- 每个组件保存过的参数会作为**运行参数**注入本次安装（脚本按环境变量读取），并记进 `runs.params`；
+  另外固定带上 `components=<本次组件列表>`，供「安装记录」展示。
 - 内置项目 `system-toolchain`（名称「环境工具链安装（系统）」）会在首次使用时自动创建，
   **命令只有一条且每次触发时更新**为最新的组件选择；该项目 `hookEnabled=false`，不能被 Hook 触发。
-- 全部组件都已安装时返回 `{ "runId": 0, "nothingToDo": true }`。
+- 全部组件都已安装时返回 `{ "runId": 0, "nothingToDo": true }`；想给已装的组件换版本，请带 `force: true` 只重装它。
 - 非 Linux 服务端：真安装返回 `40000`，`dryRun` 仍可用于预览。
 - 安装会调用包管理器与下载 JDK/Go/Rust/Node（几百 MB），因此限 admin；系统内并发受项目 `queue` 策略约束，不会并发装。
 
@@ -557,7 +603,12 @@ bash install-toolchains.sh --list                # 只列状态
   "load":{"available":true,"avg1":0.42,"avg5":0.35,"avg15":0.28},
   "cpu":{"model":"Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz",
          "cores":4,"physicalCores":2,"mhz":2400,
-         "available":true,"usagePercent":12.5,"sampleWindowSec":3,
+         "available":true,"usagePercent":12.5,
+         "coreUsage":[
+           {"index":0,"indexLabel":"CPU0","usagePercent":3.2,"busySec":0.1,"totalSec":3.02},
+           {"index":1,"indexLabel":"CPU1","usagePercent":48.7,"busySec":1.47,"totalSec":3.02}
+         ],
+         "sampleWindowSec":3,
          "busySec":1.5,"totalSec":12,"userSec":1.1,"systemSec":0.3,
          "idleSec":10.2,"iowaitSec":0.1},
   "memory":{"totalBytes":8363282432,"usedBytes":1642340352,
@@ -580,6 +631,7 @@ bash install-toolchains.sh --list                # 只列状态
 |---|---|
 | `cpu.usagePercent` | 是**两次采样之间的差分**，不是「开机至今的平均值」。后者在长期运行的机器上几乎恒为 30% 左右，看着像坏了。 |
 | `cpu.available` | 服务刚启动、第一次差分还没形成时为 `false`，前端显示「采样中」而不是 0%。 |
+| `cpu.coreUsage` | 每个逻辑核心的使用率数组，长度等于 `cores`，元素为 `{index, indexLabel, usagePercent, busySec, totalSec}`。取值方式：Linux 读 `/proc/stat` 的 `cpuN` 行（与整机行同构，所以口径天然一致），Windows 走 ntdll 的 `NtQuerySystemInformation(SystemProcessorPerformanceInformation=8)`——Win32 层没有逐核时间的公开接口。拿不到时返回空数组（前端显示「当前平台未提供逐核使用率」），不影响整机数据。注意单核是**瞬时占用**，会看到 0% 和 100% 反复跳（调度器把任务在核心间搬），属正常现象。 |
 | `cpu.busySec` / `totalSec` / `userSec` / `idleSec` / `iowaitSec` | 是**所有核心累加**的时间，不是墙上时钟：16 核跑满 1 秒 → `totalSec ≈ 16`。`usagePercent = busySec / totalSec`，分子分母同口径，自动消掉核心数。 |
 | `cpu.physicalCores` | Windows 上没有便宜的 API 能拿到物理核数，恒为 `0`（前端隐藏该项）。 |
 | `load.available` | Windows 没有 load average，为 `false`（前端隐藏该项）。 |

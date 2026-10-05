@@ -400,6 +400,11 @@ export interface ServerCpu {
   /** 服务刚启动、第一次采样还没完成时为 false，应显示「采样中」而不是 0% */
   available: boolean;
   usagePercent: number;
+  /**
+   * 每个逻辑核心的使用率，长度等于 cores（取不到时为空数组）。
+   * 单核是「瞬时占用」，会看到 0% 和 100% 反复跳（调度器在核心间搬任务），属正常。
+   */
+  coreUsage: ServerCoreUsage[];
   /** 使用率的统计窗口（秒），默认采样间隔为 3 */
   sampleWindowSec: number;
   /**
@@ -412,6 +417,17 @@ export interface ServerCpu {
   systemSec: number;
   idleSec: number;
   iowaitSec: number;
+}
+
+/** 单个逻辑核心在最近一个采样窗口内的使用率 */
+export interface ServerCoreUsage {
+  /** 0 基核心序号 */
+  index: number;
+  /** 直接可显示的短名，如 "CPU0" */
+  indexLabel: string;
+  usagePercent: number;
+  busySec: number;
+  totalSec: number;
 }
 
 export interface ServerMemory {
@@ -493,6 +509,19 @@ export interface ToolchainComponent {
   version: string;
   path: string;
   probes: ToolchainProbe[];
+  /** 可编辑的安装参数（版本 / 下载地址 / 安装目录…），value 为空表示用默认 */
+  fields: ToolchainField[];
+}
+
+export interface ToolchainField {
+  /** 就是安装脚本读的环境变量名，例如 JAVA_VERSION / JDK_URL / JAVA_DIR */
+  key: string;
+  label: string;
+  default: string;
+  placeholder: string;
+  help: string;
+  /** 保存过的覆盖值；空串表示用默认 */
+  value: string;
 }
 
 export interface ToolchainList {
@@ -533,8 +562,18 @@ export interface ToolchainInstallResult {
 /* --------------------------- WebSocket 帧 --------------------------- */
 
 export type WsFrame =
-  | { type: 'history'; runId: number; data: string; nextOffset: number }
-  | { type: 'log'; runId: number; seq: number; data: string; nextOffset: number }
+  // offset 是本帧数据在日志文件里的**起始字节偏移**（服务端显式给出，
+  // 客户端不要用 nextOffset - data.length 去猜：JS 的 string.length 是
+  // UTF-16 码元数，日志里有中文时推算出来的偏移是错的）
+  | { type: 'history'; runId: number; offset?: number; data: string; nextOffset: number }
+  | {
+      type: 'log';
+      runId: number;
+      seq: number;
+      offset?: number;
+      data: string;
+      nextOffset: number;
+    }
   | {
       type: 'status';
       runId: number;
@@ -547,5 +586,14 @@ export type WsFrame =
       status: RunStatus;
       exitCode: number | null;
       durationMs: number;
+      nextOffset?: number;
+    }
+  // 服务端把读得太慢的订阅者踢掉：运行**没有**结束，客户端应带 nextOffset 重连
+  | {
+      type: 'truncated';
+      runId: number;
+      status?: RunStatus;
+      reason?: string;
+      nextOffset: number;
     }
   | { type: 'error'; runId: number; message: string };

@@ -436,7 +436,30 @@ const RunDetail: React.FC = () => {
         ) : null}
       </Card>
 
-      <Card title="实时日志" style={{ marginBottom: 16 }}>
+      <Card
+        title="实时日志"
+        style={{ marginBottom: 16 }}
+        extra={
+          <Space>
+            <Button
+              size="small"
+              icon={<ReloadOutlined />}
+              onClick={() => {
+                // fetchedRef 是「HTTP 历史只拉一次」的闸门，手动重载要把它放开
+                fetchedRef.current = false;
+                termRef.current?.reload();
+                loadLog();
+                loadRun(true);
+              }}
+            >
+              重载日志
+            </Button>
+            <Button size="small" onClick={() => termRef.current?.reconnect()}>
+              重连日志流
+            </Button>
+          </Space>
+        }
+      >
         {logError ? (
           <Alert
             style={{ marginBottom: 12 }}
@@ -455,6 +478,11 @@ const RunDetail: React.FC = () => {
           />
         ) : null}
         <LogTerminal
+          // key 必须带上 runId：从「重新执行」跳到新运行时，
+          // React 会复用同一个 RunDetail（路由参数变、组件不重挂），
+          // 而 LogTerminal 内部记着旧运行的「已落屏字节数」与 WebSocket，
+          // 新日志会被按 offset 去重整段丢掉 —— 表现就是终端一片空白。
+          key={id}
           ref={termRef}
           runId={id}
           active={active}

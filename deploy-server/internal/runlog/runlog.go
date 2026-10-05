@@ -83,6 +83,8 @@ func (b *Broker) Unsubscribe(runID uint, s *Sub) {
 //
 // 订阅者缓冲区满时**主动断开它**：宁可让客户端重连后按 offset 补齐，
 // 也不能阻塞执行器 —— 否则一个慢客户端就能把整个部署卡死。
+// 被踢的订阅者由 WS 层按「运行未结束」处理（发 truncated 帧而不是 exit 帧），
+// 否则客户端会以为运行结束、永久停流，日志就只剩半截。
 func (b *Broker) Publish(runID uint, offset int64, data []byte) {
 	if len(data) == 0 {
 		return
@@ -162,19 +164,33 @@ func (m *Masker) AddSecrets(list []string) {
 }
 
 // Write 接收原始输出片段。
+//
+// 一次 Write 里所有完整的行会合并成**一次** emit（打码仍然逐行做）。
+//
+// 为什么不能逐行 emit：Broker 给每个订阅者的缓冲只有 256 深，而命令一次
+// 大块输出（构建工具一口气吐 30KB）会被拆成上千行 —— 逐行发布会在瞬间
+// 灌满缓冲，把客户端判成「跟不上」直接踢掉，表现就是日志流突然中断。
+// 合并发布把帧数降两三个数量级，既省 CPU，也基本消除了这种误踢。
 func (m *Masker) Write(p []byte) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.buf = append(m.buf, p...)
+
+	var out []byte
 	for {
 		i := bytes.IndexByte(m.buf, '\n')
 		if i < 0 {
 			if len(m.buf) >= m.maxLine {
-				m.flushLocked(len(m.buf))
+				out = append(out, m.mask(m.buf)...)
+				m.buf = m.buf[:0]
 			}
 			break
 		}
-		m.flushLocked(i + 1)
+		out = append(out, m.mask(m.buf[:i+1])...)
+		m.buf = m.buf[i+1:]
+	}
+	if len(out) > 0 {
+		m.out(out)
 	}
 	return len(p), nil
 }
@@ -360,8 +376,32 @@ func ReadRange(path string, offset int64, limit int) ([]byte, int64, bool, error
 	}
 	buf := make([]byte, limit)
 	n, _ := f.Read(buf)
+	// 不能把多字节字符切成两半交给下游。
+	//
+	// 日志文件本身保证是合法 UTF-8（见 writeLocked 的归一化），但按字节读
+	// 128KB 时，最后几个字节很可能只是某个汉字的头一两个字节。这种残缺字节
+	// 一旦进 JSON，Go 会把它替换成 U+FFFD —— 1 字节变 3 字节，
+	// 于是客户端算出来的「本帧起点 = nextOffset - len(data)」就漂了，
+	// 去重时会把后面的日志裁错（表现同样是日志缺行/缺尾）。
+	// 所以这里把残缺字符留给下一次读，保证每一帧都是完整的字符边界。
+	n = trimPartialRune(buf[:n])
 	next := offset + int64(n)
 	return buf[:n], next, next >= st.Size(), nil
+}
+
+// trimPartialRune 返回 b 中「最后一个完整字符」的结束位置：
+// 末尾若是一个被截断的多字节字符，就把它的起始字节位置返回（该字符留给下次读）。
+func trimPartialRune(b []byte) int {
+	for i := len(b) - 1; i >= 0 && len(b)-i <= utf8.UTFMax; i-- {
+		if !utf8.RuneStart(b[i]) {
+			continue // 续字节，继续往前找起始字节
+		}
+		if r, size := utf8.DecodeRune(b[i:]); r != utf8.RuneError || size > 1 {
+			return len(b) // 末尾这个字符是完整的
+		}
+		return i // 末尾这个字符被切断了
+	}
+	return len(b)
 }
 
 // safeName 把项目 key 变成一个安全的目录名。

@@ -43,7 +43,7 @@ ONLY=""; SKIP=""; DRY_RUN=0; FORCE=0; LIST_ONLY=0
 if [ -t 1 ]; then C_HEAD=$'\033[1;36m'; C_OK=$'\033[1;32m'; C_WARN=$'\033[1;33m'; C_ERR=$'\033[1;31m'; C_OFF=$'\033[0m'
 else C_HEAD=""; C_OK=""; C_WARN=""; C_ERR=""; C_OFF=""; fi
 
-head() { printf '\n%s==> %s%s\n' "$C_HEAD" "$*" "$C_OFF"; }
+section() { printf '\n%s==> %s%s\n' "$C_HEAD" "$*" "$C_OFF"; }
 info() { printf '    %s\n' "$*"; }
 ok()   { printf '%s    ✓ %s%s\n' "$C_OK" "$*" "$C_OFF"; }
 warn() { printf '%s    ! %s%s\n' "$C_WARN" "$*" "$C_OFF"; }
@@ -137,7 +137,7 @@ ensure_prereqs() {
   local need=()
   for t in curl git tar; do have "$t" || need+=("$t"); done
   if [ ${#need[@]} -gt 0 ]; then
-    head "安装基础依赖：${need[*]}"
+    section "安装基础依赖：${need[*]}"
     case "$PKG" in
       apt)     pkg_install curl git ca-certificates tar xz-utils || return 1 ;;
       dnf|yum) pkg_install curl git ca-certificates tar xz || return 1 ;;
@@ -155,11 +155,27 @@ profile_write() { # profile_write <文件名> <内容>
   chmod 0644 "$f"
 }
 
+# require_installed <检测函数> <组件名>：装完后的自检。
+# dry-run 下什么都没装，跳过验证（否则会被误判成「安装失败」）。
+require_installed() {
+  if [ "$DRY_RUN" = "1" ]; then return 0; fi
+  if ! "$1"; then err "$2 安装后仍不可用"; return 1; fi
+  return 0
+}
+
+# dry_run_note <目标路径>：dry-run 时只报「将安装到哪」。
+# 否则 `gcc -dumpversion` 这类命令会去打机器上**已有**的版本（甚至 command not found），
+# 让预演结果看起来像是真的装过。
+dry_run_note() {
+  if [ "$DRY_RUN" = "1" ]; then ok "预演：将安装到 $1"; return 0; fi
+  return 1
+}
+
 # ---------- C 工具链 ----------
 detect_cc() { have gcc && have make; }
 install_cc() {
-  if detect_cc && [ "$FORCE" != "1" ]; then
-    ok "已安装：gcc $(gcc -dumpversion) / make $(make -v 2>/dev/null | head -1 | awk '{print $3}')"
+  if detect_cc && [ "$FORCE" != "1" ] && [ -z "${CC_EXTRA_PACKAGES:-}" ]; then
+    ok "已安装：gcc $(gcc -dumpversion) / make $(make -v 2>/dev/null | head -1 | awk '{print $3}')（路径 $(command -v gcc)）"
     return 0
   fi
   case "$PKG" in
@@ -167,15 +183,52 @@ install_cc() {
     dnf|yum) pkg_install gcc gcc-c++ make pkgconfig openssl-devel || return 1 ;;
     *)       return 1 ;;
   esac
-  detect_cc || { err "gcc/make 安装后仍不可用"; return 1; }
-  ok "gcc $(gcc -dumpversion) / make $(make -v | head -1 | awk '{print $3}')"
+  require_installed detect_cc "gcc/make" || return 1
+  if [ -n "${CC_EXTRA_PACKAGES:-}" ]; then
+    info "额外安装：$CC_EXTRA_PACKAGES"
+    # 这里就是要把参数按空格拆成多个包名
+    pkg_install $CC_EXTRA_PACKAGES || warn "额外软件包安装失败（不影响基础工具链）"
+  fi
+  dry_run_note "$(command -v gcc 2>/dev/null || echo /usr/bin/gcc)" && return 0
+  ok "gcc $(gcc -dumpversion) / make $(make -v | head -1 | awk '{print $3}') → $(command -v gcc)"
 }
 
 # ---------- Java ----------
 detect_java() { have java; }
+
+# 用压缩包安装（JDK 8 这类 apt 里没有的版本走这条）
+install_java_tarball() {
+  local dir="${JAVA_DIR:-/usr/local/jdk}" tmp="/tmp/jdk.tar.gz"
+  ensure_prereqs || return 1
+  if [ "$DRY_RUN" = "1" ]; then
+    info "[dry-run] curl -fL $JDK_URL -o $tmp && tar -xf $tmp -C $dir --strip-components=1（JAVA_HOME=$dir）"
+    return 0
+  fi
+  info "下载 $JDK_URL"
+  curl -fL --connect-timeout 20 --retry 2 -o "$tmp" "$JDK_URL" || { err "JDK 压缩包下载失败"; return 1; }
+  rm -rf "$dir" && mkdir -p "$dir"
+  if ! tar -xf "$tmp" -C "$dir" --strip-components=1; then
+    err "解压失败（确认是 .tar.gz 且带一层顶层目录）"; rm -f "$tmp"; return 1
+  fi
+  rm -f "$tmp"
+  [ -x "$dir/bin/java" ] || { err "解压后没有找到 $dir/bin/java（检查压缩包结构）"; return 1; }
+  profile_write "java.sh" "# Java（由平台「工具链一键安装」写入，压缩包方式）
+export JAVA_HOME=$dir
+export PATH=\$JAVA_HOME/bin:\$PATH"
+  for b in java javac jar javap keytool; do
+    [ -x "$dir/bin/$b" ] && ln -sf "$dir/bin/$b" "/usr/local/bin/$b"
+  done
+  PATH="$dir/bin:$PATH"
+  ok "$(java -version 2>&1 | head -1) → $dir（JAVA_HOME，软链在 /usr/local/bin/java）"
+}
+
 install_java() {
-  if detect_java && [ "$FORCE" != "1" ]; then
-    ok "已安装：$(java -version 2>&1 | head -1)"
+  if detect_java && [ "$FORCE" != "1" ] && [ -z "${JDK_URL:-}" ]; then
+    ok "已安装：$(java -version 2>&1 | head -1)（路径 $(command -v java)）"
+    return 0
+  fi
+  if [ -n "${JDK_URL:-}" ]; then
+    install_java_tarball || return 1
     return 0
   fi
   case "$PKG" in
@@ -187,29 +240,58 @@ install_java() {
     dnf|yum) pkg_install "java-${JAVA_VERSION}-openjdk-devel" || return 1 ;;
     *) return 1 ;;
   esac
-  detect_java || { err "java 安装后仍不可用"; return 1; }
+  require_installed detect_java "java" || return 1
   local jh
   jh="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"
   profile_write "java.sh" "# Java（由平台「工具链一键安装」写入）
 export JAVA_HOME=$jh
 export PATH=\$JAVA_HOME/bin:\$PATH"
-  ok "$(java -version 2>&1 | head -1)  JAVA_HOME=$jh"
+  dry_run_note "$jh（JAVA_HOME）" && return 0
+  ok "$(java -version 2>&1 | head -1) → $jh（JAVA_HOME）"
 }
 
 # ---------- Maven ----------
 detect_maven() { have mvn; }
-install_maven() {
-  if detect_maven && [ "$FORCE" != "1" ]; then
-    ok "已安装：$(mvn -v 2>/dev/null | head -1)"
+
+install_maven_tarball() {
+  local dir="${MAVEN_DIR:-/usr/local/maven}" tmp="/tmp/maven.tar.gz"
+  ensure_prereqs || return 1
+  if [ "$DRY_RUN" = "1" ]; then
+    info "[dry-run] curl -fL $MAVEN_URL -o $tmp && tar -xf $tmp -C $dir --strip-components=1"
     return 0
   fi
-  case "$PKG" in
-    apt)     pkg_install maven || return 1 ;;
-    dnf|yum) pkg_install maven || return 1 ;;
-    *)       return 1 ;;
-  esac
-  detect_maven || { err "mvn 安装后仍不可用"; return 1; }
-  ok "$(mvn -v | head -1)"
+  info "下载 $MAVEN_URL"
+  curl -fL --connect-timeout 20 --retry 2 -o "$tmp" "$MAVEN_URL" || { err "Maven 压缩包下载失败"; return 1; }
+  rm -rf "$dir" && mkdir -p "$dir"
+  if ! tar -xf "$tmp" -C "$dir" --strip-components=1; then
+    err "解压失败（确认是 apache-maven-*-bin.tar.gz）"; rm -f "$tmp"; return 1
+  fi
+  rm -f "$tmp"
+  [ -x "$dir/bin/mvn" ] || { err "解压后没有 $dir/bin/mvn"; return 1; }
+  ln -sf "$dir/bin/mvn" /usr/local/bin/mvn
+  profile_write "maven.sh" "# Maven（由平台「工具链一键安装」写入，压缩包方式）
+export M2_HOME=$dir
+export PATH=$dir/bin:\$PATH"
+  ok "$(mvn -v | head -1) → $dir（软链在 /usr/local/bin/mvn）"
+}
+
+install_maven() {
+  if detect_maven && [ "$FORCE" != "1" ] && [ -z "${MAVEN_URL:-}" ]; then
+    ok "已安装：$(mvn -v 2>/dev/null | head -1)（路径 $(command -v mvn)）"
+    return 0
+  fi
+  if [ -n "${MAVEN_URL:-}" ]; then
+    install_maven_tarball || return 1
+  else
+    case "$PKG" in
+      apt)     pkg_install maven || return 1 ;;
+      dnf|yum) pkg_install maven || return 1 ;;
+      *)       return 1 ;;
+    esac
+    require_installed detect_maven "mvn" || return 1
+    dry_run_note "$(command -v mvn 2>/dev/null || echo /usr/bin/mvn)" && return 0
+    ok "$(mvn -v | head -1) → $(command -v mvn)"
+  fi
 
   # 国内镜像：只在没有 settings.xml 时写入，绝不覆盖用户已有配置。
   if [ "$MIRROR" = "cn" ]; then
@@ -333,6 +415,8 @@ install_go() {
   ensure_prereqs || return 1
   local file="go${GO_VERSION}.linux-${GOARCH}.tar.gz"
   local urls=()
+  # 显式给了下载地址就优先用它（内网镜像 / 指定小版本）
+  [ -n "${GO_URL:-}" ] && urls+=("$GO_URL")
   if [ "$MIRROR" = "cn" ]; then
     urls+=("https://mirrors.aliyun.com/golang/$file")
     urls+=("https://golang.google.cn/dl/$file")
@@ -455,6 +539,18 @@ component_version() {
     rust)  { have rustc && rustc --version; } 2>/dev/null || { [ -x "$CARGO_HOME/bin/rustc" ] && "$CARGO_HOME/bin/rustc" --version; } 2>/dev/null ;;
   esac
 }
+component_path() { # 这个组件装到哪 / 在哪能找到（写进报告，便于回看）
+  case "$1" in
+    cc)    command -v gcc 2>/dev/null ;;
+    java)  if [ -n "${JDK_URL:-}" ]; then echo "${JAVA_DIR:-/usr/local/jdk}"; else command -v java 2>/dev/null; fi ;;
+    maven) if [ -n "${MAVEN_URL:-}" ]; then echo "${MAVEN_DIR:-/usr/local/maven}"; else command -v mvn 2>/dev/null; fi ;;
+    nvm)   echo "$NVM_DIR" ;;
+    node)  bash -lc 'command -v node' 2>/dev/null ;;
+    pnpm)  bash -lc 'command -v pnpm' 2>/dev/null ;;
+    go)    echo "$GO_DIR" ;;
+    rust)  echo "$CARGO_HOME" ;;
+  esac
+}
 component_install() {
   case "$1" in
     cc) install_cc ;; java) install_java ;; maven) install_maven ;; nvm) install_nvm ;;
@@ -464,7 +560,11 @@ component_install() {
 }
 
 # ---------- 选择组件 ----------
-in_list() { case ",$2," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
+# 列表是**空格**分隔的（"cc java maven ..."），所以两边都补空格再匹配；
+# 早先写成逗号匹配（*",$1,"*），结果 --only 永远报「未知组件」。
+in_list() { # in_list <needle> <space separated list>
+  case " $2 " in *" $1 "*) return 0 ;; *) return 1 ;; esac
+}
 
 SELECTED=""
 if [ -n "$ONLY" ]; then
@@ -482,17 +582,18 @@ if [ -n "$SKIP" ]; then
 fi
 SELECTED="$(echo "$SELECTED" | xargs)"
 
-head "环境工具链安装 $SCRIPT_VERSION"
+section "环境工具链安装 $SCRIPT_VERSION"
 info "系统：$OS_ID $OS_VER / $ARCH    包管理器：$PKG"
 info "组件：$SELECTED"
 info "镜像：$MIRROR$([ "$DRY_RUN" = "1" ] && printf '    模式：dry-run（不做任何修改）')"
 [ "$PKG" = "unknown" ] && { err "不支持的发行版：$OS_ID"; exit 1; }
 
 if [ "$LIST_ONLY" = "1" ]; then
-  printf '\n%-6s %-24s %-8s %s\n' "组件" "名称" "状态" "版本"
+  printf '\n%-6s %-24s %-8s %-30s %s\n' "组件" "名称" "状态" "版本" "位置"
   for c in $ALL_COMPONENTS; do
     if component_detect "$c"; then s="已安装"; else s="缺失"; fi
-    printf '%-6s %-24s %-8s %s\n' "$c" "$(component_name "$c")" "$s" "$(component_version "$c" | head -1)"
+    printf '%-6s %-24s %-8s %-30s %s\n' "$c" "$(component_name "$c")" "$s" \
+      "$(component_version "$c" | head -1)" "$(component_path "$c")"
   done
   exit 0
 fi
@@ -500,20 +601,27 @@ fi
 FAILED=""
 RESULTS=""
 for c in $SELECTED; do
-  head "[$c] $(component_name "$c")"
+  section "[$c] $(component_name "$c")"
   if component_install "$c"; then
-    RESULTS="$RESULTS$c|ok|$(component_version "$c" | head -1)\n"
+    # 记录「装了什么版本、装到哪」：这条汇总本身就是安装记录的一部分（运行日志可回看）
+    RESULTS="$RESULTS$c|ok|$(component_version "$c" | head -1)|$(component_path "$c")\n"
   else
-    RESULTS="$RESULTS$c|failed|\n"
+    RESULTS="$RESULTS$c|failed||\n"
     FAILED="$FAILED $c"
   fi
 done
 
-head "汇总"
-printf '%-6s %-8s %s\n' "组件" "结果" "版本"
-printf '%b' "$RESULTS" | while IFS='|' read -r c s v; do
+section "汇总（装了什么 / 装到哪）"
+printf '%-6s %-8s %-34s %s\n' "组件" "结果" "版本" "位置"
+printf '%b' "$RESULTS" | while IFS='|' read -r c s v p; do
   [ -z "$c" ] && continue
-  if [ "$s" = "ok" ]; then printf '%-6s %-8s %s\n' "$c" "成功" "$v"; else printf '%-6s %-8s %s\n' "$c" "失败" "-"; fi
+  if [ "$s" = "ok" ]; then
+    # dry-run 下「版本」是机器上已有的东西，会误导，直接标注
+    [ "$DRY_RUN" = "1" ] && v="(dry-run，未变更)"
+    printf '%-6s %-8s %-34s %s\n' "$c" "成功" "$v" "$p"
+  else
+    printf '%-6s %-8s %-34s %s\n' "$c" "失败" "-" "-"
+  fi
 done
 
 if [ -n "$FAILED" ]; then
@@ -526,6 +634,6 @@ if [ "$DRY_RUN" = "1" ]; then
   ok "预演结束：上面是将会执行的动作，未做任何修改"
 else
   ok "全部完成。已写入 /etc/profile.d/*.sh，新开的 login shell（平台默认的 bash -lc）即可使用。"
-  info "回到平台「设置 → 系统设置 → 环境自检」点「重新检测」查看结果。"
+  info "回到平台侧边栏「环境自检」点「重新检测」查看结果。"
 fi
 exit 0

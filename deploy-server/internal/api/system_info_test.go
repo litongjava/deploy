@@ -52,6 +52,40 @@ func TestSystemInfoEndpoint(t *testing.T) {
 		t.Fatalf("cpu.usagePercent 超出 0~100: %v", usage)
 	}
 
+	// ---- 每个逻辑核心的使用率（页面上那排小进度条的数据源）----
+	// 这条断言的意义在于「字段真的在响应里」：契约里 cpu.coreUsage 是数组，
+	// 前端按它渲染，一旦改名或变成 null，页面会静默少掉一整块。
+	// 注意变量别叫 cores：上面已经用 cores 接过 cpu["cores"]（float64）。
+	coreUsage, ok := cpu["coreUsage"].([]any)
+	if !ok {
+		t.Fatalf("cpu.coreUsage 应为数组（空数组也不能是 null）: %v", cpu["coreUsage"])
+	}
+	if len(coreUsage) > 0 {
+		if len(coreUsage) != int(cpu["cores"].(float64)) {
+			t.Fatalf("cpu.coreUsage 有 %d 项，与 cpu.cores 不一致", len(coreUsage))
+		}
+		var first map[string]any
+		for i, raw := range coreUsage {
+			c, ok := raw.(map[string]any)
+			if !ok {
+				t.Fatalf("cpu.coreUsage[%d] 不是对象: %v", i, raw)
+			}
+			p, _ := c["usagePercent"].(float64)
+			if p < 0 || p > 100 {
+				t.Fatalf("cpu.coreUsage[%d].usagePercent 超出 0~100: %v", i, p)
+			}
+			if i == 0 {
+				first = c
+			}
+		}
+		if first["index"] != float64(0) {
+			t.Fatalf("cpu.coreUsage[0].index 应为 0: %v", first["index"])
+		}
+		if first["indexLabel"] != "CPU0" {
+			t.Fatalf("cpu.coreUsage[0].indexLabel 应为 CPU0: %v", first["indexLabel"])
+		}
+	}
+
 	// ---- 内存 ----
 	mem, ok := data["memory"].(map[string]any)
 	if !ok {
