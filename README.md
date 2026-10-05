@@ -132,15 +132,6 @@ cd ../deploy-server && make ui && make linux
 
 后续会话需确保 `/usr/local/go/bin` 在 PATH 中。也可上传已有源码，省去 clone。
 
-> **前端 Node 版本**：`deploy-server-ui` 的 umi 已从 4.4.12 升到 **4.7.22**，`.npmrc` 把 Node 钉在 **25.2.1**（`.nvmrc` 同步）。
-> 背景：umi 4.4.x 的依赖链 `spdy → http-deceiver` 在 require 时调用 Node 24 已移除的私有 API
-> `process.binding('http_parser')`，于是 Node >= 24 上 `pnpm install` 的 `max setup` 会 fatal：
-> `Error: No such module: http_parser`；4.7.22 起 `@umijs/bundler-utils` 在 Node >= 24 时不再 require `spdy`
-> （umijs/umi#13256），Node 22/25 都能构建。`.npmrc` 的 `use-node-version=25.2.1` 让 pnpm 自己下载并使用
-> 该版本（走 npmmirror 镜像，与服务器 nvm 默认版本无关），所以工具链按默认 `--lts` 装的 Node 24/26 也能构建；
-> 不想让它下载就 `NODE_VERSION=25.2.1 bash install.sh --only node,pnpm`（或手动 `nvm install 25.2.1 && nvm alias default 25.2.1`）。
-> 详见 `deploy-server-ui/README.md`。
-
 ## 部署到服务器
 
 以下服务器操作以 Linux/root 为例。工具链按项目安装：Git 拉取需要 `git`，静态站需要 `nginx`/`rsync`，构建需要相应语言工具链，容器任务需要 `docker`。
