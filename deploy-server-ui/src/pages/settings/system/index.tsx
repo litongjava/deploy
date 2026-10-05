@@ -89,6 +89,7 @@ const SystemSettingsPage: React.FC = () => {
             initialValues={
               settings || {
                 webRoot: '',
+                serverUrl: '',
                 maxConcurrentRuns: 5,
                 logRetentionDays: 30,
                 logMaxBytes: 104857600,
@@ -114,6 +115,19 @@ const SystemSettingsPage: React.FC = () => {
               width="xl"
               tooltip="项目工作目录的默认根路径，改这里不会搬动已有目录"
               placeholder="/srv/deploy/workspaces"
+            />
+            <ProFormText
+              name="serverUrl"
+              label="服务端外部地址"
+              width="xl"
+              tooltip="注入给脚本的 DEPLOY_SERVER_URL。对外地址变了在这里改，保存后对后续部署立即生效，不用重启服务；留空表示回退到启动参数（-server-url / DEPLOY_SERVER_URL）里的默认值"
+              placeholder="http://192.168.31.97:10055"
+              rules={[
+                {
+                  pattern: /^https?:\/\/\S+$/,
+                  message: '需填 http:// 或 https:// 开头的完整地址',
+                },
+              ]}
             />
             <ProFormDigit
               name="maxConcurrentRuns"

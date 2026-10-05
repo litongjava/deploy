@@ -84,8 +84,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build.ps1 -Version
 .\bin\deploy-server.exe `
     -listen 127.0.0.1:10055 `
     -data-dir .\data `
-    -web-root .\workspaces `
-    -server-url http://127.0.0.1:10055
+    -web-root .\workspaces
 ```
 
 打开 <http://127.0.0.1:10055>，按[首次初始化](#首次初始化)创建管理员。
@@ -155,14 +154,14 @@ apt-get install -y git rsync curl nginx
 ### 安装 systemd 服务
 
 **默认监听 `127.0.0.1:10055`**。仓库 unit 用 `0.0.0.0:10055` 是有意让局域网浏览器与 CLI 访问；有公网入口时，**必须改回 `127.0.0.1:10055`，经 nginx 反代 + HTTPS**。
-先调整待上传的 [unit](deploy-server/deploy/deploy-server.service)；**`-server-url` 必须改为自己的地址**，它会注入 `DEPLOY_SERVER_URL`。
+先调整待上传的 [unit](deploy-server/deploy/deploy-server.service)；监听地址与目录按实际环境改（仓库 unit 用的是 `0.0.0.0:10055` 与 `/srv/deploy`）。
+服务端对外地址**不写进 unit**：装好后在「系统设置 → 服务端外部地址」里填，保存即生效。它会被注入为 `DEPLOY_SERVER_URL`，所以地址变了在页面上改一下就行，不用改 unit、也不用重启。
 
 ```ini
 ExecStart=/usr/local/bin/deploy-server \
     -listen 0.0.0.0:10055 \
     -data-dir /srv/deploy/data \
-    -web-root /srv/deploy/workspaces \
-    -server-url http://<本机IP>:10055
+    -web-root /srv/deploy/workspaces
 ```
 
 unit 中这三项配置别删：
@@ -194,18 +193,18 @@ Windows 需脚本化密码认证时可配合 [sshpoke](tools/sshpoke/)；Windows
 
 ### 不用 systemd
 
-安装好二进制、建立上述目录后，可选前台运行或 `nohup` 后台运行；将 URL 中的占位符换成本机 IP：
+安装好二进制、建立上述目录后，可选前台运行或 `nohup` 后台运行：
 
 ```bash
 # 前台调试，看到「HTTP 服务已就绪」后可访问；Ctrl+C 会优雅退出
 /usr/local/bin/deploy-server \
     -listen 127.0.0.1:10055 -data-dir /srv/deploy/data \
-    -web-root /srv/deploy/workspaces -server-url 'http://<本机IP>:10055'
+    -web-root /srv/deploy/workspaces
 
 # 或后台运行
 nohup /usr/local/bin/deploy-server \
     -listen 127.0.0.1:10055 -data-dir /srv/deploy/data \
-    -web-root /srv/deploy/workspaces -server-url 'http://<本机IP>:10055' \
+    -web-root /srv/deploy/workspaces \
     > /var/log/deploy-server.log 2>&1 &
 curl -fsS http://127.0.0.1:10055/api/v1/healthz
 ```
@@ -344,7 +343,8 @@ Git 支持 HTTPS/SSH 仓库，默认分支 `main`；私有仓库先建凭据再�
 | `PROJECT_KEY` / `PROJECT_NAME` | 项目 Key / 名称 |
 | `RUN_ID` / `BUILD_NUMBER` | 运行 ID / 项目内自增构建号 |
 | `TRIGGER_BY` / `TRIGGER_TYPE` | 触发人 / 触发方式（`web`、`cli`、`hook`） |
-| `START_TIME` / `DEPLOY_SERVER_URL` | 开始时间 / 本服务地址 |
+| `START_TIME` | 开始时间（RFC3339） |
+| `DEPLOY_SERVER_URL` | 本服务对外地址，在「系统设置 → 服务端外部地址」里配置 |
 | `GIT_BRANCH` / `GIT_COMMIT` / `GIT_COMMIT_SHORT` / `GIT_TAG` / `GIT_AUTHOR` / `GIT_MESSAGE` / `GIT_DIRTY` | 仅 `useGit=true` 时注入 |
 
 环境变量优先级（后者覆盖前者）：**系统环境 → 项目普通变量 → 项目 Secret 变量 → 内置变量 → 触发时传入的参数**。

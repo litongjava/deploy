@@ -57,7 +57,7 @@ cd ../deploy-server && make ui && make linux           # make ui 就是"拷贝�
 | `-listen` | `DEPLOY_LISTEN` | `127.0.0.1:10055` | 监听地址 |
 | `-data-dir` | `DEPLOY_DATA_DIR` | `./data` | 数据库、日志、密钥 |
 | `-web-root` | `DEPLOY_WEB_ROOT` | `./workspaces` | 项目工作目录根（项目里用 `${WORKSPACE_ROOT}` 引用） |
-| `-server-url` | `DEPLOY_SERVER_URL` | 由 listen 推导 | 注入给命令的 `DEPLOY_SERVER_URL` |
+| `-server-url` | `DEPLOY_SERVER_URL` | 由 listen 推导 | 对外地址的**启动默认值**，注入给命令的 `DEPLOY_SERVER_URL`；运行时可在「系统设置」里改 |
 | `-config` | — | 自动查找 | 配置文件路径 |
 
 > 默认只监听 `127.0.0.1`。这是有意的：本服务本质是「远程命令执行」，

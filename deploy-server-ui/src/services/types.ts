@@ -568,6 +568,8 @@ export interface ServerInfo {
 
 export interface SystemSettings {
   webRoot: string;
+  /** 服务端对外地址：注入给脚本的 DEPLOY_SERVER_URL，可在设置页改，留空回退启动默认值 */
+  serverUrl: string;
   maxConcurrentRuns: number;
   logRetentionDays: number;
   logMaxBytes: number;

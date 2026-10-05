@@ -19,11 +19,15 @@ Environment=TZ=Asia/Shanghai
 # and put nginx in front of it with HTTPS -
 # this service is remote command execution by nature; running it naked on the
 # public internet is the same as handing the server over.
+#
+# There is deliberately no -server-url here. The external address injected into
+# scripts as DEPLOY_SERVER_URL is a runtime setting, editable in the web UI
+# (system settings), so a changed public address needs no unit edit and no
+# restart. Passing -server-url would only seed the initial default.
 ExecStart=/usr/local/bin/deploy-server \
     -listen 0.0.0.0:10055 \
     -data-dir /srv/deploy/data \
-    -web-root /srv/deploy/workspaces \
-    -server-url http://192.168.31.97:10055
+    -web-root /srv/deploy/workspaces
 
 Restart=on-failure
 RestartSec=3

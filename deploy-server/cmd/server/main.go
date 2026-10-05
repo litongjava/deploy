@@ -100,7 +100,7 @@ func main() {
 	}
 
 	go func() {
-		slog.Info("HTTP server ready", "url", cfg.ServerURL)
+		slog.Info("HTTP server ready", "listen", cfg.Listen)
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("HTTP server exited", "err", err)
 			os.Exit(1)

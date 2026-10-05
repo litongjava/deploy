@@ -23,7 +23,8 @@ type Config struct {
 	DataDir string `yaml:"dataDir"`
 	// WebRoot 是项目工作目录的默认根，项目里用 ${WORKSPACE_ROOT} 引用。
 	WebRoot string `yaml:"webRoot"`
-	// ServerURL 是服务端对外地址，会作为 DEPLOY_SERVER_URL 注入给命令。
+	// ServerURL 是服务端对外地址的**启动默认值**，会作为 DEPLOY_SERVER_URL 注入给命令。
+	// 它只是初始值：管理员可以在「系统设置」里改，改完对后续运行立即生效，不需要重启。
 	ServerURL string `yaml:"serverUrl"`
 
 	// JWTSecret 用于签发登录 token。留空则自动生成并持久化。
@@ -74,7 +75,7 @@ func Load(args []string) (*Config, error) {
 		listen     = fs.String("listen", "", "HTTP listen address, e.g. 0.0.0.0:10055")
 		dataDir    = fs.String("data-dir", "", "data directory (database / logs / keys)")
 		webRoot    = fs.String("web-root", "", "root directory for project workspaces")
-		serverURL  = fs.String("server-url", "", "server URL injected into commands as DEPLOY_SERVER_URL")
+		serverURL  = fs.String("server-url", "", "default server URL; changeable later in system settings")
 	)
 	fs.SetOutput(os.Stderr)
 	if err := fs.Parse(args); err != nil {
@@ -144,6 +145,9 @@ func Load(args []string) (*Config, error) {
 	if abs, err := filepath.Abs(cfg.WebRoot); err == nil {
 		cfg.WebRoot = abs
 	}
+	// 没显式给地址时按监听地址推导一个能用的默认值。
+	// 监听 0.0.0.0 时对外地址不可能是 0.0.0.0，退化成 127.0.0.1：脚本在本机回连是通的，
+	// 真正对外的地址由管理员在「系统设置」里填。
 	if cfg.ServerURL == "" {
 		host := cfg.Listen
 		if strings.HasPrefix(host, "0.0.0.0") || strings.HasPrefix(host, "[::]") {

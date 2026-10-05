@@ -927,7 +927,7 @@ func (s *Server) previewProject(c *gin.Context) {
 		{"key": "PROJECT_KEY", "value": p.Key},
 		{"key": "PROJECT_NAME", "value": p.Name},
 		{"key": "WORKDIR", "value": workdir},
-		{"key": "DEPLOY_SERVER_URL", "value": s.cfg.ServerURL},
+		{"key": "DEPLOY_SERVER_URL", "value": s.effectiveServerURL()},
 		{"key": "BUILD_NUMBER", "value": "(assigned at run time)"},
 	}
 

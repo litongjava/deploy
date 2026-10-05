@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/binary"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -224,6 +225,12 @@ func (s *Server) settingStr(key, def string) string {
 	return def
 }
 
+// effectiveServerURL 取生效的服务端外部地址：系统设置里的值优先，没设置过就用启动默认值。
+// 每次调用都重新读库，所以设置页改完立刻对变量预览与后续运行生效，不需要重启。
+func (s *Server) effectiveServerURL() string {
+	return s.settingStr("serverUrl", s.cfg.ServerURL)
+}
+
 func (s *Server) getSettings(c *gin.Context) {
 	notify := notifyDTO{Enabled: false, On: []string{"failed"}}
 	if v, ok := s.st.GetSetting("notifyEnabled"); ok {
@@ -235,7 +242,7 @@ func (s *Server) getSettings(c *gin.Context) {
 	}
 
 	OK(c, settingsDTO{
-		WebRoot: s.cfg.WebRoot, DataDir: s.cfg.DataDir, ServerURL: s.cfg.ServerURL,
+		WebRoot: s.cfg.WebRoot, DataDir: s.cfg.DataDir, ServerURL: s.effectiveServerURL(),
 		Shell:                  s.cfg.ShellPreference,
 		MaxConcurrentRuns:      s.exec.MaxConcurrent(),
 		LogRetentionDays:       s.settingInt("logRetentionDays", s.cfg.LogRetentionDays),
@@ -250,11 +257,27 @@ func (s *Server) getSettings(c *gin.Context) {
 // updateSettings 只允许改「运行时安全」的设置。
 // 工作目录、监听地址这类影响进程本身的配置，坚持要改配置文件 + 重启，
 // 避免出现「设置里显示 A、进程实际跑在 B」的错位。
+//
+// serverUrl 是有意的例外：它不影响本进程监听什么地址，只决定注入给脚本的
+// DEPLOY_SERVER_URL，而对外地址会随网络环境变化，锁死在 unit 里反而要为此重启。
 func (s *Server) updateSettings(c *gin.Context) {
 	var req settingsDTO
 	if err := c.ShouldBindJSON(&req); err != nil {
 		BadRequest(c, "request body is not valid JSON")
 		return
+	}
+
+	if v := strings.TrimSpace(req.ServerURL); v != "" {
+		u, err := url.Parse(v)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			BadRequest(c, "serverUrl must be an absolute http(s) URL, e.g. http://192.168.31.97:10055")
+			return
+		}
+		// 去掉结尾的 '/'，免得脚本里拼出双斜杠。
+		s.st.SetSetting("serverUrl", strings.TrimRight(v, "/"))
+	} else {
+		// 留空表示回退到启动配置（-server-url / DEPLOY_SERVER_URL / 配置文件）里的默认值。
+		s.st.SetSetting("serverUrl", "")
 	}
 
 	if req.MaxConcurrentRuns > 0 {

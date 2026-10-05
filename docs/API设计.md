@@ -650,16 +650,18 @@ bash install-toolchains.sh --list                # 只列状态
 | `disks[].freeBytes` | Linux 上是**非特权用户可用**（`statfs.Bavail`，比 `Bfree` 小——后者含 root 保留块），与 `df` 的 `Avail` 列口径一致。 |
 | `disks[].status` | `ok` / `warn`；`warn` = 使用率 ≥75% 或剩余 <2GiB。阈值算在后端，是为了将来做通知/告警时口径统一，前端不必重复实现。 |
 | `warnings` | 采集失败的条目说明（例如该平台不支持 CPU 采集），前端用它解释「某项为什么是空的」，而不是让用户对着 0 猜。 |
-| 权限 | 任意登录用户可见（与 `/system/doctor` 一致）。**刻意不返回** `webRoot` / `dataDir` / `serverUrl` 等配置细节——那些只出现在 admin 关心的自检里。 |
+| 权限 | 任意登录用户可见（与 `/system/doctor` 一致）。**刻意不返回** `webRoot` / `dataDir` / `serverUrl` 等配置细节——那些只出现在 admin 关心的自检与系统设置里。 |
 
 ### `GET /api/v1/system/settings` / `PUT /api/v1/system/settings` （PUT 仅 admin）
 ```json
-{ "webRoot":"/srv/deploy/workspaces", "maxConcurrentRuns":5,
+{ "webRoot":"/srv/deploy/workspaces", "serverUrl":"http://192.168.31.97:10055",
+  "maxConcurrentRuns":5,
   "logRetentionDays":30, "logMaxBytes":104857600,
   "hookRateLimitPerMinute":60, "visibility":"allReadable",
   "allowRegistration":false, "notify":{ "enabled":false, "url":"", "on":["failed"] } }
 ```
 `visibility`: `allReadable`（其他登录用户只读可见）| `ownerOnly`。
+`serverUrl`: 服务端对外地址，注入为 `DEPLOY_SERVER_URL`；只接受绝对的 http(s) 地址，留空表示回退到启动配置（`-server-url` / `DEPLOY_SERVER_URL` / 配置文件）里的默认值。**这是运行时设置**：改完对变量预览与后续运行立即生效，不需要重启服务（它不影响本进程实际监听哪个地址）。
 
 ### `GET /api/v1/healthz` （公开）
 ```json
@@ -677,7 +679,7 @@ bash install-toolchains.sh --list                # 只列状态
 | `RUN_ID` / `BUILD_NUMBER` | 运行 ID / 项目内自增号 |
 | `TRIGGER_BY` / `TRIGGER_TYPE` | 触发人用户名（hook 时为 `hook:<name>`）/ 触发方式 |
 | `START_TIME` | RFC3339 |
-| `DEPLOY_SERVER_URL` | 服务端外部地址 |
+| `DEPLOY_SERVER_URL` | 服务端外部地址（系统设置里配置） |
 | `GIT_BRANCH` / `GIT_COMMIT` / `GIT_COMMIT_SHORT` / `GIT_TAG` / `GIT_AUTHOR` / `GIT_MESSAGE` | 仅 `useGit=true` 时注入 |
 | `DEPLOY_ENV_*` | 项目环境变量（原名注入） |
 

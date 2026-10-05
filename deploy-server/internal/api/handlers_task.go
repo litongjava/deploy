@@ -387,7 +387,7 @@ func (s *Server) previewTask(c *gin.Context) {
 			{"key": "TASK_NAME", "value": t.Name},
 			{"key": "WORKDIR", "value": workdir},
 			{"key": "BUILD_NUMBER", "value": "(assigned at run time)"},
-			{"key": "DEPLOY_SERVER_URL", "value": s.cfg.ServerURL},
+			{"key": "DEPLOY_SERVER_URL", "value": s.effectiveServerURL()},
 		},
 		"script": b.String(),
 	})

@@ -59,6 +59,15 @@ func (e *Executor) logMaxBytes() int64 {
 	return e.cfg.LogMaxBytes
 }
 
+// serverURL 取生效的服务端外部地址：系统设置里的值优先，其次启动时的默认值。
+// 每次运行都重新读，所以管理员在设置页改完地址，下一次部署就会用到新值。
+func (e *Executor) serverURL() string {
+	if v, ok := e.st.GetSetting("serverUrl"); ok && v != "" {
+		return v
+	}
+	return e.cfg.ServerURL
+}
+
 // SubmitRequest 描述一次触发。
 //
 // ProjectID 与 TaskID 二选一：填 TaskID 表示这是一次「任务执行」，
@@ -754,7 +763,7 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, job 
 		"TRIGGER_BY":        run.TriggerUser,
 		"TRIGGER_TYPE":      run.TriggerType,
 		"START_TIME":        started.Format(time.RFC3339),
-		"DEPLOY_SERVER_URL": e.cfg.ServerURL,
+		"DEPLOY_SERVER_URL": e.serverURL(),
 	}
 	if job.isTask() {
 		// 任务只注入 TASK_*，不注入 PROJECT_*：名字对不上会让人以为跑错了对象。
