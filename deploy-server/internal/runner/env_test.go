@@ -29,7 +29,7 @@ func TestBuildEnvPriority(t *testing.T) {
 	}
 
 	env, secrets, err := BuildEnv(EnvPlan{
-		ProjectEnvs: envs,
+		EnvVars:     EnvVarsFromProject(envs),
 		Builtins:    map[string]string{"BUILTIN": "from-builtin", "BUILD_NUMBER": "42"},
 		Params:      map[string]string{"BUILTIN": "from-param", "EXTRA": "1"},
 		AllowParams: true,
@@ -79,17 +79,18 @@ func TestBuildEnvRespectsAllowOverride(t *testing.T) {
 	}
 }
 
-// TestExpandWorkdir 占位符替换。
+// TestExpandWorkdir 占位符替换。任务与项目共用同一套占位符，所以 TASK_* 也要认。
 func TestExpandWorkdir(t *testing.T) {
-	p := &store.Project{Key: "my-app", Name: "我的应用"}
 	cases := map[string]string{
 		"${WORKSPACE_ROOT}/${PROJECT_KEY}": "/srv/ws/my-app",
 		"/opt/$PROJECT_KEY":                "/opt/my-app",
 		"":                                 "/srv/ws/my-app",
 		"/data/${PROJECT_NAME}":            "/data/我的应用",
+		"/data/${TASK_KEY}":                "/data/my-app",
+		"/data/$TASK_NAME":                 "/data/我的应用",
 	}
 	for in, want := range cases {
-		if got := ExpandWorkdir(in, "/srv/ws", p); got != want {
+		if got := ExpandWorkdir(in, "/srv/ws", "my-app", "我的应用"); got != want {
 			t.Errorf("ExpandWorkdir(%q) = %q, 期望 %q", in, got, want)
 		}
 	}

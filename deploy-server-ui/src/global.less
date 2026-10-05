@@ -1,3 +1,23 @@
+/**
+ * 固定纵向滚动条槽位，消除「切换菜单时整页抖一下」。
+ *
+ * 每个菜单页的内容高度都不一样，滚动条（15px）会时有时无：概览/服务器短、
+ * 项目/运行长，同一页里数据加载前后也会跨过这条线。滚动条一出现，
+ * documentElement.clientWidth 立刻少 15px，侧边栏右侧的整个内容区跟着窄 15px，
+ * 表格列宽、搜索表单栅格、卡片全部重排一次 —— 看起来就是切一下菜单抖一下。
+ *
+ * 让纵向滚动条常驻，clientWidth 就不再随页面高度变化，布局稳住了。
+ *
+ * 为什么不用更优雅的 scrollbar-gutter: stable（只留位置、不画出多余轨道）：
+ * 它只对「自己就是滚动容器」的元素生效，而根元素的 overflow 会传播给 viewport，
+ * html 自己便不再算滚动容器 —— Chrome 实测根元素上写它等于没写
+ * （同一个属性加在普通 div 上立刻生效：clientWidth 300 → 285）。
+ * 所以根元素上只有 overflow-y: scroll 是可靠的。
+ */
+html {
+  overflow-y: scroll;
+}
+
 .colorWeak {
   filter: invert(80%);
 }

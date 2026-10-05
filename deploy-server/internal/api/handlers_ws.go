@@ -85,10 +85,18 @@ func (s *Server) runLogWS(c *gin.Context) {
 		return
 	}
 	if u.Role != "admin" && s.visibilityMode() == "ownerOnly" {
-		var p store.Project
-		if err := s.st.DB().First(&p, run.ProjectID).Error; err == nil && p.OwnerID != u.ID {
-			NotFound(c, "run not found")
-			return
+		if run.TargetKind == store.TargetTask {
+			var t store.Task
+			if err := s.st.DB().First(&t, run.TaskID).Error; err == nil && t.OwnerID != u.ID {
+				NotFound(c, "run not found")
+				return
+			}
+		} else {
+			var p store.Project
+			if err := s.st.DB().First(&p, run.ProjectID).Error; err == nil && p.OwnerID != u.ID {
+				NotFound(c, "run not found")
+				return
+			}
 		}
 	}
 
@@ -96,7 +104,7 @@ func (s *Server) runLogWS(c *gin.Context) {
 	if offset < 0 {
 		offset = 0
 	}
-	logPath := runlog.PathFor(s.cfg.LogDir(), run.ProjectKey, run.ID)
+	logPath := s.logPathOf(&run)
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {

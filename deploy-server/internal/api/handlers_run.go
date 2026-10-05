@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -105,6 +106,19 @@ func (s *Server) listRuns(c *gin.Context) {
 	if pk := c.Query("projectKey"); pk != "" {
 		q = q.Where("project_key = ?", pk)
 	}
+	// taskKey 是 targetKey 在任务语境下的别名：任务与项目的 key 各自独立，
+	// 所以用一个 projectKey 参数是分不清的，按 targetKind 分别过滤更清楚。
+	if tk := c.Query("taskKey"); tk != "" {
+		q = q.Where("task_id <> 0 AND project_key = ?", tk)
+	}
+	if kind := c.Query("targetKind"); kind != "" {
+		if kind == store.TargetProject {
+			// 兼容本字段上线之前的历史数据：空串要算作 project。
+			q = q.Where("target_kind = ? OR target_kind = ''", store.TargetProject)
+		} else {
+			q = q.Where("target_kind = ?", kind)
+		}
+	}
 	if st := c.Query("status"); st != "" {
 		q = q.Where("status = ?", st)
 	}
@@ -113,10 +127,16 @@ func (s *Server) listRuns(c *gin.Context) {
 			q = q.Where("project_id = ?", id)
 		}
 	}
+	if c.Query("taskId") != "" {
+		if id, err := strconv.Atoi(c.Query("taskId")); err == nil {
+			q = q.Where("task_id = ?", id)
+		}
+	}
 	// 可见性收敛：非管理员在 ownerOnly 模式下只能看到自己项目的运行。
 	if u.Role != "admin" && s.visibilityMode() == "ownerOnly" {
-		sub := s.st.DB().Model(&store.Project{}).Select("id").Where("owner_id = ?", u.ID)
-		q = q.Where("project_id IN (?)", sub)
+		ownProjects := s.st.DB().Model(&store.Project{}).Select("id").Where("owner_id = ?", u.ID)
+		ownTasks := s.st.DB().Model(&store.Task{}).Select("id").Where("owner_id = ?", u.ID)
+		q = q.Where("project_id IN (?) OR task_id IN (?)", ownProjects, ownTasks)
 	}
 
 	var total int64
@@ -171,17 +191,34 @@ func (s *Server) loadRunFor(c *gin.Context) (*store.Run, bool) {
 	}
 	u := CurrentUser(c)
 	if u.Role != "admin" && s.visibilityMode() == "ownerOnly" {
-		var p store.Project
-		if err := s.st.DB().First(&p, run.ProjectID).Error; err == nil && p.OwnerID != u.ID {
-			NotFound(c, "run not found")
-			return nil, false
+		if run.TargetKind == store.TargetTask {
+			var t store.Task
+			if err := s.st.DB().First(&t, run.TaskID).Error; err == nil && t.OwnerID != u.ID {
+				NotFound(c, "run not found")
+				return nil, false
+			}
+		} else {
+			var p store.Project
+			if err := s.st.DB().First(&p, run.ProjectID).Error; err == nil && p.OwnerID != u.ID {
+				NotFound(c, "run not found")
+				return nil, false
+			}
 		}
 	}
 	return &run, true
 }
 
+// logPathOf 定位一次运行的日志文件。
+//
+// 任务的日志放在 <logDir>/tasks/<key>/ 下：项目与任务的 key 是两个独立的命名空间，
+// 不加这一级前缀，同名的项目与任务会写进同一个目录。这里的算法必须与
+// runner.jobSpec.logKey 保持一致，否则运行详情页会读不到日志。
 func (s *Server) logPathOf(run *store.Run) string {
-	return runlog.PathFor(s.cfg.LogDir(), run.ProjectKey, run.ID)
+	key := run.ProjectKey
+	if run.TargetKind == store.TargetTask {
+		key = filepath.Join("tasks", key)
+	}
+	return runlog.PathFor(s.cfg.LogDir(), key, run.ID)
 }
 
 // getRunLog 按 offset 增量拉取日志，供前端断线重连后补齐。
@@ -240,12 +277,53 @@ func (s *Server) rerun(c *gin.Context) {
 	if !ok {
 		return
 	}
+	u := CurrentUser(c)
+	params := map[string]string{}
+	if run.ParamsJSON != "" {
+		_ = json.Unmarshal([]byte(run.ParamsJSON), &params)
+	}
+
+	// 任务与项目走两条路：任务的「重跑」就是再执行一次任务，没有分支与依赖。
+	if run.TargetKind == store.TargetTask {
+		var t store.Task
+		if err := s.st.DB().First(&t, run.TaskID).Error; err != nil {
+			NotFound(c, "the original task no longer exists")
+			return
+		}
+		if !s.canEditTask(u, &t) {
+			Forbidden(c, "only the task owner or an admin can re-run this")
+			return
+		}
+		if t.Archived {
+			BadRequest(c, "the task is archived and cannot run")
+			return
+		}
+		newRun, err := s.exec.Submit(runner.SubmitRequest{
+			TaskID:      t.ID,
+			Params:      params,
+			TriggerType: store.TriggerRerun,
+			TriggerUser: u.Username,
+			TriggerUID:  u.ID,
+			TriggerIP:   ClientIP(c),
+			TriggerUA:   c.GetHeader("User-Agent"),
+		})
+		if err != nil {
+			Internal(c, "re-run failed: "+err.Error())
+			return
+		}
+		s.audit(c, "rerun", t.Key, "from="+strconv.Itoa(int(run.ID)))
+		OK(c, gin.H{
+			"runId": newRun.ID, "buildNumber": newRun.BuildNumber,
+			"status": newRun.Status, "taskKey": t.Key, "targetKind": store.TargetTask,
+		})
+		return
+	}
+
 	var p store.Project
 	if err := s.st.DB().First(&p, run.ProjectID).Error; err != nil {
 		NotFound(c, "the original project no longer exists")
 		return
 	}
-	u := CurrentUser(c)
 	if !s.canEdit(u, &p) {
 		Forbidden(c, "only the project owner or an admin can re-run this")
 		return
@@ -255,10 +333,6 @@ func (s *Server) rerun(c *gin.Context) {
 		return
 	}
 
-	params := map[string]string{}
-	if run.ParamsJSON != "" {
-		_ = json.Unmarshal([]byte(run.ParamsJSON), &params)
-	}
 	newRun, err := s.exec.Submit(runner.SubmitRequest{
 		ProjectID:   p.ID,
 		Ref:         run.RequestedRef,

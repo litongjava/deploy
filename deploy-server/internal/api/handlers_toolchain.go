@@ -117,7 +117,10 @@ func (s *Server) installParams(keys []string) map[string]string {
 }
 
 // probeComponent 检测一个组件是否已安装（全部探针命中才算）。
-func probeComponent(c toolchain.Component) toolchainComponentDTO {
+//
+// env 是「项目脚本执行时会生效的环境」（runner.LoginEnv）：按命令名探测的探针必须
+// 在同一个 PATH 里找，否则手工解压到 /usr/java、/usr/maven 的工具链会被误判成没装。
+func probeComponent(c toolchain.Component, env []string) toolchainComponentDTO {
 	dto := toolchainComponentDTO{
 		Key: c.Key, Name: c.Name, Note: c.Note, Estimate: c.Estimate,
 		Installed: true, Probes: make([]toolchainProbeDTO, 0, len(c.Probes)),
@@ -128,15 +131,16 @@ func probeComponent(c toolchain.Component) toolchainComponentDTO {
 		probe := toolchainProbeDTO{Name: p.Name}
 		if len(p.Paths) > 0 {
 			for _, path := range p.Paths {
+				path = expandProbePath(path, env)
 				if fileExists(path) {
 					probe.Found, probe.Path = true, path
 					break
 				}
 			}
 		} else {
-			if path, err := exec.LookPath(p.Name); err == nil {
+			if path, err := runner.LookPathIn(p.Name, env); err == nil {
 				probe.Found, probe.Path = true, path
-				probe.Version = probeVersion(path, p.Args)
+				probe.Version = probeVersion(path, p.Args, env)
 			}
 		}
 		if !probe.Found {
@@ -166,12 +170,31 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
+// expandProbePath 展开探针路径里的 $VAR / ${VAR} 与开头的 ~，变量值取自执行环境。
+//
+// 例：nvm 的官方安装脚本把 nvm 放在 $HOME/.nvm，而本平台默认装到 /usr/local/nvm；
+// 探针写成 "$HOME/.nvm/nvm.sh" 才能同时认这两种，不再把「其实装了」报成缺失。
+func expandProbePath(path string, env []string) string {
+	if path == "" {
+		return ""
+	}
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		if home := runner.EnvValue(env, "HOME"); home != "" {
+			path = home + strings.TrimPrefix(path, "~")
+		}
+	}
+	return os.Expand(path, func(key string) string { return runner.EnvValue(env, key) })
+}
+
 // probeVersion 跑一次版本命令，带硬超时（有些工具会去连网）。
-func probeVersion(path string, args []string) string {
+func probeVersion(path string, args []string, env []string) string {
 	if len(args) == 0 {
 		return ""
 	}
 	cmd := exec.Command(path, args...)
+	if len(env) > 0 {
+		cmd.Env = env
+	}
 	done := make(chan string, 1)
 	go func() {
 		out, _ := cmd.CombinedOutput()
@@ -188,10 +211,12 @@ func probeVersion(path string, args []string) string {
 
 // listToolchains 返回可安装组件及其当前状态与可编辑参数。
 func (s *Server) listToolchains(c *gin.Context) {
+	// 与执行口径一致地探测（见 probeComponent 的说明）
+	env := runner.LoginEnv(s.cfg.ShellPreference)
 	list := make([]toolchainComponentDTO, 0, len(toolchain.Components))
 	missing := make([]string, 0, len(toolchain.Components))
 	for _, comp := range toolchain.Components {
-		dto := probeComponent(comp)
+		dto := probeComponent(comp, env)
 		overrides := s.toolchainOverrides(comp.Key)
 		dto.Fields = make([]toolchainFieldDTO, 0, len(comp.Fields))
 		for _, f := range comp.Fields {
@@ -308,8 +333,9 @@ func (s *Server) installToolchains(c *gin.Context) {
 	}
 	if len(keys) == 0 {
 		// 默认只装缺失的，避免重复安装把已装好的环境折腾一遍
+		env := runner.LoginEnv(s.cfg.ShellPreference)
 		for _, comp := range toolchain.Components {
-			if !probeComponent(comp).Installed {
+			if !probeComponent(comp, env).Installed {
 				keys = append(keys, comp.Key)
 			}
 		}

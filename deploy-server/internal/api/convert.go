@@ -88,6 +88,98 @@ func toEnvDTO(e store.ProjectEnv) envDTO {
 	return envDTO{ID: e.ID, Key: e.Key, Value: v, IsSecret: e.IsSecret}
 }
 
+// ---------- Task ----------
+
+// taskStepDTO 是任务里的一步 shell。任务步骤内联存在 tasks.steps_json，
+// 没有独立的行 ID，sortOrder 就是执行顺序（1 基）。
+type taskStepDTO struct {
+	Name            string `json:"name"`
+	Script          string `json:"script"`
+	SortOrder       int    `json:"sortOrder"`
+	Enabled         bool   `json:"enabled"`
+	FailStrategy    string `json:"failStrategy"`
+	WorkdirOverride string `json:"workdirOverride"`
+	TimeoutSec      int    `json:"timeoutSec"`
+	ShellOverride   string `json:"shellOverride"`
+}
+
+func toTaskStepDTOs(steps []store.TaskStep) []taskStepDTO {
+	out := make([]taskStepDTO, 0, len(steps))
+	for _, s := range steps {
+		out = append(out, taskStepDTO{
+			Name: s.Name, Script: s.Script, SortOrder: s.SortOrder, Enabled: s.Enabled,
+			FailStrategy: s.FailStrategy, WorkdirOverride: s.WorkdirOverride,
+			TimeoutSec: s.TimeoutSec, ShellOverride: s.ShellOverride,
+		})
+	}
+	return out
+}
+
+// taskEnvDTO 任务的变量。与项目一致：isSecret 的值永远返回空串。
+type taskEnvDTO struct {
+	Key      string `json:"key"`
+	Value    string `json:"value"`
+	IsSecret bool   `json:"isSecret"`
+}
+
+func toTaskEnvDTOs(envs []store.TaskEnvVar) []taskEnvDTO {
+	out := make([]taskEnvDTO, 0, len(envs))
+	for _, e := range envs {
+		v := e.Value
+		if e.IsSecret {
+			v = ""
+		}
+		out = append(out, taskEnvDTO{Key: e.Key, Value: v, IsSecret: e.IsSecret})
+	}
+	return out
+}
+
+type taskDTO struct {
+	ID          uint   `json:"id"`
+	Key         string `json:"key"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	OwnerID     uint   `json:"ownerId"`
+	OwnerName   string `json:"ownerName"`
+
+	Workdir      string `json:"workdir"`
+	Shell        string `json:"shell"`
+	TimeoutSec   int    `json:"timeoutSec"`
+	Concurrency  string `json:"concurrency"`
+	HookEnabled  bool   `json:"hookEnabled"`
+	Archived     bool   `json:"archived"`
+	AllowEnvOver bool   `json:"allowEnvOverride"`
+
+	StepCount   int  `json:"stepCount"`
+	Steps       []taskStepDTO `json:"steps,omitempty"`
+	Envs        []taskEnvDTO  `json:"envs,omitempty"`
+	LastRunAt   *time.Time    `json:"lastRunAt"`
+	LastRunStatus string      `json:"lastRunStatus"`
+	RunCount    int64         `json:"runCount"`
+	CanEdit     bool          `json:"canEdit"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+func toTaskDTO(t *store.Task, canEdit bool, st *projectStats) taskDTO {
+	steps := store.DecodeTaskSteps(t.StepsJSON)
+	d := taskDTO{
+		ID: t.ID, Key: t.Key, Name: t.Name, Description: t.Description,
+		OwnerID: t.OwnerID, OwnerName: t.OwnerName,
+		Workdir: t.Workdir, Shell: t.Shell, TimeoutSec: t.TimeoutSec,
+		Concurrency: t.Concurrency, HookEnabled: t.HookEnabled, Archived: t.Archived,
+		AllowEnvOver: t.AllowEnvOver, StepCount: len(steps),
+		CanEdit: canEdit, CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt,
+	}
+	if st != nil {
+		d.LastRunAt = st.LastRunAt
+		d.LastRunStatus = st.LastRunStatus
+		d.RunCount = st.RunCount
+	}
+	return d
+}
+
 type projectDTO struct {
 	ID          uint   `json:"id"`
 	Key         string `json:"key"`
@@ -215,6 +307,14 @@ type runDTO struct {
 	BuildNumber int64  `json:"buildNumber"`
 	Status      string `json:"status"`
 
+	// 执行对象。targetKind 取 project / task；targetKey / targetName 是两种情况下
+	// 都能用的统一叫法，界面上按 targetKind 决定链接到 /projects 还是 /tasks。
+	// projectKey / projectName 为兼容既有调用方保留，任务运行时与 target* 相同。
+	TaskID      uint   `json:"taskId"`
+	TargetKind  string `json:"targetKind"`
+	TargetKey   string `json:"targetKey"`
+	TargetName  string `json:"targetName"`
+
 	TriggerType  string            `json:"triggerType"`
 	TriggerUID   uint              `json:"triggerUserId"`
 	TriggerUser  string            `json:"triggerUserName"`
@@ -268,9 +368,14 @@ func toPipelineRun(r store.Run) pipelineRun {
 }
 
 func toRunDTO(r *store.Run) runDTO {
+	kind := r.TargetKind
+	if kind == "" {
+		kind = store.TargetProject // 兼容本字段上线之前的历史 Run
+	}
 	d := runDTO{
 		ID: r.ID, ProjectID: r.ProjectID, ProjectKey: r.ProjectKey,
 		ProjectName: r.ProjectName, BuildNumber: r.BuildNumber, Status: r.Status,
+		TaskID: r.TaskID, TargetKind: kind, TargetKey: r.ProjectKey, TargetName: r.ProjectName,
 		TriggerType: r.TriggerType, TriggerUID: r.TriggerUID, TriggerUser: r.TriggerUser,
 		TriggerIP: r.TriggerIP, TriggerUA: r.TriggerUA, RequestedRef: r.RequestedRef,
 		PipelineID: r.PipelineID, PipelineRole: r.PipelineRole, PipelineOrder: r.PipelineOrder,
@@ -292,9 +397,13 @@ func toRunDTO(r *store.Run) runDTO {
 
 // ---------- Hook / Credential / Token ----------
 
+// hookDTO 里 TaskID 非 0 表示这是任务的令牌（此时 ProjectID 为 0）。
+// 界面上用 targetKind 判断该显示成项目的令牌还是任务的令牌。
 type hookDTO struct {
 	ID         uint       `json:"id"`
 	ProjectID  uint       `json:"projectId"`
+	TaskID     uint       `json:"taskId"`
+	TargetKind string     `json:"targetKind"`
 	Name       string     `json:"name"`
 	Prefix     string     `json:"prefix"`
 	Enabled    bool       `json:"enabled"`
@@ -306,8 +415,13 @@ type hookDTO struct {
 }
 
 func toHookDTO(h store.HookToken) hookDTO {
+	kind := store.TargetProject
+	if h.TaskID != 0 {
+		kind = store.TargetTask
+	}
 	return hookDTO{
-		ID: h.ID, ProjectID: h.ProjectID, Name: h.Name, Prefix: h.Prefix,
+		ID: h.ID, ProjectID: h.ProjectID, TaskID: h.TaskID, TargetKind: kind,
+		Name: h.Name, Prefix: h.Prefix,
 		Enabled: h.Enabled, ExpiresAt: h.ExpiresAt, LastUsedAt: h.LastUsedAt,
 		LastUsedIP: h.LastUsedIP, CallCount: h.CallCount, CreatedAt: h.CreatedAt,
 	}

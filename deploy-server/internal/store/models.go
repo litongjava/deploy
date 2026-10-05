@@ -1,6 +1,11 @@
 package store
 
-import "time"
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+)
 
 // 运行状态取值。
 const (
@@ -46,6 +51,19 @@ const (
 const (
 	RoleMain       = "main"       // 流水线的目标项目
 	RoleDependency = "dependency" // 为满足依赖而先构建的项目
+)
+
+// Run 的执行对象类型。
+//
+// 平台上有两种可执行的东西：
+//   - 项目（Project）：构建 + 部署，可以有 Git 准备阶段与依赖构建；
+//   - 任务（Task）：跑一件事（压测、巡检、清缓存……），没有 Git、没有依赖。
+//
+// 两者共用同一套执行引擎与同一张 Run 表，靠这个字段区分执行对象。
+// 空串按 project 处理，兼容本字段上线之前的历史数据。
+const (
+	TargetProject = "project"
+	TargetTask    = "task"
 )
 
 // 并发策略。
@@ -152,6 +170,83 @@ type ProjectCommand struct {
 	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
+// Task 是一次性作业：跑一件事，不负责构建与部署。
+//
+// 与 Project 的差别是有意做窄的：
+//   - 没有 Git 准备阶段（任务通常操作现成的服务/文件，不需要拉代码）；
+//   - 没有依赖构建（没有「先构建谁」这回事）；
+//   - 没有 ProjectKind（任务就是任务）；
+//   - 步骤与变量内联存 JSON，不单独建表：任务是单一作业，整体保存即可，
+//     不需要像项目那样支持单条命令的增删改与排序接口。
+//
+// 相同的是执行语义：同样的并发策略、失败策略、超时、日志与 Hook 触发。
+type Task struct {
+	ID          uint   `gorm:"primarykey" json:"id"`
+	Key         string `gorm:"size:64;uniqueIndex;not null" json:"key"`
+	Name        string `gorm:"size:128;not null" json:"name"`
+	Description string `gorm:"size:512" json:"description"`
+	OwnerID     uint   `gorm:"index;not null" json:"ownerId"`
+	OwnerName   string `gorm:"size:64" json:"ownerName"`
+
+	Workdir      string `gorm:"size:512;not null" json:"workdir"`
+	Shell        string `gorm:"size:16;default:auto" json:"shell"`
+	TimeoutSec   int    `json:"timeoutSec"`
+	Concurrency  string `gorm:"size:16;default:queue" json:"concurrency"`
+	HookEnabled  bool   `gorm:"default:true" json:"hookEnabled"`
+	Archived     bool   `gorm:"default:false" json:"archived"`
+	AllowEnvOver bool   `gorm:"default:true" json:"allowEnvOverride"`
+
+	// StepsJSON 是 []TaskStep 的 JSON；EnvsJSON 是 []TaskEnvVar 的 JSON。
+	// 两者都在 store 层做编解码，出参永远走 DTO，不会把密文直接吐出去。
+	StepsJSON string `gorm:"type:text" json:"-"`
+	EnvsJSON  string `gorm:"type:text" json:"-"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// TaskStep 是任务里的一步 shell。存进 Task.StepsJSON，不单独建表。
+type TaskStep struct {
+	Name            string `json:"name"`
+	Script          string `json:"script"`
+	SortOrder       int    `json:"sortOrder"`
+	Enabled         bool   `json:"enabled"`
+	FailStrategy    string `json:"failStrategy"`
+	WorkdirOverride string `json:"workdirOverride"`
+	TimeoutSec      int    `json:"timeoutSec"`
+	ShellOverride   string `json:"shellOverride"`
+}
+
+// TaskEnvVar 是任务的一个环境变量。SecretEnc 是密文，明文不落库。
+type TaskEnvVar struct {
+	Key       string `json:"key"`
+	Value     string `json:"value"`
+	SecretEnc string `json:"secretEnc"`
+	IsSecret  bool   `json:"isSecret"`
+}
+
+// NormalizeSteps 补齐缺省值并丢掉落空的行，返回可直接执行的步骤列表。
+//
+// 前端会留下「只点了新增命令但什么都没填」的空行，这里统一清掉，
+// 免得执行时白跑一步、日志里多一段莫名其妙的空输出。
+func NormalizeSteps(steps []TaskStep) []TaskStep {
+	out := make([]TaskStep, 0, len(steps))
+	for _, s := range steps {
+		if strings.TrimSpace(s.Script) == "" {
+			continue
+		}
+		if s.FailStrategy == "" {
+			s.FailStrategy = FailAbort
+		}
+		if s.Name == "" {
+			s.Name = fmt.Sprintf("步骤 %d", len(out)+1)
+		}
+		s.SortOrder = len(out) + 1
+		out = append(out, s)
+	}
+	return out
+}
+
 // ProjectEnv 是项目环境变量。IsSecret 的值在出参时永远为空串。
 type ProjectEnv struct {
 	ID        uint   `gorm:"primarykey" json:"id"`
@@ -162,10 +257,61 @@ type ProjectEnv struct {
 	IsSecret  bool   `json:"isSecret"`
 }
 
+// EncodeTaskSteps / DecodeTaskSteps 负责 []TaskStep 与 Task.StepsJSON 的转换。
+// 解码失败返回空列表而不是报错：一条 JSON 坏掉不应该让整个任务列表页打不开。
+func EncodeTaskSteps(steps []TaskStep) string {
+	if len(steps) == 0 {
+		return ""
+	}
+	raw, err := json.Marshal(steps)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
+}
+
+func DecodeTaskSteps(raw string) []TaskStep {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var out []TaskStep
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil
+	}
+	return NormalizeSteps(out)
+}
+
+// EncodeTaskEnvs / DecodeTaskEnvs 同上，负责 []TaskEnvVar 与 Task.EnvsJSON。
+func EncodeTaskEnvs(envs []TaskEnvVar) string {
+	if len(envs) == 0 {
+		return ""
+	}
+	raw, err := json.Marshal(envs)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
+}
+
+func DecodeTaskEnvs(raw string) []TaskEnvVar {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var out []TaskEnvVar
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil
+	}
+	return out
+}
+
 // HookToken 是免登录触发部署的令牌。
+//
+// 项目与任务共用这张表：TaskID 非 0 表示这个令牌属于一个任务，
+// 此时 ProjectID 为 0。触发时按 TaskID 是否为零决定执行对象。
 type HookToken struct {
 	ID         uint       `gorm:"primarykey" json:"id"`
 	ProjectID  uint       `gorm:"index;not null" json:"projectId"`
+	TaskID     uint       `gorm:"index" json:"taskId"`
 	Name       string     `gorm:"size:64" json:"name"`
 	TokenHash  string     `gorm:"size:64;uniqueIndex;not null" json:"-"`
 	Prefix     string     `gorm:"size:16;index" json:"prefix"`
@@ -178,11 +324,19 @@ type HookToken struct {
 }
 
 // Run 是一次执行实例。
+//
+// 它既可能来自项目（构建/部署），也可能来自任务（一次性作业）：
+// TargetKind 说明是哪种，ProjectID / TaskID 只有一个非零。
+// ProjectKey / ProjectName 是执行对象的「快照」，对任务来说存的是任务的 key 与名称 ——
+// 之所以不复用成 TargetKey/TargetName，是为了不动历史数据；出参统一走 DTO 的
+// targetKey / targetName，界面上不会看到 projectKey 这个容易误解的名字。
 type Run struct {
 	ID           uint   `gorm:"primarykey" json:"id"`
 	ProjectID    uint   `gorm:"index;not null" json:"projectId"`
 	ProjectKey   string `gorm:"size:64;index" json:"projectKey"`
 	ProjectName  string `gorm:"size:128" json:"projectName"`
+	TaskID       uint   `gorm:"index" json:"taskId"`
+	TargetKind   string `gorm:"size:16;index" json:"targetKind"`
 	BuildNumber  int64  `gorm:"index" json:"buildNumber"`
 	Status       string `gorm:"size:16;index;not null" json:"status"`
 	TriggerType  string `gorm:"size:16" json:"triggerType"`

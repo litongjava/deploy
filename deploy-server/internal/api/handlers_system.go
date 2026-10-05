@@ -10,7 +10,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"deploy-server/internal/runlog"
 	"deploy-server/internal/runner"
 	"deploy-server/internal/store"
 	"deploy-server/internal/web"
@@ -40,7 +39,7 @@ var toolProbes = []toolProbe{
 	{"go", []string{"version"}, "Needed to build Go projects. See https://go.dev/dl/"},
 	{"java", []string{"-version"}, "Needed to build Java projects. Debian/Ubuntu: apt install -y openjdk-17-jdk"},
 	{"mvn", []string{"--version"}, "Needed to build Maven projects. Debian/Ubuntu: apt install -y maven"},
-	{"certbot", []string{"--version"}, "Needed to issue HTTPS certificates. See https://certbot.eff.org/"},
+	{"certbot", []string{"--version"}, "Needed to issue HTTPS certificates. Install it from the toolchain panel on this page, or see https://certbot.eff.org/"},
 }
 
 type checkDTO struct {
@@ -55,9 +54,14 @@ type checkDTO struct {
 func (s *Server) doctor(c *gin.Context) {
 	shellName, shellPath, shellAvail := runner.ShellDescription(s.cfg.ShellPreference)
 
+	// 探测口径必须与执行口径一致：Unix 下脚本走 `bash -lc`，会读 /etc/profile，
+	// 手工解压的 JDK / Maven / Go 常常就是靠那里进 PATH 的。
+	// 用服务进程自己的最小 PATH 去 LookPath，会得出「装了却找不到」的假结论。
+	env := runner.LoginEnv(s.cfg.ShellPreference)
+
 	checks := make([]checkDTO, 0, len(toolProbes))
 	for _, p := range toolProbes {
-		checks = append(checks, probeTool(p))
+		checks = append(checks, probeTool(p, env))
 	}
 
 	hostname, _ := os.Hostname()
@@ -85,9 +89,11 @@ func webNote(built bool) string {
 	return "this binary embeds a placeholder page because the frontend was not built; run pnpm build in deploy-server-ui, then make ui to rebuild the backend"
 }
 
-func probeTool(p toolProbe) checkDTO {
+// probeTool 探测一个工具：path 取自「执行时会生效的 PATH」（见 runner.LoginEnv），
+// 版本命令也用同一套环境跑，避免出现「自检说没有、构建却跑得通」的矛盾结论。
+func probeTool(p toolProbe, env []string) checkDTO {
 	dto := checkDTO{Name: p.Name, Hint: p.Hint}
-	path, err := exec.LookPath(p.Name)
+	path, err := runner.LookPathIn(p.Name, env)
 	if err != nil {
 		return dto
 	}
@@ -96,7 +102,7 @@ func probeTool(p toolProbe) checkDTO {
 
 	// 给版本探测一个硬超时：有些工具会去连网/等锁，不能让它拖垮自检接口。
 	cmd := exec.Command(path, p.Args...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = append(append([]string{}, env...), "GIT_TERMINAL_PROMPT=0")
 	done := make(chan string, 1)
 	go func() {
 		out, _ := cmd.CombinedOutput()
@@ -257,7 +263,9 @@ func (s *Server) CleanupOldRuns() (int, error) {
 	ids := make([]uint, 0, len(runs))
 	for _, r := range runs {
 		ids = append(ids, r.ID)
-		_ = os.Remove(runlog.PathFor(s.cfg.LogDir(), r.ProjectKey, r.ID))
+		// 日志路径必须与 runner.jobSpec.logKey / s.logPathOf 保持一致，
+		// 否则任务的日志会永远留在磁盘上没人清。
+		_ = os.Remove(s.logPathOf(&r))
 	}
 	s.st.DB().Where("run_id IN ?", ids).Delete(&store.RunStep{})
 	s.st.DB().Where("id IN ?", ids).Delete(&store.Run{})

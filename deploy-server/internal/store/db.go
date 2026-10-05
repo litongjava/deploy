@@ -53,6 +53,7 @@ func (s *Store) migrate() error {
 	return s.db.AutoMigrate(
 		&User{}, &APIToken{}, &Credential{},
 		&Project{}, &ProjectCommand{}, &ProjectEnv{}, &HookToken{},
+		&Task{},
 		&Run{}, &RunStep{}, &AuditLog{}, &Setting{},
 	)
 }

@@ -12,7 +12,7 @@
 #   bash install.sh --dry-run            # 只打印将要做什么，不做任何修改
 #   bash install.sh --list               # 只列出组件与检测结果
 #
-# 组件：cc(gcc/g++/make) java maven nvm node pnpm go rust
+# 组件：cc(gcc/g++/make) java maven nvm node pnpm go rust certbot
 #
 # 设计原则：
 #   1. 幂等：已装好的默认跳过（--force 强制重装），重复点「一键安装」不会把环境搞乱。
@@ -21,8 +21,8 @@
 #   4. 只写 /usr/local、/etc/profile.d 和工具自己的配置；不碰 apt 源，不覆盖已有配置。
 set -uo pipefail
 
-SCRIPT_VERSION="1.0.1"
-ALL_COMPONENTS="cc java maven nvm node pnpm go rust"
+SCRIPT_VERSION="1.0.2"
+ALL_COMPONENTS="cc java maven nvm node pnpm go rust certbot"
 NODE_MIRROR_CN="https://npmmirror.com/mirrors/node"
 
 # ---------- 默认参数（同名环境变量可覆盖） ----------
@@ -32,6 +32,7 @@ NODE_VERSION="${NODE_VERSION:---lts}"
 PNPM_VERSION="${PNPM_VERSION:-latest}"
 GO_VERSION="${GO_VERSION:-1.24.2}"
 RUST_TOOLCHAIN="${RUST_TOOLCHAIN:-stable}"
+CERTBOT_NGINX_PLUGIN="${CERTBOT_NGINX_PLUGIN:-1}"
 MIRROR="${MIRROR:-cn}"
 GO_DIR="${GO_DIR:-/usr/local/go}"
 NVM_DIR="${NVM_DIR:-/usr/local/nvm}"
@@ -64,7 +65,7 @@ usage() {
 
 用法：bash install.sh [选项]
 
-  --only a,b        只安装这些组件（cc java maven nvm node pnpm go rust）
+  --only a,b        只安装这些组件（cc java maven nvm node pnpm go rust certbot）
   --skip a,b        跳过这些组件
   --mirror cn|off   是否使用国内镜像（默认 cn）
   --java 17         JDK 大版本（默认 17，用发行版的 openjdk 包）
@@ -507,6 +508,46 @@ TOML
   ok "$("$CARGO_HOME/bin/rustc" --version 2>/dev/null)（软链在 /usr/local/bin/rustc）"
 }
 
+# ---------- certbot（HTTPS 证书） ----------
+# 只装 ACME 客户端，**不签发证书**：签发要求域名解析到本机、80/443 可达（HTTP-01），
+# 内网机或 DNS 指向别处时签不下来。所以这里装完只提示怎么签，不替使用者做决定。
+detect_certbot() { have certbot; }
+install_certbot() {
+  if detect_certbot && [ "$FORCE" != "1" ] && [ -z "${CERTBOT_EXTRA_PACKAGES:-}" ]; then
+    ok "已安装：$(certbot --version 2>&1 | head -1)（路径 $(command -v certbot)）"
+    return 0
+  fi
+
+  # nginx 插件（python3-certbot-nginx）是 `certbot --nginx` 自动改 vhost 的前提；
+  # 不加 --nginx（例如只做 DNS 挑战或只手动拿证书）时可以关掉。
+  local pkgs=(certbot)
+  if [ "$CERTBOT_NGINX_PLUGIN" != "0" ]; then
+    pkgs+=(python3-certbot-nginx)
+  fi
+
+  case "$PKG" in
+    apt|dnf|yum)
+      if ! pkg_install "${pkgs[@]}"; then
+        err "certbot 安装失败"
+        [ "$PKG" = "apt" ] || info "RHEL 系要先启用 EPEL：dnf install -y epel-release"
+        info "官方推荐也可用 snap：snap install --classic certbot && ln -sf /snap/bin/certbot /usr/local/bin/certbot"
+        return 1
+      fi ;;
+    *) return 1 ;;
+  esac
+  require_installed detect_certbot "certbot" || return 1
+
+  if [ -n "${CERTBOT_EXTRA_PACKAGES:-}" ]; then
+    info "额外安装：$CERTBOT_EXTRA_PACKAGES"
+    # 这里就是要把参数按空格拆成多个包名
+    pkg_install $CERTBOT_EXTRA_PACKAGES || warn "额外软件包安装失败（不影响 certbot 本体）"
+  fi
+
+  dry_run_note "$(command -v certbot 2>/dev/null || echo /usr/bin/certbot)" && return 0
+  ok "$(certbot --version 2>&1 | head -1) → $(command -v certbot)"
+  info "只装了客户端。域名解析到本机且 80 端口可达时才签得下来：certbot --nginx -d <域名>"
+}
+
 # ---------- 组件表 ----------
 component_name() {
   case "$1" in
@@ -518,12 +559,14 @@ component_name() {
     pnpm) echo "pnpm" ;;
     go) echo "Go" ;;
     rust) echo "Rust（rustup）" ;;
+    certbot) echo "certbot（HTTPS 证书）" ;;
   esac
 }
 component_detect() {
   case "$1" in
     cc) detect_cc ;; java) detect_java ;; maven) detect_maven ;; nvm) detect_nvm ;;
     node) detect_node ;; pnpm) detect_pnpm ;; go) detect_go ;; rust) detect_rust ;;
+    certbot) detect_certbot ;;
     *) return 1 ;;
   esac
 }
@@ -537,6 +580,7 @@ component_version() {
     pnpm)  bash -lc 'command -v pnpm >/dev/null 2>&1 && pnpm -v' ;;
     go)    { have go && go version; } 2>/dev/null || { [ -x "$GO_DIR/bin/go" ] && "$GO_DIR/bin/go" version; } 2>/dev/null ;;
     rust)  { have rustc && rustc --version; } 2>/dev/null || { [ -x "$CARGO_HOME/bin/rustc" ] && "$CARGO_HOME/bin/rustc" --version; } 2>/dev/null ;;
+    certbot) have certbot && certbot --version 2>&1 | head -1 ;;
   esac
 }
 component_path() { # 这个组件装到哪 / 在哪能找到（写进报告，便于回看）
@@ -549,12 +593,14 @@ component_path() { # 这个组件装到哪 / 在哪能找到（写进报告，�
     pnpm)  bash -lc 'command -v pnpm' 2>/dev/null ;;
     go)    echo "$GO_DIR" ;;
     rust)  echo "$CARGO_HOME" ;;
+    certbot) command -v certbot 2>/dev/null ;;
   esac
 }
 component_install() {
   case "$1" in
     cc) install_cc ;; java) install_java ;; maven) install_maven ;; nvm) install_nvm ;;
     node) install_node ;; pnpm) install_pnpm ;; go) install_go ;; rust) install_rust ;;
+    certbot) install_certbot ;;
     *) err "未知组件：$1"; return 1 ;;
   esac
 }

@@ -76,6 +76,58 @@ func (s *Server) loadProjectForEdit(c *gin.Context, key string) (*store.Project,
 	return p, u, true
 }
 
+// ---------- 任务 ----------
+//
+// 任务与项目共用同一套权限模型（admin 全权 / owner 自己的 / 其他人看 visibility），
+// 只是作用对象不同，所以下面三个函数与项目那三个一一对应。
+
+// canEditTask 判断能否修改/执行该任务。
+func (s *Server) canEditTask(u *store.User, t *store.Task) bool {
+	if u == nil || t == nil {
+		return false
+	}
+	if u.Role == "admin" {
+		return true
+	}
+	return t.OwnerID == u.ID
+}
+
+// canViewTask 判断能否看到该任务。
+func (s *Server) canViewTask(u *store.User, t *store.Task) bool {
+	if s.canEditTask(u, t) {
+		return true
+	}
+	return s.visibilityMode() != "ownerOnly"
+}
+
+// loadTaskFor 按 key 取任务并做可见性校验，失败时已经写好响应。
+func (s *Server) loadTaskFor(c *gin.Context, key string) (*store.Task, *store.User, bool) {
+	u := CurrentUser(c)
+	var t store.Task
+	if err := s.st.DB().Where("key = ?", key).First(&t).Error; err != nil {
+		NotFound(c, "task not found: "+key)
+		return nil, nil, false
+	}
+	if !s.canViewTask(u, &t) {
+		NotFound(c, "task not found: "+key) // 不可见时也返回 404，不泄露任务是否存在
+		return nil, nil, false
+	}
+	return &t, u, true
+}
+
+// loadTaskForEdit 同上，但要求可写权限。
+func (s *Server) loadTaskForEdit(c *gin.Context, key string) (*store.Task, *store.User, bool) {
+	t, u, ok := s.loadTaskFor(c, key)
+	if !ok {
+		return nil, nil, false
+	}
+	if !s.canEditTask(u, t) {
+		Forbidden(c, "only the task owner or an admin can modify or run this task")
+		return nil, nil, false
+	}
+	return t, u, true
+}
+
 // audit 记一条审计日志。
 func (s *Server) audit(c *gin.Context, action, target, detail string) {
 	u := CurrentUser(c)

@@ -45,8 +45,10 @@ func EnsureScript(dataDir string) (string, error) {
 
 // Probe 是一组件「有没有装」的判据。
 //
-//   - Args 非空：用 exec.LookPath 找这个命令，并执行 Args 取版本
-//   - Paths 非空：任一文件/目录存在即视为已安装（nvm 这类没有可执行文件的）
+//   - Args 非空：执行环境（Unix 下登录 shell，见 runner.LoginEnv）的 PATH 里找这个命令，
+//     再执行 Args 取版本
+//   - Paths 非空：任一文件/目录存在即视为已安装（nvm 这类没有可执行文件的）；
+//     路径里可以用 $VAR 与开头的 ~，按执行环境展开
 type Probe struct {
 	Name  string
 	Args  []string
@@ -126,7 +128,14 @@ var Components = []Component{
 		Key: "nvm", Name: "nvm（Node 版本管理）",
 		Note:     "装到 /usr/local/nvm，并写 /etc/profile.d/nvm.sh",
 		Estimate: "约 5 MB",
-		Probes:   []Probe{{Name: "nvm", Paths: []string{"/usr/local/nvm/nvm.sh"}}},
+		// nvm 没有可执行文件，只能按 nvm.sh 的存在判断；除本平台的默认目录外，
+		// 还要认「用户自己按官方脚本装的 ~/.nvm」——否则会出现 node 明明在用、
+		// 面板却说 nvm 缺失，点「一键安装缺失」就会多装一套 nvm 并改写 profile。
+		Probes: []Probe{{Name: "nvm", Paths: []string{
+			"/usr/local/nvm/nvm.sh",
+			"$NVM_DIR/nvm.sh",
+			"$HOME/.nvm/nvm.sh",
+		}}},
 		Fields: []Field{
 			{Key: "NVM_VERSION", Label: "nvm 版本（git tag）", Default: "v0.40.1", Placeholder: "v0.40.1"},
 			{Key: "NVM_GIT_URL", Label: "nvm 仓库地址", Default: "https://github.com/nvm-sh/nvm.git",
@@ -180,6 +189,23 @@ var Components = []Component{
 			{Key: "CARGO_HOME", Label: "CARGO_HOME", Default: "/usr/local/cargo", Placeholder: "/usr/local/cargo"},
 			{Key: "RUSTUP_DIST_SERVER", Label: "rustup 镜像", Default: "https://rsproxy.cn",
 				Placeholder: "https://rsproxy.cn", Help: "国内加速；留空走官方。"},
+		},
+	},
+	{
+		// 唯一一个不是「构建工具链」的组件：环境自检一直在报 certbot 缺失
+		// （handlers_system.go 的 toolProbes），而它以前只能按提示手动装，
+		// 自检面板却写着「可以在下面一键装上」——补上这一项，两处口径才一致。
+		Key: "certbot", Name: "certbot（HTTPS 证书）",
+		Note:     "Let's Encrypt 的 ACME 客户端；只装工具，签发仍要求域名解析到本机（HTTP-01）",
+		Estimate: "约 30 MB",
+		Probes:   []Probe{{Name: "certbot", Args: []string{"--version"}}},
+		Fields: []Field{
+			{Key: "CERTBOT_NGINX_PLUGIN", Label: "是否装 nginx 插件", Default: "1",
+				Placeholder: "1 / 0",
+				Help:        "装发行版的 python3-certbot-nginx：certbot --nginx 才能自动改 vhost 加 HTTPS 段。填 0 只装客户端本体。"},
+			{Key: "CERTBOT_EXTRA_PACKAGES", Label: "额外软件包（可选）", Default: "",
+				Placeholder: "python3-certbot-dns-cloudflare",
+				Help:        "空格分隔，交给 apt/dnf 与本体一起装；用 DNS 挑战或其它验证方式时要装对应插件包。"},
 		},
 	},
 }

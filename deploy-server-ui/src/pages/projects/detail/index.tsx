@@ -1,3 +1,4 @@
+import ProjectKindIcon from '@/components/ProjectKindIcon';
 import { projectApi } from '@/services/project';
 import { runApi } from '@/services/run';
 import type { HookToken, HookTokenCreated, Project, Run } from '@/services/types';
@@ -346,11 +347,8 @@ const ProjectDetail: React.FC = () => {
               {
                 title: '项目类型',
                 dataIndex: 'kind',
-                render: (v, row) => (
-                  <Tag color={PROJECT_KIND_META[(row.kind as any) || 'app']?.color}>
-                    {PROJECT_KIND_META[(row.kind as any) || 'app']?.text}
-                  </Tag>
-                ),
+                // 与项目列表一致：图标 + 悬浮提示，不再铺一段「应用项目 / 构建项目」文字
+                render: (_, row) => <ProjectKindIcon kind={row.kind} />,
               },
               {
                 title: '依赖的构建项目',

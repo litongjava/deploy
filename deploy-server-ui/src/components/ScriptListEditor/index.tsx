@@ -3,7 +3,11 @@ import { ProFormSelect, ProFormSwitch } from '@ant-design/pro-components';
 import { Button, Card, Col, Form, Input, InputNumber, Row, Space } from 'antd';
 import React from 'react';
 
-export interface CommandDraft {
+/**
+ * 一步 shell 的草稿形态。项目里叫「命令」，任务里叫「步骤」，
+ * 字段完全一样，所以两边共用这一个编辑器与同一个数据结构。
+ */
+export interface ScriptDraft {
   id?: number;
   name: string;
   script: string;
@@ -15,7 +19,7 @@ export interface CommandDraft {
   sortOrder?: number;
 }
 
-const newCommand = (): CommandDraft => ({
+export const newScriptDraft = (): ScriptDraft => ({
   name: '',
   script: '',
   enabled: true,
@@ -25,22 +29,40 @@ const newCommand = (): CommandDraft => ({
   shellOverride: '',
 });
 
-/**
- * 命令列表编辑器。
- * 用 antd 的 Form.List 管理顺序（可上移/下移/删除/新增），
- * sortOrder 在提交时按数组下标重新生成，见项目编辑页的 handleSubmit。
- */
-const CommandListEditor: React.FC<{
-  /** 项目详情页只读展示时使用 */
+export type ScriptListEditorProps = {
+  /**
+   * Form.List 的字段名：项目用 commands，任务用 steps。
+   * 之所以做成参数，是因为两者的后端字段名不同（项目是子表，任务是内联 JSON），
+   * 但编辑体验与校验规则完全一致。
+   */
+  listName: string;
+  /** 列表里每一项的叫法：命令 / 步骤 */
+  itemNoun: string;
+  /** 归属对象的叫法，用于「留空使用 XX 的工作目录」这类提示：项目 / 任务 */
+  ownerNoun: string;
+  /** 只读展示（详情页复用编辑器时用） */
   readonly?: boolean;
-}> = ({ readonly }) => {
+};
+
+/**
+ * 步骤/命令列表编辑器。
+ *
+ * 用 antd 的 Form.List 管理顺序（可上移/下移/删除/新增），
+ * sortOrder 在提交时按数组下标重新生成，见两个编辑页的 handleSubmit。
+ */
+const ScriptListEditor: React.FC<ScriptListEditorProps> = ({
+  listName,
+  itemNoun,
+  ownerNoun,
+  readonly,
+}) => {
   return (
-    <Form.List name="commands">
+    <Form.List name={listName}>
       {(fields, { add, remove, move }, { errors }) => (
         <div>
           {fields.length === 0 ? (
             <Card size="small" style={{ marginBottom: 12, textAlign: 'center', color: '#999' }}>
-              还没有命令，点击下方「新增命令」添加第一条
+              还没有{itemNoun}，点击下方「新增{itemNoun}」添加第一条
             </Card>
           ) : null}
 
@@ -51,10 +73,12 @@ const CommandListEditor: React.FC<{
               style={{ marginBottom: 12 }}
               title={
                 <Space>
-                  <span>命令 {index + 1}</span>
+                  <span>
+                    {itemNoun} {index + 1}
+                  </span>
                   <Form.Item noStyle shouldUpdate>
                     {({ getFieldValue }) => {
-                      const enabled = getFieldValue(['commands', field.name, 'enabled']);
+                      const enabled = getFieldValue([listName, field.name, 'enabled']);
                       return enabled === false ? (
                         <span style={{ color: '#999', fontSize: 12 }}>（已禁用，不会执行）</span>
                       ) : null;
@@ -91,7 +115,8 @@ const CommandListEditor: React.FC<{
                 )
               }
             >
-              {/* 隐藏字段：编辑时保留 id，提交时保留 id 才能走「更新」而不是「新建」 */}
+              {/* 隐藏字段：项目命令有行 ID，编辑时要保留才能走「更新」而不是「新建」；
+                  任务步骤没有 ID，这一项会一直是空的，提交时被忽略。 */}
               <Form.Item name={[field.name, 'id']} hidden>
                 <Input />
               </Form.Item>
@@ -101,9 +126,9 @@ const CommandListEditor: React.FC<{
                   <Form.Item
                     label="名称"
                     name={[field.name, 'name']}
-                    rules={[{ required: true, message: '请填写命令名称' }]}
+                    rules={[{ required: true, message: `请填写${itemNoun}名称` }]}
                   >
-                    <Input placeholder="例如：拉取代码 / 构建 / 重启服务" />
+                    <Input placeholder="例如：拉取代码 / 构建 / 重启服务 / 发起压测" />
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={12}>
@@ -127,7 +152,7 @@ const CommandListEditor: React.FC<{
               >
                 <Input.TextArea
                   autoSize={{ minRows: 3, maxRows: 16 }}
-                  placeholder={'#!/bin/sh\ncd "$WORKDIR"\ngit pull\ngo build ./...'}
+                  placeholder={'#!/bin/sh\ncd "$WORKDIR"\nls -la'}
                   style={{ fontFamily: 'Menlo, Consolas, monospace' }}
                 />
               </Form.Item>
@@ -146,7 +171,7 @@ const CommandListEditor: React.FC<{
                   <Form.Item
                     label="工作目录覆盖"
                     name={[field.name, 'workdirOverride']}
-                    tooltip="留空使用项目工作目录"
+                    tooltip={`留空使用${ownerNoun}工作目录`}
                   >
                     <Input placeholder="可选" />
                   </Form.Item>
@@ -155,7 +180,7 @@ const CommandListEditor: React.FC<{
                   <Form.Item
                     label="超时（秒）"
                     name={[field.name, 'timeoutSec']}
-                    tooltip="0 表示使用项目默认超时"
+                    tooltip={`0 表示使用${ownerNoun}默认超时`}
                   >
                     <InputNumber min={0} style={{ width: '100%' }} />
                   </Form.Item>
@@ -164,7 +189,7 @@ const CommandListEditor: React.FC<{
                   <Form.Item
                     label="Shell 覆盖"
                     name={[field.name, 'shellOverride']}
-                    tooltip="留空使用项目设置"
+                    tooltip={`留空使用${ownerNoun}设置`}
                   >
                     <Input placeholder="可选：bash / sh / pwsh / cmd" />
                   </Form.Item>
@@ -174,13 +199,8 @@ const CommandListEditor: React.FC<{
           ))}
 
           {readonly ? null : (
-            <Button
-              type="dashed"
-              block
-              icon={<PlusOutlined />}
-              onClick={() => add(newCommand())}
-            >
-              新增命令
+            <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add(newScriptDraft())}>
+              新增{itemNoun}
             </Button>
           )}
           <Form.ErrorList errors={errors} />
@@ -190,4 +210,4 @@ const CommandListEditor: React.FC<{
   );
 };
 
-export default CommandListEditor;
+export default ScriptListEditor;

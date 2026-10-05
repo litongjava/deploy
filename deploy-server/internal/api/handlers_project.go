@@ -919,7 +919,7 @@ func (s *Server) previewProject(c *gin.Context) {
 	}
 	_ = c.ShouldBindJSON(&body)
 
-	workdir := runner.ExpandWorkdir(p.Workdir, s.cfg.WebRoot, p)
+	workdir := runner.ExpandWorkdir(p.Workdir, s.cfg.WebRoot, p.Key, p.Name)
 	ref := defaultStr(body.Branch, p.GitBranch)
 
 	envs := s.envsOf(p.ID)

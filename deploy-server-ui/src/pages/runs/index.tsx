@@ -10,14 +10,33 @@ import React from 'react';
 const Runs: React.FC = () => {
   const columns: ProColumns<Run>[] = [
     {
-      title: '项目',
+      // 一列同时放项目与任务：两者都是「一次运行」的对象，
+      // 分成两列会让其中一列永远是空的。targetKind 决定链接去哪一侧。
+      title: '执行对象',
       dataIndex: 'projectKey',
-      fieldProps: { placeholder: '项目 key' },
-      render: (_, row) => (
-        <a onClick={() => history.push(`/projects/${row.projectKey}`)}>
-          {row.projectName || row.projectKey}
-        </a>
-      ),
+      fieldProps: { placeholder: '项目 / 任务的 key' },
+      render: (_, row) => {
+        const isTask = row.targetKind === 'task';
+        const key = row.targetKey || row.projectKey;
+        return (
+          <Space size={6}>
+            {isTask ? <Tag color="geekblue">任务</Tag> : <Tag color="blue">项目</Tag>}
+            <a onClick={() => history.push(isTask ? `/tasks/${key}` : `/projects/${key}`)}>
+              {row.targetName || row.projectName || key}
+            </a>
+          </Space>
+        );
+      },
+    },
+    {
+      title: '类型',
+      dataIndex: 'targetKind',
+      hideInTable: true,
+      valueType: 'select',
+      valueEnum: {
+        project: { text: '项目' },
+        task: { text: '任务' },
+      },
     },
     {
       title: '状态',
@@ -112,11 +131,12 @@ const Runs: React.FC = () => {
         options={{ density: false }}
         pagination={{ pageSize: 20, showSizeChanger: true }}
         request={async (params) => {
-          const { current, pageSize, projectKey, status } = params as any;
+          const { current, pageSize, projectKey, status, targetKind } = params as any;
           const res = await runApi.list({
             page: current || 1,
             pageSize: pageSize || 20,
             projectKey: projectKey || undefined,
+            targetKind: targetKind || undefined,
             status: status || undefined,
           });
           return { data: res?.list || [], total: res?.total || 0, success: true };

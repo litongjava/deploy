@@ -4,10 +4,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"deploy-server/internal/toolchain"
 )
 
 // 环境工具链一键安装：清单、权限、命令拼装、脚本下载。
@@ -39,7 +42,7 @@ func TestToolchainEndpoints(t *testing.T) {
 			}
 		}
 	}
-	for _, want := range []string{"cc", "java", "maven", "nvm", "node", "pnpm", "go", "rust"} {
+	for _, want := range []string{"cc", "java", "maven", "nvm", "node", "pnpm", "go", "rust", "certbot"} {
 		if !keys[want] {
 			t.Errorf("清单里缺少组件 %s", want)
 		}
@@ -122,10 +125,16 @@ func TestToolchainEndpoints(t *testing.T) {
 
 	// 6) 脚本下载接口要返回真正的脚本内容
 	body := e.getText(t, "/api/v1/system/toolchains/script", e.token)
-	for _, want := range []string{"ALL_COMPONENTS=", "--dry-run", "install_nvm", "install_go", "install_rust"} {
+	for _, want := range []string{"ALL_COMPONENTS=", "--dry-run", "install_nvm", "install_go", "install_rust", "install_certbot"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("下载到的脚本缺少 %q", want)
 		}
+	}
+	// 页面清单（Go 里的 Components）与脚本的 ALL_COMPONENTS 必须**逐项同序**一致。
+	// 对不上就会出现「自检说可以一键装、面板里却没有这一项」这种自相矛盾的提示
+	// （certbot 曾经就是：环境自检报缺失，工具链面板里根本没有它）。
+	if got := scriptAllComponents(t, body); !reflect.DeepEqual(got, toolchain.AllKeys()) {
+		t.Errorf("脚本 ALL_COMPONENTS 与页面组件清单不一致：\n脚本：%v\n页面：%v", got, toolchain.AllKeys())
 	}
 
 	// 7) 非管理员不能触发安装（改设置、装软件都是管理员动作）
@@ -288,4 +297,17 @@ func (e *testEnv) getText(t *testing.T, path, token string) string {
 		t.Fatalf("%s 返回 %d: %s", path, resp.StatusCode, string(raw))
 	}
 	return string(raw)
+}
+
+// scriptAllComponents 从内嵌安装脚本里取 ALL_COMPONENTS 那一行
+// （组件清单的单一事实来源：脚本按它执行，页面按它展示）。
+func scriptAllComponents(t *testing.T, body string) []string {
+	t.Helper()
+	for _, line := range strings.Split(body, "\n") {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(line), "ALL_COMPONENTS="); ok {
+			return strings.Fields(strings.Trim(v, `"`))
+		}
+	}
+	t.Fatal("内嵌安装脚本里没有 ALL_COMPONENTS")
+	return nil
 }

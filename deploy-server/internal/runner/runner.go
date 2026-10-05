@@ -33,6 +33,7 @@ type Executor struct {
 
 	mu      sync.Mutex
 	projMu  map[uint]*sync.Mutex
+	taskMu  map[uint]*sync.Mutex
 	running map[uint]*handle
 	// cmdFilter 记录「本次触发只想跑哪几条命令」。
 	// 放在内存里而不是库里：它只对本次调度有效，服务重启后 Run 会被标记为中断。
@@ -59,8 +60,12 @@ func (e *Executor) logMaxBytes() int64 {
 }
 
 // SubmitRequest 描述一次触发。
+//
+// ProjectID 与 TaskID 二选一：填 TaskID 表示这是一次「任务执行」，
+// 走的是同一套执行引擎，但没有 Git 准备阶段、没有依赖流水线。
 type SubmitRequest struct {
 	ProjectID   uint
+	TaskID      uint
 	Ref         string
 	Params      map[string]string
 	CommandIDs  []uint
@@ -69,6 +74,67 @@ type SubmitRequest struct {
 	TriggerUID  uint
 	TriggerIP   string
 	TriggerUA   string
+}
+
+// jobSpec 是执行引擎眼里的「一次可执行的作业」。
+//
+// 项目（构建 + 部署）与任务（跑一件事）在存储上是两张表，但执行语义完全一样：
+// 准备 → 按顺序跑脚本 → 收退出码。这里把它们归一，执行引擎只认 jobSpec。
+type jobSpec struct {
+	Kind   string // store.TargetProject | store.TargetTask
+	ID     uint
+	Key    string
+	Name   string
+	Owner  uint
+	Detail string // 项目=项目类型；任务=留空
+
+	Workdir      string
+	Shell        string
+	TimeoutSec   int
+	Concurrency  string
+	AllowEnvOver bool
+	Archived     bool
+
+	UseGit          bool
+	GitURL          string
+	GitBranch       string
+	GitCredentialID *uint
+	GitSubdir       string
+	GitDepth        int
+	GitClean        bool
+	GitSubmodule    bool
+
+	Steps []store.TaskStep // 任务专用；项目走 project_commands 表
+}
+
+// jobStep 是 jobSpec 归一后的一步脚本。
+//
+// ID 对项目是 project_commands.id，对任务是 1 基的序号 —— 它只用于
+// RunStep.CommandID 与「只跑某一步」的筛选，不需要全局唯一。
+type jobStep struct {
+	ID              uint
+	Name            string
+	Script          string
+	SortOrder       int
+	Enabled         bool
+	FailStrategy    string
+	WorkdirOverride string
+	TimeoutSec      int
+	ShellOverride   string
+}
+
+// isTask 判断这次运行的目标是不是任务。
+func (j *jobSpec) isTask() bool { return j.Kind == store.TargetTask }
+
+// logKey 是日志目录里这一级子目录的名字。
+//
+// 任务单独放在 tasks/ 下面：项目的 key 与任务的 key 是两个独立的命名空间，
+// 不加前缀的话同名项目与任务会往同一个目录里写日志。
+func (j *jobSpec) logKey() string {
+	if j.isTask() {
+		return filepath.Join("tasks", j.Key)
+	}
+	return j.Key
 }
 
 type handle struct {
@@ -121,6 +187,7 @@ func New(cfg *config.Config, st *store.Store, box *secret.Box) *Executor {
 		broker:    runlog.NewBroker(),
 		sem:       newGate(cfg.MaxConcurrentRuns),
 		projMu:    make(map[uint]*sync.Mutex),
+		taskMu:    make(map[uint]*sync.Mutex),
 		running:   make(map[uint]*handle),
 		cmdFilter: make(map[uint][]uint),
 	}
@@ -153,13 +220,21 @@ func (e *Executor) RunningIDs() []uint {
 	return out
 }
 
-func (e *Executor) projectLock(id uint) *sync.Mutex {
+// jobLock 返回「同一个执行对象串行」用的锁。
+//
+// 项目与任务的 ID 各自从 1 开始，会重号，所以必须用两张表分开存锁，
+// 否则 ID 相同的项目与任务会被误判成同一个执行对象而互相阻塞。
+func (e *Executor) jobLock(kind string, id uint) *sync.Mutex {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	l, ok := e.projMu[id]
+	m := e.projMu
+	if kind == store.TargetTask {
+		m = e.taskMu
+	}
+	l, ok := m[id]
 	if !ok {
 		l = &sync.Mutex{}
-		e.projMu[id] = l
+		m[id] = l
 	}
 	return l
 }
@@ -180,21 +255,21 @@ func (e *Executor) clearHandle(id uint) {
 //
 // build number 的分配放在事务里，配合 SQLite 单连接，天然不会有竞态。
 func (e *Executor) Submit(req SubmitRequest) (*store.Run, error) {
-	p, err := e.loadProject(req.ProjectID)
+	job, err := e.loadJob(req)
 	if err != nil {
 		return nil, err
 	}
-	if p.Archived {
+	if job.Archived {
 		return nil, ErrProjectArchived
 	}
-	run, err := e.createRun(p, req, "", "", 0)
+	run, err := e.createRun(job, req, "", "", 0)
 	if err != nil {
 		return nil, err
 	}
 
-	// cancelPrev：先取消同项目正在跑的，再排自己。
-	if p.Concurrency == store.ConcurrencyCancelPrev {
-		e.CancelProject(p.ID)
+	// cancelPrev：先取消同一个目标正在跑的，再排自己。
+	if job.Concurrency == store.ConcurrencyCancelPrev {
+		e.CancelTarget(job.Kind, job.ID)
 	}
 	if len(req.CommandIDs) > 0 {
 		e.mu.Lock()
@@ -210,15 +285,138 @@ func (e *Executor) Submit(req SubmitRequest) (*store.Run, error) {
 	return run, nil
 }
 
+// loadJob 按 SubmitRequest 把执行对象读成 jobSpec。
+func (e *Executor) loadJob(req SubmitRequest) (*jobSpec, error) {
+	if req.TaskID != 0 {
+		return e.loadTaskJob(req.TaskID)
+	}
+	p, err := e.loadProject(req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	return projectJob(p), nil
+}
+
+// loadJobByRun 按 Run 记录把执行对象读成 jobSpec。
+func (e *Executor) loadJobByRun(run *store.Run) (*jobSpec, error) {
+	if run.TargetKind == store.TargetTask {
+		return e.loadTaskJob(run.TaskID)
+	}
+	p, err := e.loadProject(run.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	return projectJob(p), nil
+}
+
+func projectJob(p *store.Project) *jobSpec {
+	return &jobSpec{
+		Kind: store.TargetProject, ID: p.ID, Key: p.Key, Name: p.Name,
+		Owner: p.OwnerID, Detail: p.Kind,
+		Workdir: p.Workdir, Shell: p.Shell, TimeoutSec: p.TimeoutSec,
+		Concurrency: p.Concurrency, AllowEnvOver: p.AllowEnvOver, Archived: p.Archived,
+		UseGit: p.UseGit, GitURL: p.GitURL, GitBranch: p.GitBranch,
+		GitCredentialID: p.GitCredentialID, GitSubdir: p.GitSubdir,
+		GitDepth: p.GitDepth, GitClean: p.GitClean, GitSubmodule: p.GitSubmodule,
+	}
+}
+
+func (e *Executor) loadTaskJob(id uint) (*jobSpec, error) {
+	var t store.Task
+	if err := e.st.DB().First(&t, id).Error; err != nil {
+		return nil, fmt.Errorf("task not found: %w", err)
+	}
+	return &jobSpec{
+		Kind: store.TargetTask, ID: t.ID, Key: t.Key, Name: t.Name,
+		Owner: t.OwnerID,
+		Workdir: t.Workdir, Shell: t.Shell, TimeoutSec: t.TimeoutSec,
+		Concurrency: t.Concurrency, AllowEnvOver: t.AllowEnvOver, Archived: t.Archived,
+		Steps: store.DecodeTaskSteps(t.StepsJSON),
+	}, nil
+}
+
+// stepsOf 取出这次要跑的步骤。
+//
+// filter 是「只跑这几步」的白名单（命令 ID / 任务步骤序号），空表示全跑。
+func (e *Executor) stepsOf(job *jobSpec, filter []uint) []jobStep {
+	if job.isTask() {
+		out := make([]jobStep, 0, len(job.Steps))
+		for i, s := range job.Steps {
+			if !s.Enabled {
+				continue
+			}
+			out = append(out, jobStep{
+				ID: uint(i + 1), Name: s.Name, Script: s.Script, SortOrder: i + 1,
+				Enabled: true, FailStrategy: s.FailStrategy,
+				WorkdirOverride: s.WorkdirOverride, TimeoutSec: s.TimeoutSec,
+				ShellOverride: s.ShellOverride,
+			})
+		}
+		return filterSteps(out, filter)
+	}
+
+	var cmds []store.ProjectCommand
+	q := e.st.DB().Where("project_id = ? AND enabled = ?", job.ID, true)
+	if len(filter) > 0 {
+		q = q.Where("id IN ?", filter)
+	}
+	q.Order("sort_order asc, id asc").Find(&cmds)
+
+	out := make([]jobStep, 0, len(cmds))
+	for _, c := range cmds {
+		out = append(out, jobStep{
+			ID: c.ID, Name: c.Name, Script: c.Script, SortOrder: c.SortOrder,
+			Enabled: c.Enabled, FailStrategy: c.FailStrategy,
+			WorkdirOverride: c.WorkdirOver, TimeoutSec: c.TimeoutSec,
+			ShellOverride: c.ShellOverride,
+		})
+	}
+	return out
+}
+
+// filterSteps 按白名单过滤，保持原顺序。
+func filterSteps(steps []jobStep, filter []uint) []jobStep {
+	if len(filter) == 0 {
+		return steps
+	}
+	want := make(map[uint]bool, len(filter))
+	for _, id := range filter {
+		want[id] = true
+	}
+	out := make([]jobStep, 0, len(steps))
+	for _, s := range steps {
+		if want[s.ID] {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// loadJobEnvs 读出注入用的环境变量（项目查表 / 任务解 JSON）。
+func (e *Executor) loadJobEnvs(job *jobSpec) []EnvVar {
+	if job.isTask() {
+		var t store.Task
+		if err := e.st.DB().Select("envs_json").First(&t, job.ID).Error; err != nil {
+			return nil
+		}
+		return EnvVarsFromTask(store.DecodeTaskEnvs(t.EnvsJSON))
+	}
+	var envs []store.ProjectEnv
+	e.st.DB().Where("project_id = ?", job.ID).Order("id asc").Find(&envs)
+	return EnvVarsFromProject(envs)
+}
+
 // createRun 分配构建号并落库，但不启动执行。
 //
 // 拆出来是给依赖流水线用的：流水线要先把「依赖 + 目标」的 Run 记录一次建好
 // （这样界面上立刻能看到整条构建计划），再按顺序逐个执行。
-func (e *Executor) createRun(p *store.Project, req SubmitRequest, pipelineID, role string, order int) (*store.Run, error) {
+func (e *Executor) createRun(job *jobSpec, req SubmitRequest, pipelineID, role string, order int) (*store.Run, error) {
 	run := store.Run{
-		ProjectID:    p.ID,
-		ProjectKey:   p.Key,
-		ProjectName:  p.Name,
+		ProjectID:    job.ID,
+		ProjectKey:   job.Key,
+		ProjectName:  job.Name,
+		TaskID:       0,
+		TargetKind:   store.TargetProject,
 		Status:       store.RunQueued,
 		TriggerType:  req.TriggerType,
 		TriggerUser:  req.TriggerUser,
@@ -232,10 +430,22 @@ func (e *Executor) createRun(p *store.Project, req SubmitRequest, pipelineID, ro
 		PipelineRole:  role,
 		PipelineOrder: order,
 	}
+	if job.isTask() {
+		// 任务没有「项目」：ProjectID 留 0，展示用的快照字段放任务的 key/名称。
+		run.ProjectID = 0
+		run.TaskID = job.ID
+		run.TargetKind = store.TargetTask
+	}
+
 	if err := e.st.DB().Transaction(func(tx *gorm.DB) error {
 		var maxNo int64
-		row := tx.Model(&store.Run{}).Where("project_id = ?", p.ID).
-			Select("COALESCE(MAX(build_number), 0)").Row()
+		q := tx.Model(&store.Run{})
+		if job.isTask() {
+			q = q.Where("task_id = ?", job.ID)
+		} else {
+			q = q.Where("project_id = ?", job.ID)
+		}
+		row := q.Select("COALESCE(MAX(build_number), 0)").Row()
 		if err := row.Scan(&maxNo); err != nil {
 			return err
 		}
@@ -295,9 +505,27 @@ func (e *Executor) cancelOne(runID uint) bool {
 
 // CancelProject 取消某个项目下所有正在执行的 Run。
 func (e *Executor) CancelProject(projectID uint) {
+	e.cancelTargetRuns("project_id = ?", projectID)
+}
+
+// CancelTask 取消某个任务下所有正在执行的 Run。
+func (e *Executor) CancelTask(taskID uint) {
+	e.cancelTargetRuns("task_id = ?", taskID)
+}
+
+// CancelTarget 按执行对象类型取消。
+func (e *Executor) CancelTarget(kind string, id uint) {
+	if kind == store.TargetTask {
+		e.CancelTask(id)
+		return
+	}
+	e.CancelProject(id)
+}
+
+func (e *Executor) cancelTargetRuns(where string, id uint) {
 	var ids []uint
 	e.st.DB().Model(&store.Run{}).
-		Where("project_id = ? AND status IN ?", projectID, []string{store.RunRunning, store.RunQueued}).
+		Where(where+" AND status IN ?", id, []string{store.RunRunning, store.RunQueued}).
 		Pluck("id", &ids)
 	for _, id := range ids {
 		e.Cancel(id)
@@ -351,16 +579,16 @@ func (e *Executor) execute(runID uint, req SubmitRequest) {
 	if err := e.st.DB().First(&run, runID).Error; err != nil {
 		return
 	}
-	p, err := e.loadProject(run.ProjectID)
+	job, err := e.loadJobByRun(&run)
 	if err != nil {
 		e.finish(runID, execOutcome{status: store.RunError, errMsg: err.Error()}, nil)
 		return
 	}
 
-	// 同项目串行：把 Prepare 与命令放在同一把锁里，
+	// 同一执行对象串行：把 Prepare 与命令放在同一把锁里，
 	// 否则两个 Run 会同时 checkout 同一个工作目录（需求 FR-GIT-9）。
-	if p.Concurrency == "" || p.Concurrency == store.ConcurrencyQueue {
-		l := e.projectLock(p.ID)
+	if job.Concurrency == "" || job.Concurrency == store.ConcurrencyQueue {
+		l := e.jobLock(job.Kind, job.ID)
 		l.Lock()
 		defer l.Unlock()
 	}
@@ -371,11 +599,11 @@ func (e *Executor) execute(runID uint, req SubmitRequest) {
 	e.setHandle(runID, h)
 	defer e.clearHandle(runID)
 
-	// 打码清单：先把项目 Secret 明文解出来，日志从第一行起就是干净的。
-	envs := e.loadEnvs(p.ID)
+	// 打码清单：先把 Secret 明文解出来，日志从第一行起就是干净的。
+	envs := e.loadJobEnvs(job)
 	secretValues := SecretValues(envs, e.box)
 
-	w, err := runlog.NewWriter(e.cfg.LogDir(), p.Key, runID, e.broker, secretValues, e.logMaxBytes())
+	w, err := runlog.NewWriter(e.cfg.LogDir(), job.logKey(), runID, e.broker, secretValues, e.logMaxBytes())
 	if err != nil {
 		e.finish(runID, execOutcome{status: store.RunError, errMsg: err.Error()}, nil)
 		return
@@ -389,7 +617,7 @@ func (e *Executor) execute(runID uint, req SubmitRequest) {
 	}()
 
 	var steps []store.RunStep
-	outcome := e.runPhases(ctx, h, run, p, envs, w, &steps)
+	outcome := e.runPhases(ctx, h, run, job, envs, w, &steps)
 
 	e.mu.Lock()
 	delete(e.cmdFilter, runID)
@@ -403,8 +631,8 @@ func (e *Executor) execute(runID uint, req SubmitRequest) {
 	e.broker.CloseRun(runID)
 }
 
-func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, p *store.Project,
-	envs []store.ProjectEnv, w *runlog.Writer, steps *[]store.RunStep) execOutcome {
+func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, job *jobSpec,
+	envs []EnvVar, w *runlog.Writer, steps *[]store.RunStep) execOutcome {
 
 	var outcome execOutcome
 	outcome.errMsg = ""
@@ -416,11 +644,16 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, p *s
 		"started_at": started,
 	})
 
-	workdir := ExpandWorkdir(p.Workdir, e.cfg.WebRoot, p)
+	workdir := ExpandWorkdir(job.Workdir, e.cfg.WebRoot, job.Key, job.Name)
 	actualWorkdir := workdir
 
-	fmt.Fprintf(w, "=== Deploy Run #%d ===\n", run.BuildNumber)
-	fmt.Fprintf(w, "Project : %s (%s)\n", p.Name, p.Key)
+	if job.isTask() {
+		fmt.Fprintf(w, "=== Task Run #%d ===\n", run.BuildNumber)
+		fmt.Fprintf(w, "Task    : %s (%s)\n", job.Name, job.Key)
+	} else {
+		fmt.Fprintf(w, "=== Deploy Run #%d ===\n", run.BuildNumber)
+		fmt.Fprintf(w, "Project : %s (%s)\n", job.Name, job.Key)
+	}
 	fmt.Fprintf(w, "Workdir : %s\n", workdir)
 	fmt.Fprintf(w, "Trigger : %s by %s", run.TriggerType, run.TriggerUser)
 	if run.TriggerIP != "" {
@@ -428,27 +661,28 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, p *s
 	}
 	fmt.Fprintln(w)
 	fmt.Fprintf(w, "Started : %s\n", started.Format(time.RFC3339))
-	if p.UseGit {
-		fmt.Fprintf(w, "Git     : %s @ %s\n", p.GitURL, firstNonEmpty(run.RequestedRef, p.GitBranch))
+	if job.UseGit {
+		fmt.Fprintf(w, "Git     : %s @ %s\n", job.GitURL, firstNonEmpty(run.RequestedRef, job.GitBranch))
 	}
 	fmt.Fprintln(w, "----------------------------------------")
 
 	gitVars := map[string]string{}
 
 	// ---------- Phase 1: Prepare ----------
-	if p.UseGit {
+	// 只有项目有 Git 准备阶段；任务直接跳过（prepare_status 记为 skipped）。
+	if job.UseGit {
 		prepareStart := time.Now()
 		step := store.RunStep{
 			RunID: run.ID, Phase: store.PhasePrepare, Name: "Git prepare",
 			SortOrder: 0, Status: store.StepRunning, StartedAt: &prepareStart,
-			Script: fmt.Sprintf("git clone/fetch %s @ %s", p.GitURL, firstNonEmpty(run.RequestedRef, p.GitBranch)),
+			Script: fmt.Sprintf("git clone/fetch %s @ %s", job.GitURL, firstNonEmpty(run.RequestedRef, job.GitBranch)),
 		}
 		e.st.DB().Create(&step)
 		*steps = append(*steps, step)
 
 		fmt.Fprintf(w, "\n=== [prepare] Git prepare ===\n")
 		pctx, pcancel := context.WithTimeout(ctx, time.Duration(e.cfg.GitPrepareTimeoutS)*time.Second)
-		info, geSecrets, gerr := e.prepareGit(pctx, p, run.RequestedRef, workdir, w)
+		info, geSecrets, gerr := e.prepareGit(pctx, job, run.RequestedRef, workdir, w)
 		pcancel()
 
 		// 凭据是在 prepare 里才解出来的，拿到后立刻加入打码清单，
@@ -474,8 +708,8 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, p *s
 		gitVars["GIT_MESSAGE"] = info.Message
 		gitVars["GIT_DIRTY"] = info.Dirty
 
-		if p.GitSubdir != "" {
-			actualWorkdir = filepath.Join(workdir, p.GitSubdir)
+		if job.GitSubdir != "" {
+			actualWorkdir = filepath.Join(workdir, job.GitSubdir)
 		}
 		dur := time.Since(prepareStart).Milliseconds()
 		fmt.Fprintf(w, "\n--- prepare done: %s (%s), took %dms ---\n",
@@ -504,19 +738,16 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, p *s
 	filter := e.cmdFilter[run.ID]
 	e.mu.Unlock()
 
-	var cmds []store.ProjectCommand
-	q := e.st.DB().Where("project_id = ? AND enabled = ?", p.ID, true)
-	if len(filter) > 0 {
-		q = q.Where("id IN ?", filter)
-	}
-	q.Order("sort_order asc, id asc").Find(&cmds)
+	cmds := e.stepsOf(job, filter)
 	if len(cmds) == 0 {
-		fmt.Fprintln(w, "\n*** this project has no enabled commands; only the Git prepare phase ran ***")
+		if job.isTask() {
+			fmt.Fprintln(w, "\n*** this task has no enabled steps; nothing to do ***")
+		} else {
+			fmt.Fprintln(w, "\n*** this project has no enabled commands; only the Git prepare phase ran ***")
+		}
 	}
 
 	builtins := map[string]string{
-		"PROJECT_KEY":       p.Key,
-		"PROJECT_NAME":      p.Name,
 		"WORKDIR":           actualWorkdir,
 		"RUN_ID":            fmt.Sprint(run.ID),
 		"BUILD_NUMBER":      fmt.Sprint(run.BuildNumber),
@@ -525,15 +756,25 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, p *s
 		"START_TIME":        started.Format(time.RFC3339),
 		"DEPLOY_SERVER_URL": e.cfg.ServerURL,
 	}
+	if job.isTask() {
+		// 任务只注入 TASK_*，不注入 PROJECT_*：名字对不上会让人以为跑错了对象。
+		// 工作目录占位符同时接受 ${PROJECT_KEY} 与 ${TASK_KEY}（见 ExpandWorkdir），
+		// 那是为了脚本可复用，与这里的变量命名是两回事。
+		builtins["TASK_KEY"] = job.Key
+		builtins["TASK_NAME"] = job.Name
+	} else {
+		builtins["PROJECT_KEY"] = job.Key
+		builtins["PROJECT_NAME"] = job.Name
+	}
 	for k, v := range gitVars {
 		builtins[k] = v
 	}
 
 	env, _, err := BuildEnv(EnvPlan{
-		ProjectEnvs: envs,
+		EnvVars:     envs,
 		Builtins:    builtins,
 		Params:      decodeParams(run.ParamsJSON),
-		AllowParams: p.AllowEnvOver,
+		AllowParams: job.AllowEnvOver,
 		Box:         e.box,
 	})
 	if err != nil {
@@ -543,7 +784,7 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, p *s
 		return outcome
 	}
 
-	projectTimeout := time.Duration(p.TimeoutSec) * time.Second
+	projectTimeout := time.Duration(job.TimeoutSec) * time.Second
 	deadline := time.Time{}
 	if projectTimeout > 0 {
 		deadline = started.Add(projectTimeout)
@@ -557,9 +798,9 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, p *s
 			return outcome
 		}
 		if !deadline.IsZero() && time.Now().After(deadline) {
-			fmt.Fprintf(w, "\n*** project timeout (%ds) reached, aborting ***\n", p.TimeoutSec)
+			fmt.Fprintf(w, "\n*** timeout (%ds) reached, aborting ***\n", job.TimeoutSec)
 			outcome.status = store.RunTimeout
-			outcome.errMsg = fmt.Sprintf("project timed out after %ds", p.TimeoutSec)
+			outcome.errMsg = fmt.Sprintf("%s timed out after %ds", jobLabel(job), job.TimeoutSec)
 			return outcome
 		}
 
@@ -587,7 +828,19 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, p *s
 			timeout = 0
 		}
 
-		code, runErr := e.runScript(ctx, c.Script, actualWorkdir, c.ShellOverride, p.Shell, env, timeout, w, h)
+		// 每步可以有自己的工作目录；任务的步骤常常要 cd 到别处。
+		stepWorkdir := actualWorkdir
+		if c.WorkdirOverride != "" {
+			stepWorkdir = ExpandWorkdir(c.WorkdirOverride, e.cfg.WebRoot, job.Key, job.Name)
+			if err := os.MkdirAll(stepWorkdir, 0o750); err != nil {
+				fmt.Fprintf(w, "\n*** failed to create workdir override: %v ***\n", err)
+				outcome.status = store.RunError
+				outcome.errMsg = "failed to create workdir override: " + err.Error()
+				return outcome
+			}
+		}
+
+		code, runErr := e.runScript(ctx, c.Script, stepWorkdir, c.ShellOverride, job.Shell, env, timeout, w, h)
 
 		finishStep(e.st, &step, runErr, code, w.Size())
 		*steps = append(*steps, step)
@@ -628,10 +881,12 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, p *s
 
 // req0CommandIDs 已移除：命令筛选通过 Executor.cmdFilter 传递。
 
-func (e *Executor) loadEnvs(projectID uint) []store.ProjectEnv {
-	var envs []store.ProjectEnv
-	e.st.DB().Where("project_id = ?", projectID).Order("id asc").Find(&envs)
-	return envs
+// jobLabel 给日志与错误信息用的中文对象名。
+func jobLabel(job *jobSpec) string {
+	if job.isTask() {
+		return "task"
+	}
+	return "project"
 }
 
 func finishStep(st *store.Store, step *store.RunStep, runErr error, code int, offsetEnd int64) {

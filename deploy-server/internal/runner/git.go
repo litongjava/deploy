@@ -49,17 +49,17 @@ var shaRe = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
 //     （宁可失败也不覆盖用户已有目录）
 //   - 凭据通过 GIT_ASKPASS / GIT_SSH_COMMAND 注入，**绝不拼进 URL**
 //   - 失败时返回 error，调用方据此中止整个 Run，不执行任何用户命令
-func (e *Executor) prepareGit(ctx context.Context, p *store.Project, ref, workdir string, out io.Writer) (gitInfo, []string, error) {
+func (e *Executor) prepareGit(ctx context.Context, job *jobSpec, ref, workdir string, out io.Writer) (gitInfo, []string, error) {
 	var info gitInfo
 
-	ge, err := e.buildGitEnv(p)
+	ge, err := e.buildGitEnv(job)
 	if err != nil {
 		return info, nil, err
 	}
 	defer ge.close()
 
 	if ref == "" {
-		ref = p.GitBranch
+		ref = job.GitBranch
 	}
 	if ref == "" {
 		ref = "main"
@@ -84,18 +84,18 @@ func (e *Executor) prepareGit(ctx context.Context, p *store.Project, ref, workdi
 		}
 
 		args := []string{"clone", "--progress"}
-		if p.GitDepth > 0 && !isSHA {
-			args = append(args, "--depth", fmt.Sprint(p.GitDepth))
+		if job.GitDepth > 0 && !isSHA {
+			args = append(args, "--depth", fmt.Sprint(job.GitDepth))
 		}
-		if p.GitSubmodule {
+		if job.GitSubmodule {
 			args = append(args, "--recurse-submodules")
 		}
 		if !isSHA {
 			args = append(args, "--branch", ref)
 		}
-		args = append(args, p.GitURL, workdir)
+		args = append(args, job.GitURL, workdir)
 
-		fmt.Fprintf(out, "$ git clone %s (%s)\n", p.GitURL, ref)
+		fmt.Fprintf(out, "$ git clone %s (%s)\n", job.GitURL, ref)
 		if code, err := runCommand(ctx, "git", args, "", env, out, nil); err != nil || code != 0 {
 			return info, ge.secrets, fmt.Errorf("git clone failed (exit code %d): %v", code, err)
 		}
@@ -124,13 +124,13 @@ func (e *Executor) prepareGit(ctx context.Context, p *store.Project, ref, workdi
 			}
 		}
 
-		if p.GitClean {
+		if job.GitClean {
 			// gitClean 会删掉未跟踪文件，属危险操作，前端必须二次确认。
 			if code, _ := runCommand(ctx, "git", []string{"clean", "-fdx"}, workdir, env, out, nil); code != 0 {
 				fmt.Fprintln(out, "*** git clean returned non-zero, ignored ***")
 			}
 		}
-		if p.GitSubmodule {
+		if job.GitSubmodule {
 			if code, _ := runCommand(ctx, "git", []string{"submodule", "update", "--init", "--recursive"}, workdir, env, out, nil); code != 0 {
 				return info, ge.secrets, fmt.Errorf("submodule update failed (exit code %d)", code)
 			}
@@ -158,7 +158,7 @@ func (e *Executor) prepareGit(ctx context.Context, p *store.Project, ref, workdi
 // TestGitAccess 真的去 ls-remote 一次，用来在项目配置页验证
 // 「地址 + 凭据」这组搭配能不能拉通。失败时返回的错误里会带上 git 的原始输出。
 func (e *Executor) TestGitAccess(ctx context.Context, gitURL string, credID *uint) (string, error) {
-	probe := &store.Project{UseGit: true, GitURL: gitURL, GitCredentialID: credID}
+	probe := &jobSpec{UseGit: true, GitURL: gitURL, GitCredentialID: credID}
 	ge, err := e.buildGitEnv(probe)
 	if err != nil {
 		return "", err
@@ -209,15 +209,15 @@ func gitCapture(ctx context.Context, dir string, env []string, args ...string) s
 // HTTPS：写一个临时 askpass 脚本，git 需要用户名/密码时会调用它，
 // 凭据从环境变量读取。这样 token 不会出现在 URL、remote 配置或进程参数里。
 // SSH：把私钥写到临时文件（0600），用 GIT_SSH_COMMAND 指定，并关掉主机指纹交互。
-func (e *Executor) buildGitEnv(p *store.Project) (*gitEnv, error) {
+func (e *Executor) buildGitEnv(job *jobSpec) (*gitEnv, error) {
 	ge := &gitEnv{cleanup: func() {}}
-	if p.GitCredentialID == nil {
+	if job.GitCredentialID == nil {
 		return ge, nil
 	}
 
 	var cred store.Credential
-	if err := e.st.DB().First(&cred, *p.GitCredentialID).Error; err != nil {
-		return nil, fmt.Errorf("credential %d not found: %w", *p.GitCredentialID, err)
+	if err := e.st.DB().First(&cred, *job.GitCredentialID).Error; err != nil {
+		return nil, fmt.Errorf("credential %d not found: %w", *job.GitCredentialID, err)
 	}
 
 	plain, err := e.box.Decrypt(cred.SecretEnc)

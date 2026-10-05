@@ -81,6 +81,38 @@ export default [
     ],
   },
   {
+    // 任务：跑一件事（压测 / 巡检 / 清缓存……）。
+    // 与项目的区别是没有 Git 准备阶段与依赖构建，所以编辑页也没有那两张卡片。
+    path: '/tasks',
+    name: '任务',
+    icon: 'UnorderedListOutlined',
+    routes: [
+      {
+        path: '/tasks',
+        component: './tasks',
+      },
+      {
+        // 与 /projects/new 同理：静态段优先于 :key，'new' 是保留字。
+        path: '/tasks/new',
+        hideInMenu: true,
+        name: '新建任务',
+        component: './tasks/edit',
+      },
+      {
+        path: '/tasks/:key/edit',
+        hideInMenu: true,
+        name: '编辑任务',
+        component: './tasks/edit',
+      },
+      {
+        path: '/tasks/:key',
+        hideInMenu: true,
+        name: '任务详情',
+        component: './tasks/detail',
+      },
+    ],
+  },
+  {
     path: '/runs',
     name: '运行',
     icon: 'PlayCircleOutlined',

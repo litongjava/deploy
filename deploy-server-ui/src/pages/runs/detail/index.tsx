@@ -98,18 +98,27 @@ const RunDetail: React.FC = () => {
     };
   }, [loadRun]);
 
-  // 终端挂载后先补历史日志。
-  // 注意：React 18 StrictMode 下 effect 会「挂载→卸载→再挂载」，
-  // 所以卸载时要把已拉取标记复位，否则第二次挂载的终端拿不到历史日志。
+  // 换了一条运行（「重新执行」跳到新运行）就把「历史已拉」的闸门复位：
+  // 闸门是「这条运行的日志拉过没有」，不是「这个页面拉过没有」。
   useEffect(() => {
+    fetchedRef.current = false;
+  }, [id]);
+
+  // 终端挂载之后再补历史日志 —— 必须等 run 到位，不能一挂载就拉。
+  //
+  // 终端是 PageContainer 的 children，而 PageContainer 在 loading 时渲染的是
+  // 骨架屏、**根本不渲染 children**；所以详情没回来的那段时间里终端还没挂载，
+  // 这时候拉日志会写进「不存在的终端」（termRef 为空，写入被丢掉），
+  // 偏偏 fetchedRef 已经落闸 —— 打开一条**已结束**的运行就会看到永远空白的终端
+  // （实时流那边也帮不上：结束的运行本来就不建连）。
+  // 等 run 到位再拉，顺序就对了：子组件的 effect 先跑，终端实例已经建好。
+  useEffect(() => {
+    if (!run) return;
     const timer = setTimeout(() => {
       loadLog();
     }, 0);
-    return () => {
-      clearTimeout(timer);
-      fetchedRef.current = false;
-    };
-  }, [loadLog]);
+    return () => clearTimeout(timer);
+  }, [run, loadLog]);
 
   // 运行中轮询刷新详情（步骤状态等），结束后停止
   useEffect(() => {
@@ -213,8 +222,20 @@ const RunDetail: React.FC = () => {
       subTitle={
         run ? (
           <Space>
-            <a onClick={() => history.push(`/projects/${run.projectKey}`)}>
-              {run.projectName || run.projectKey}
+            {/* 执行对象可能是项目也可能是任务，按 targetKind 决定链接与文案 */}
+            <Tag color={run.targetKind === 'task' ? 'geekblue' : 'blue'}>
+              {run.targetKind === 'task' ? '任务' : '项目'}
+            </Tag>
+            <a
+              onClick={() =>
+                history.push(
+                  run.targetKind === 'task'
+                    ? `/tasks/${run.targetKey || run.projectKey}`
+                    : `/projects/${run.targetKey || run.projectKey}`,
+                )
+              }
+            >
+              {run.targetName || run.projectName || run.targetKey || run.projectKey}
             </a>
             <Tag color={RUN_STATUS_META[run.status]?.color}>
               {RUN_STATUS_META[run.status]?.text || run.status}

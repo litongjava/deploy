@@ -29,8 +29,8 @@ import {
 import { history, useParams } from '@umijs/max';
 import { Alert, Button, Card, Form, Space, Spin, message } from 'antd';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import CommandListEditor from '../components/CommandListEditor';
-import EnvListEditor from '../components/EnvListEditor';
+import ScriptListEditor from '@/components/ScriptListEditor';
+import EnvListEditor from '@/components/EnvListEditor';
 
 interface FormValues {
   key: string;
@@ -514,7 +514,7 @@ const ProjectEdit: React.FC = () => {
         </Card>
 
         <Card title="命令列表（按顺序执行）">
-          <CommandListEditor />
+          <ScriptListEditor listName="commands" itemNoun="命令" ownerNoun="项目" />
         </Card>
       </ProForm>
     </PageContainer>

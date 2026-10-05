@@ -229,11 +229,84 @@ export interface PreviewResult {
   script: string;
 }
 
+/* ------------------------------- 任务 ------------------------------- */
+/*
+ * 任务是「跑一件事」（压测 / 巡检 / 清缓存……）：与项目共用执行引擎、Run 表、
+ * 日志与 Hook，但没有 Git 准备阶段、没有依赖构建，步骤与变量内联在任务里保存。
+ */
+
+/** Run 的执行对象：项目（构建/部署）还是任务（一次性作业） */
+export type TargetKind = 'project' | 'task';
+
+export interface TaskStepDraft {
+  name: string;
+  script: string;
+  sortOrder?: number;
+  enabled: boolean;
+  failStrategy: FailStrategy;
+  workdirOverride?: string;
+  timeoutSec?: number;
+  shellOverride?: string;
+}
+
+export interface TaskBrief {
+  id: number;
+  key: string;
+  name: string;
+  description: string;
+  workdir: string;
+  shell: ShellType;
+  timeoutSec: number;
+  concurrency: ConcurrencyType;
+  hookEnabled: boolean;
+  archived: boolean;
+  allowEnvOverride: boolean;
+  ownerId: number;
+  ownerName: string;
+  /** 步骤条数；列表接口只回这个数，不回步骤正文 */
+  stepCount: number;
+  lastRunAt: string | null;
+  lastRunStatus: RunStatus | '';
+  runCount: number;
+  canEdit: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Task extends TaskBrief {
+  steps: TaskStepDraft[];
+  envs: EnvVar[];
+}
+
+export interface TaskInput {
+  key: string;
+  name: string;
+  description?: string;
+  workdir: string;
+  shell?: ShellType | string;
+  timeoutSec?: number;
+  concurrency?: ConcurrencyType | string;
+  hookEnabled?: boolean;
+  archived?: boolean;
+  allowEnvOverride?: boolean;
+  steps?: TaskStepDraft[];
+  envs?: EnvVar[];
+}
+
+export interface TaskQuery extends PageQuery {
+  keyword?: string;
+  archived?: boolean | 'all';
+  mine?: boolean;
+}
+
 /* --------------------------- Hook Token ---------------------------- */
 
 export interface HookToken {
   id: number;
   projectId: number;
+  /** 非 0 表示这个令牌属于任务；targetKind 是它的可读形式 */
+  taskId: number;
+  targetKind: TargetKind;
   name: string;
   prefix: string;
   enabled: boolean;
@@ -286,6 +359,12 @@ export interface Run {
   projectName: string;
   buildNumber: number;
   status: RunStatus;
+  /** 执行对象：项目还是任务 */
+  taskId: number;
+  targetKind: TargetKind;
+  /** 统一的执行对象标识：项目与任务都能用，界面上按 targetKind 决定链接到哪 */
+  targetKey: string;
+  targetName: string;
   triggerType: TriggerType;
   triggerUserId: number | null;
   triggerUserName: string;
@@ -326,6 +405,9 @@ export interface PipelineRun {
 
 export interface RunQuery extends PageQuery {
   projectKey?: string;
+  /** 只看某个任务的运行 */
+  taskKey?: string;
+  targetKind?: TargetKind;
   status?: RunStatus;
 }
 
@@ -343,6 +425,10 @@ export interface TriggerResult {
   buildNumber: number;
   status: RunStatus;
   logUrl: string;
+  /** 执行对象（任务触发时返回 taskKey / targetKind） */
+  projectKey?: string;
+  taskKey?: string;
+  targetKind?: TargetKind;
   pipelineId?: string;
   dependencyCount?: number;
   dependencies?: { key: string; runId: number; buildNumber: number }[];

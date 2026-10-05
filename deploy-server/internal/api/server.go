@@ -113,6 +113,24 @@ func (s *Server) Router() *gin.Engine {
 		a.DELETE("/hooks/:id", s.deleteHook)
 		a.POST("/hook-tokens/:id/reset", s.resetHook)
 
+		// ---------- 任务 ----------
+		//
+		// 任务是「跑一件事」（压测 / 巡检 / 清缓存……），与项目共用执行引擎、
+		// Run 表、日志与 Hook 机制，但没有 Git 准备阶段与依赖构建，
+		// 因此接口只有 CRUD + 执行 + Hook —— 步骤与变量内联在 payload 里整体保存。
+		a.GET("/tasks", s.listTasks)
+		a.POST("/tasks", s.createTask)
+		a.GET("/tasks/:key", s.getTask)
+		a.PUT("/tasks/:key", s.updateTask)
+		a.DELETE("/tasks/:key", s.deleteTask)
+		a.POST("/tasks/:key/archive", s.archiveTask)
+		a.POST("/tasks/:key/preview", s.previewTask)
+		a.POST("/tasks/:key/run", s.triggerTaskRun)
+		// Hook 令牌的删除与重置依旧是 id 维度（/hooks/:id、/hook-tokens/:id/reset）：
+		// 一个令牌只属于一个项目或一个任务，由服务端按 TaskID 判断该用哪套权限。
+		a.GET("/tasks/:key/hooks", s.listTaskHooks)
+		a.POST("/tasks/:key/hooks", s.createTaskHook)
+
 		a.POST("/projects/:key/run", s.triggerRun)
 		a.GET("/runs", s.listRuns)
 		a.GET("/runs/:id", s.getRun)

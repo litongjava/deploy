@@ -67,10 +67,18 @@ export const CREDENTIAL_TYPE_OPTIONS: { label: string; value: CredentialType }[]
 
 export const PROJECT_KEY_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
 
-/** 项目类型 → 颜色 + 中文 */
-export const PROJECT_KIND_META: Record<ProjectKind, { color: string; text: string }> = {
-  app: { color: 'blue', text: '应用项目' },
-  lib: { color: 'purple', text: '构建项目' },
+/**
+ * 项目类型 → 颜色 + 中文 + 图标色。
+ *
+ * color 给 antd Tag 用（预设色名），iconColor 给「用图标代替文字」的场景用（十六进制），
+ * 两者是同一个语义的两种着色方式，改的时候要一起改，别让同一个概念出现两种颜色。
+ */
+export const PROJECT_KIND_META: Record<
+  ProjectKind,
+  { color: string; text: string; iconColor: string }
+> = {
+  app: { color: 'blue', text: '应用项目', iconColor: '#1677ff' },
+  lib: { color: 'purple', text: '构建项目', iconColor: '#722ed1' },
 };
 
 export const PROJECT_KIND_OPTIONS: { label: string; value: ProjectKind }[] = [

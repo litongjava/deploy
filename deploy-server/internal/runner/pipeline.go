@@ -33,7 +33,18 @@ type PipelineResult struct {
 var ErrDependency = errors.New("dependency configuration is invalid")
 
 // SubmitWithDependencies 触发一次构建；withDeps 为真时先按序构建依赖项目。
+//
+// 任务是单一作业，没有依赖构建这回事：req.TaskID 非 0 时直接走 Submit，
+// withDeps 被忽略（调用方也不该对任务传它）。
 func (e *Executor) SubmitWithDependencies(req SubmitRequest, withDeps bool) (*PipelineResult, error) {
+	if req.TaskID != 0 {
+		run, err := e.Submit(req)
+		if err != nil {
+			return nil, err
+		}
+		return &PipelineResult{Main: run}, nil
+	}
+
 	p, err := e.loadProject(req.ProjectID)
 	if err != nil {
 		return nil, err
@@ -66,13 +77,13 @@ func (e *Executor) SubmitWithDependencies(req SubmitRequest, withDeps bool) (*Pi
 	depReq := dependencyRequest(req)
 	depRuns := make([]*store.Run, 0, len(deps))
 	for i := range deps {
-		dr, err := e.createRun(&deps[i], depReq, pipelineID, store.RoleDependency, i+1)
+		dr, err := e.createRun(projectJob(&deps[i]), depReq, pipelineID, store.RoleDependency, i+1)
 		if err != nil {
 			return nil, err
 		}
 		depRuns = append(depRuns, dr)
 	}
-	main, err := e.createRun(p, req, pipelineID, store.RoleMain, 0)
+	main, err := e.createRun(projectJob(p), req, pipelineID, store.RoleMain, 0)
 	if err != nil {
 		return nil, err
 	}

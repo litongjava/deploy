@@ -69,10 +69,63 @@ func (s *Server) createHook(c *gin.Context) {
 
 	dto := toHookDTO(h)
 	OK(c, gin.H{
-		"id": dto.ID, "projectId": dto.ProjectID, "name": dto.Name,
+		"id": dto.ID, "projectId": dto.ProjectID, "taskId": dto.TaskID,
+		"targetKind": dto.TargetKind, "name": dto.Name,
 		"prefix": dto.Prefix, "enabled": dto.Enabled, "expiresAt": dto.ExpiresAt,
 		"createdAt": dto.CreatedAt,
 		// 明文只在创建/重置的这一次响应里出现。
+		"token":    plain,
+		"hookPath": "/api/v1/hooks/" + plain,
+	})
+}
+
+// ---------- 任务的 Hook ----------
+//
+// 令牌与项目共用一张表，接口按目标分两套：/projects/:key/hooks 与 /tasks/:key/hooks。
+// 删除与重置是 id 维度的（/hooks/:id、/hook-tokens/:id/reset），因为一个 id 只属于一方。
+
+func (s *Server) listTaskHooks(c *gin.Context) {
+	t, _, ok := s.loadTaskFor(c, c.Param("key"))
+	if !ok {
+		return
+	}
+	var list []store.HookToken
+	s.st.DB().Where("task_id = ?", t.ID).Order("id desc").Find(&list)
+	out := make([]hookDTO, 0, len(list))
+	for _, h := range list {
+		out = append(out, toHookDTO(h))
+	}
+	OK(c, out)
+}
+
+func (s *Server) createTaskHook(c *gin.Context) {
+	t, _, ok := s.loadTaskForEdit(c, c.Param("key"))
+	if !ok {
+		return
+	}
+	var req createHookReq
+	_ = c.ShouldBindJSON(&req)
+
+	plain, prefix := ids.NewHookToken()
+	h := store.HookToken{
+		TaskID: t.ID, Name: defaultStr(req.Name, "default token"),
+		Prefix: prefix, TokenHash: ids.HashToken(plain), Enabled: true,
+	}
+	if req.ExpiresInDays > 0 {
+		exp := time.Now().AddDate(0, 0, req.ExpiresInDays)
+		h.ExpiresAt = &exp
+	}
+	if err := s.st.DB().Create(&h).Error; err != nil {
+		Internal(c, "failed to create hook token")
+		return
+	}
+	s.audit(c, "create-hook", t.Key, h.Name)
+
+	dto := toHookDTO(h)
+	OK(c, gin.H{
+		"id": dto.ID, "taskId": dto.TaskID, "targetKind": store.TargetTask,
+		"name": dto.Name, "prefix": dto.Prefix, "enabled": dto.Enabled,
+		"expiresAt": dto.ExpiresAt, "createdAt": dto.CreatedAt,
 		"token":    plain,
 		"hookPath": "/api/v1/hooks/" + plain,
 	})
@@ -88,7 +141,7 @@ func (s *Server) deleteHook(c *gin.Context) {
 		NotFound(c, "hook token not found")
 		return
 	}
-	if _, _, ok := s.loadProjectForEdit(c, keyOf(h.ProjectID, s)); !ok {
+	if !s.authorizeHookOwner(c, &h) {
 		return
 	}
 	s.st.DB().Delete(&store.HookToken{}, id)
@@ -106,15 +159,43 @@ func (s *Server) resetHook(c *gin.Context) {
 		NotFound(c, "hook token not found")
 		return
 	}
-	p, _, ok := s.loadProjectForEdit(c, keyOf(h.ProjectID, s))
-	if !ok {
+	if !s.authorizeHookOwner(c, &h) {
 		return
 	}
 	plain, prefix := ids.NewHookToken()
 	s.st.DB().Model(&store.HookToken{}).Where("id = ?", id).
 		Updates(map[string]any{"token_hash": ids.HashToken(plain), "prefix": prefix})
-	s.audit(c, "reset-hook", p.Key, h.Name)
+	s.audit(c, "reset-hook", hookTargetKey(&h, s), h.Name)
 	OK(c, gin.H{"id": id, "token": plain, "hookPath": "/api/v1/hooks/" + plain})
+}
+
+// authorizeHookOwner 校验当前用户能不能动这个令牌。
+//
+// 令牌同时服务于项目与任务，所以要先看它挂在哪一边，再用那一侧的权限模型判定。
+// 失败时已经写好响应，返回 false。
+func (s *Server) authorizeHookOwner(c *gin.Context, h *store.HookToken) bool {
+	if h.TaskID != 0 {
+		_, _, ok := s.loadTaskForEdit(c, keyOfTask(h.TaskID, s))
+		return ok
+	}
+	_, _, ok := s.loadProjectForEdit(c, keyOf(h.ProjectID, s))
+	return ok
+}
+
+// hookTargetKey 审计日志里用的目标 key。
+func hookTargetKey(h *store.HookToken, s *Server) string {
+	if h.TaskID != 0 {
+		return keyOfTask(h.TaskID, s)
+	}
+	return keyOf(h.ProjectID, s)
+}
+
+func keyOfTask(taskID uint, s *Server) string {
+	var t store.Task
+	if err := s.st.DB().Select("key").First(&t, taskID).Error; err != nil {
+		return ""
+	}
+	return t.Key
 }
 
 // ---------- Hook 触发（免登录） ----------
@@ -189,6 +270,24 @@ func (s *Server) hookTrigger(c *gin.Context) {
 		return
 	}
 
+	var req hookTriggerReq
+	_ = c.ShouldBindJSON(&req) // body 可以完全省略
+
+	async := true
+	if req.Async != nil {
+		async = *req.Async
+	}
+	if c.Query("wait") == "true" || c.Query("wait") == "1" {
+		async = false
+	}
+
+	// 令牌挂在项目上还是任务上，决定这次触发执行什么。
+	// 两者共用上面的限流与下面的异步/同步语义，只是执行对象不同。
+	if h.TaskID != 0 {
+		s.hookTriggerTask(c, &h, &req, async)
+		return
+	}
+
 	var p store.Project
 	if err := s.st.DB().First(&p, h.ProjectID).Error; err != nil {
 		NotFound(c, "project not found")
@@ -201,17 +300,6 @@ func (s *Server) hookTrigger(c *gin.Context) {
 	if p.Archived {
 		Forbidden(c, "the project is archived; cannot trigger a deployment")
 		return
-	}
-
-	var req hookTriggerReq
-	_ = c.ShouldBindJSON(&req) // body 可以完全省略
-
-	async := true
-	if req.Async != nil {
-		async = *req.Async
-	}
-	if c.Query("wait") == "true" || c.Query("wait") == "1" {
-		async = false
 	}
 
 	ip := ClientIP(c)
@@ -245,7 +333,8 @@ func (s *Server) hookTrigger(c *gin.Context) {
 	run := res.Main
 
 	payload := gin.H{
-		"runId": run.ID, "projectKey": p.Key, "buildNumber": run.BuildNumber,
+		"runId": run.ID, "projectKey": p.Key, "targetKey": p.Key,
+		"targetKind": store.TargetProject, "buildNumber": run.BuildNumber,
 		"status":     run.Status,
 		"async":      async,
 		"pipelineId": res.PipelineID,
@@ -267,6 +356,71 @@ func (s *Server) hookTrigger(c *gin.Context) {
 	}
 
 	// 同步模式：等运行结束再返回，方便 CI 直接卡住等结果。
+	final := s.waitRun(run.ID, 30*time.Minute)
+	payload["status"] = final.Status
+	payload["exitCode"] = final.ExitCode
+	payload["durationMs"] = final.DurationMs
+	payload["errorMsg"] = final.ErrorMsg
+	OK(c, payload)
+}
+
+// hookTriggerTask 是任务的 Hook 触发。任务没有依赖，也没有分支。
+func (s *Server) hookTriggerTask(c *gin.Context, h *store.HookToken, req *hookTriggerReq, async bool) {
+	var t store.Task
+	if err := s.st.DB().First(&t, h.TaskID).Error; err != nil {
+		NotFound(c, "task not found")
+		return
+	}
+	if !t.HookEnabled {
+		Forbidden(c, "hook triggering is disabled for this task")
+		return
+	}
+	if t.Archived {
+		Forbidden(c, "the task is archived; cannot trigger it")
+		return
+	}
+	if req.WithDependencies {
+		BadRequest(c, "tasks have no dependencies; withDependencies is not supported")
+		return
+	}
+
+	ip := ClientIP(c)
+	now := time.Now()
+	s.st.DB().Model(&store.HookToken{}).Where("id = ?", h.ID).Updates(map[string]any{
+		"last_used_at": now, "last_used_ip": ip, "call_count": h.CallCount + 1,
+	})
+
+	run, err := s.exec.Submit(runner.SubmitRequest{
+		TaskID:      t.ID,
+		Params:      req.Env,
+		CommandIDs:  req.CommandIDs,
+		TriggerType: store.TriggerHook,
+		TriggerUser: "hook:" + h.Name,
+		TriggerIP:   ip,
+		TriggerUA:   c.GetHeader("User-Agent"),
+	})
+	if err != nil {
+		if errors.Is(err, runner.ErrProjectArchived) {
+			Forbidden(c, err.Error())
+			return
+		}
+		Internal(c, "trigger failed: "+err.Error())
+		return
+	}
+
+	payload := gin.H{
+		"runId": run.ID, "taskKey": t.Key, "targetKey": t.Key,
+		"targetKind": store.TargetTask, "buildNumber": run.BuildNumber,
+		"status":    run.Status,
+		"async":     async,
+		"statusUrl": "/api/v1/runs/" + strconvItoa(int(run.ID)),
+		"logUrl":    "/api/v1/runs/" + strconvItoa(int(run.ID)) + "/log",
+	}
+
+	if async {
+		c.JSON(http.StatusAccepted, Envelope{Success: true, Data: payload})
+		return
+	}
 	final := s.waitRun(run.ID, 30*time.Minute)
 	payload["status"] = final.Status
 	payload["exitCode"] = final.ExitCode

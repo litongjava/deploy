@@ -494,6 +494,23 @@ const LogTerminal = React.forwardRef<LogTerminalHandle, LogTerminalProps>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // 运行「由未知/已结束变为活跃」时必须主动补一次建连。
+    //
+    // 父组件拿到 run 详情之前 active 就是 false —— 那是「还不知道」，
+    // 不是「已经结束」。挂载时的 connect() 会按「结束」提前返回，而它只跑一次，
+    // 于是之后再没人叫醒终端：日志只剩父组件那一次 HTTP 历史拉取（拉到没有新
+    // 字节就停），整条流就此冻住。点「重新执行」跳到新运行时最明显 ——
+    // 终端只显示开头几行，后面全丢（实测：运行详情还没加载完就挂载的终端从未建连）。
+    useEffect(() => {
+      if (!active) return;
+      runOverRef.current = false;
+      doneRef.current = false;
+      overRetryRef.current = 0;
+      retryRef.current = 0;
+      if (wsRef.current) return; // 已经连着，别重复建连
+      connectRef.current(true);
+    }, [active]);
+
     // 运行结束（active=false）时的收尾。
     //
     // 这里**不能**直接 close WebSocket：服务端是在「补完文件」之后才发 exit 帧的，

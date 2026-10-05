@@ -1,6 +1,7 @@
+import ProjectKindIcon from '@/components/ProjectKindIcon';
 import { projectApi } from '@/services/project';
 import type { ProjectBrief } from '@/services/types';
-import { PROJECT_KIND_META, RUN_STATUS_META, formatTime } from '@/utils/constants';
+import { RUN_STATUS_META, formatTime } from '@/utils/constants';
 import { PlayCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
@@ -75,9 +76,8 @@ const Projects: React.FC = () => {
         <Space direction="vertical" size={0}>
           <Space size={6}>
             <a onClick={() => history.push(`/projects/${row.key}`)}>{row.name}</a>
-            <Tag color={PROJECT_KIND_META[row.kind || 'app']?.color}>
-              {PROJECT_KIND_META[row.kind || 'app']?.text}
-            </Tag>
+            {/* 类型只用图标表示（悬浮出文字），不再显示「应用项目 / 构建项目」标签 */}
+            <ProjectKindIcon kind={row.kind} />
           </Space>
           <span style={{ fontSize: 12, color: '#999' }}>{row.key}</span>
         </Space>

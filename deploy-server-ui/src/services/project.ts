@@ -90,6 +90,8 @@ export const projectApi = {
   },
 
   resetHook(id: number) {
-    return postData<HookTokenCreated>(`/hooks/${id}/reset`);
+    // 注意路径：重置挂在 /hook-tokens/:id/reset 上，不是 /hooks/:id/reset。
+    // 后者跟公开触发路由 POST /hooks/:token 不是同一层，服务端没有注册，会直接 404。
+    return postData<HookTokenCreated>(`/hook-tokens/${id}/reset`);
   },
 };

@@ -503,6 +503,14 @@ GET /api/v1/ws/runs/{id}?token=<jwt>&offset=<n>
 ```
 > `checks` 是「自检」而非「安装」：平台默认不主动装工具链，只报告缺失并给安装提示；
 > 需要自动装时用下面的「工具链一键安装」。
+>
+> **探测口径 = 执行口径**：Unix 下项目脚本用 `bash -lc` 跑，登录 shell 会读 `/etc/profile`
+> 与 `/etc/profile.d/*.sh`；`checks` 与「工具链」面板在同一套环境里解析命令（`PATH` 取自
+> 登录 shell）。所以「命令行里 `mvn -v` 能跑、自检却说没装」不会再出现。
+> 反过来，只在 `~/.bashrc`（只有交互式 shell 读）里 `export PATH` 的工具，自检和构建都
+> 找不到：把 PATH 写进 `/etc/profile.d/xxx.sh`，或把可执行文件软链到 `/usr/local/bin`。
+> 项目/全局把 shell 设成 `sh` 时执行的是 `sh -c`（不读 profile），此时自检也按服务进程
+> 自己的环境探测。
 
 ### `GET /api/v1/system/toolchains` （登录）
 列出可一键安装的工具链组件与各自当前状态（安装动作仅 admin，见下）。
@@ -534,7 +542,7 @@ GET /api/v1/ws/runs/{id}?token=<jwt>&offset=<n>
 ```
 `supported=false`（非 Linux 服务端）时只有 dry-run 可用。
 
-`fields[].key` 就是安装脚本读的**环境变量名**（`JAVA_VERSION` / `JDK_URL` / `JAVA_DIR` / `GO_URL` / `NODE_VERSION`…），
+`fields[].key` 就是安装脚本读的**环境变量名**（`JAVA_VERSION` / `JDK_URL` / `JAVA_DIR` / `GO_URL` / `NODE_VERSION` / `CERTBOT_NGINX_PLUGIN`…），
 `value` 是保存过的覆盖值，空串表示用 `default`。脚本按 `${VAR:-默认值}` 取值，所以「编辑参数」不需要额外的配置格式。
 
 ### `PUT /api/v1/system/toolchains/{key}` （**仅 admin**）
@@ -574,7 +582,8 @@ GET /api/v1/ws/runs/{id}?token=<jwt>&offset=<n>
 ```
 说明：
 
-- 组件 key 走白名单（`cc java maven nvm node pnpm go rust`），未知 key 返回 `40000`（组件名会进命令行，必须挡住注入）。
+- 组件 key 走白名单（`cc java maven nvm node pnpm go rust certbot`，即内嵌脚本的 `ALL_COMPONENTS`，顺序也一致），
+  未知 key 返回 `40000`（组件名会进命令行，必须挡住注入）。清单与脚本对不上会有测试拦住（`toolchain_test.go`）。
 - 每个组件保存过的参数会作为**运行参数**注入本次安装（脚本按环境变量读取），并记进 `runs.params`；
   另外固定带上 `components=<本次组件列表>`，供「安装记录」展示。
 - 内置项目 `system-toolchain`（名称「环境工具链安装（系统）」）会在首次使用时自动创建，

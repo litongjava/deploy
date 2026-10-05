@@ -585,6 +585,7 @@ deploy version
 - 工作目录与数据目录是否可写：**真写临时文件验证**，并非只看权限位。
 - 当前选中 shell 和可用 shell 列表。
 - 14 项工具的存在性、版本、路径：`git` `bash` `sh` `rsync` `curl` `docker` `nginx` `node` `npm` `pnpm` `go` `java` `mvn` `certbot`；缺失项给安装提示。
+  `java`/`maven`/`node`/`pnpm`/`go`/`certbot` 在下面[一键安装工具链](#一键安装工具链侧边栏环境自检页)里有对应组件，点一下就装（工具链面板另有 `cc`/`nvm`/`rust` 三项，不在这份自检清单里）；其余（`docker`、`nginx` 等）仍按提示在服务器上装。
 
 | 系统设置 | 默认值 | 行为 |
 |---|---|---|
@@ -600,7 +601,7 @@ deploy version
 
 ### 一键安装工具链（侧边栏「环境自检」页）
 
-侧边栏有一级菜单**「环境自检」**：上半部分是自检清单，下半部分就是**「工具链一键安装」**——把常用构建工具链装到服务端机器上，不用登服务器敲命令。
+侧边栏有一级菜单**「环境自检」**：上半部分是自检清单，下半部分就是**「工具链一键安装」**——把常用构建工具链（外加 `certbot` 这个证书客户端）装到服务端机器上，不用登服务器敲命令。
 
 | 组件 | 装什么（默认） | 可改的参数 | 大致体积 |
 |---|---|---|---|
@@ -612,6 +613,9 @@ deploy version
 | `pnpm` | 经 corepack 装到 `/usr/local/bin`，registry 指向 npmmirror | `PNPM_VERSION` | 约 10 MB |
 | `go` | 装到 `/usr/local/go`，软链到 `/usr/local/bin`，`GOPROXY=goproxy.cn` | `GO_VERSION`、`GO_URL`、`GO_DIR` | 约 120 MB |
 | `rust` | 系统级 rustup（`/usr/local/cargo`），crates 走 rsproxy | `RUST_TOOLCHAIN`、`RUSTUP_HOME`、`CARGO_HOME`、`RUSTUP_DIST_SERVER` | 约 250 MB |
+| `certbot` | 发行版 certbot + nginx 插件（`python3-certbot-nginx`） | `CERTBOT_NGINX_PLUGIN`（填 `0` 只装本体）、`CERTBOT_EXTRA_PACKAGES` | 约 30 MB |
+
+> `certbot` 是唯一一个非构建工具：自检里的 14 项工具中，只有它以前「报了缺失却没法一键装」。它只装 ACME 客户端，**不签发证书**——签发要求域名解析到本机、80/443 可达（HTTP-01），内网机或 DNS 指向别处（例如本仓库 `tools/remote-scripts/10-provision-nginx.sh` 里那台）装了也用不上，装完按提示手动签：`certbot --nginx -d <域名>`。
 
 **怎么用**
 
@@ -642,6 +646,9 @@ NODE_VERSION=20 bash install.sh --only node,pnpm                   # 指定 Node
 JDK_URL=https://.../jdk-8u202-linux-x64.tar.gz JAVA_DIR=/usr/local/jdk8 \
   bash install.sh --only java                                      # 指定 JDK 8
 CC_EXTRA_PACKAGES='cmake nasm' bash install.sh --only cc           # 额外软件包
+bash install.sh --only certbot                                     # 只装 certbot（含 nginx 插件）
+CERTBOT_EXTRA_PACKAGES=python3-certbot-dns-cloudflare \
+  bash install.sh --only certbot                                   # 额外装 DNS 挑战插件
 ```
 
 - 装完回「环境自检」点**重新检测**即可看到新的版本与路径。
@@ -659,7 +666,7 @@ CC_EXTRA_PACKAGES='cmake nasm' bash install.sh --only cc           # 额外软�
 | 「重新执行」跳到新运行后日志一片空白 | 已修：`RunDetail` 里 `<LogTerminal key={id}>` 强制按运行 ID 重挂。**同一条路由换参数时 React 不会重挂组件**，终端里记着旧运行的「已落屏字节数」与旧 WebSocket，新日志会被按 offset 去重整段丢掉。若仍遇到空白，用终端工具条上的「重载日志」（清空并从 0 重拉）或「重连」 |
 | Git 准备失败 | 用项目「测试连接」验证地址、凭据；私有仓库先在凭据管理创建凭据 |
 | 「工作目录已存在且不是 Git 仓库」 | 有意拒绝覆盖以防误删；确认内容后清空或换目录 |
-| `command not found` | systemd 的 PATH 很干净；`bash -lc` 加载 `/etc/profile`，工具在其他位置时写全路径 |
+| `command not found` / 自检说某个工具没装 | 脚本用 `bash -lc` 跑，会读 `/etc/profile` 与 `/etc/profile.d/*.sh`；**环境自检与「工具链」面板按同一套环境探测**，所以命令行里能跑的工具，自检也会认。反过来，只在 `~/.bashrc`（只有交互式 shell 读）里 `export PATH` 的工具，自检和构建都找不到：把 PATH 写进 `/etc/profile.d/xxx.sh`，或把可执行文件软链到 `/usr/local/bin`（后者对 systemd 最省事） |
 | 部署成功但页面还是旧内容 | 检查缓存；HTML 用 `no-cache`，静态资源用长缓存并给文件名加版本号 |
 | 取消后仍有子进程 | 正常应终止整棵进程树；Linux 确认残留后附 `ps -ef` 输出反馈 |
 | `database is locked` | 已使用 WAL、`busy_timeout`、连接池上限 1；检查其他进程是否直接打开 `deploy.db` |
