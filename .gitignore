@@ -40,3 +40,5 @@ Thumbs.db
 # 临时产物
 *.log
 tmp/
+deploy-server/internal/web/dist/*
+!deploy-server/internal/web/dist/.gitkeep
