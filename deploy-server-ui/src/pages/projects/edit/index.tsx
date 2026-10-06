@@ -14,6 +14,7 @@ import {
   SECRET_PLACEHOLDER,
   SHELL_OPTIONS,
   CONCURRENCY_OPTIONS,
+  defaultWorkdir,
 } from '@/utils/constants';
 import { ArrowLeftOutlined, SaveOutlined } from '@ant-design/icons';
 import {
@@ -27,7 +28,7 @@ import {
   ProFormTextArea,
 } from '@ant-design/pro-components';
 import { history, useParams } from '@umijs/max';
-import { Alert, Button, Card, Form, Space, Spin, message } from 'antd';
+import { Alert, Button, Card, Col, Form, Row, Space, Spin, message } from 'antd';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ScriptListEditor from '@/components/ScriptListEditor';
 import EnvListEditor from '@/components/EnvListEditor';
@@ -77,7 +78,25 @@ const ProjectEdit: React.FC = () => {
   const [messageApi, contextHolder] = message.useMessage();
   const useGit = Form.useWatch('useGit', form);
   const kind = Form.useWatch('kind', form);
+  const keyValue = Form.useWatch('key', form);
   const originalEnvsRef = useRef<EnvVar[]>([]);
+
+  /**
+   * 「工作目录 / 项目名称」是否被用户手动填过。
+   *
+   * 没手动填过时它们跟着「项目 Key」自动生成（工作目录 = `/srv/worksapce/<key>`，
+   * 名称 = Key，只在新建时生效）；用户一旦自己填了内容就不再覆盖，清空后恢复自动生成。
+   */
+  const workdirEditedRef = useRef(false);
+  const nameEditedRef = useRef(false);
+
+  useEffect(() => {
+    if (isEdit) return;
+    const patch: Partial<FormValues> = {};
+    if (!workdirEditedRef.current) patch.workdir = defaultWorkdir(keyValue);
+    if (!nameEditedRef.current) patch.name = (keyValue ?? '').trim();
+    if (Object.keys(patch).length > 0) form.setFieldsValue(patch);
+  }, [form, isEdit, keyValue]);
 
   const load = useCallback(async () => {
     if (!isEdit) return;
@@ -301,6 +320,15 @@ const ProjectEdit: React.FC = () => {
           await handleSubmit(values);
           return true;
         }}
+        onValuesChange={(changed) => {
+          // 只有用户自己改过的字段才算手动值；上面的 setFieldsValue 不会触发这里。
+          if (Object.prototype.hasOwnProperty.call(changed, 'workdir')) {
+            workdirEditedRef.current = !!String(changed.workdir ?? '').trim();
+          }
+          if (Object.prototype.hasOwnProperty.call(changed, 'name')) {
+            nameEditedRef.current = !!String(changed.name ?? '').trim();
+          }
+        }}
         initialValues={{
           shell: 'auto',
           concurrency: 'queue',
@@ -319,77 +347,111 @@ const ProjectEdit: React.FC = () => {
         }}
       >
         <Card title="基本信息" style={{ marginBottom: 16 }}>
-          <ProFormText
-            name="key"
-            label="项目 Key"
-            width="md"
-            tooltip="唯一标识，用于 URL / CLI / Hook 引用，创建后不建议修改"
-            disabled={isEdit}
-            placeholder="例如 my-app（字母数字与 - _）"
-            rules={[
-              { required: true, message: '请填写项目 Key' },
-              {
-                pattern: /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/,
-                message: '只能包含字母、数字、- 和 _，且以字母或数字开头',
-              },
-            ]}
-          />
-          <ProFormText
-            name="name"
-            label="项目名称"
-            width="md"
-            rules={[{ required: true, message: '请填写项目名称' }]}
-          />
-          <ProFormTextArea name="description" label="描述" width="xl" fieldProps={{ rows: 2 }} />
-          <ProFormText
-            name="workdir"
-            label="工作目录"
-            width="xl"
-            placeholder="例如 /srv/workspaces/my-app"
-            tooltip="绝对路径，支持 ${WORKSPACE_ROOT} 之类的变量由 shell 展开"
-            rules={[{ required: true, message: '请填写工作目录' }]}
-          />
-          <ProFormSelect
-            name="shell"
-            label="Shell"
-            width="sm"
-            options={SHELL_OPTIONS}
-            tooltip="auto 会按平台选择 bash -lc / sh -c / pwsh / cmd"
-          />
-          <ProFormDigit
-            name="timeoutSec"
-            label="默认超时（秒）"
-            width="sm"
-            min={0}
-            tooltip="0 表示不限制"
-          />
-          <ProFormSelect
-            name="concurrency"
-            label="并发策略"
-            width="md"
-            options={CONCURRENCY_OPTIONS}
-          />
-          <ProFormSwitch
-            name="hookEnabled"
-            label="启用 Hook 触发"
-            tooltip="关闭后该项目的 Hook 地址不可用"
-          />
-          <ProFormSwitch
-            name="allowEnvOverride"
-            label="允许触发时覆盖环境变量"
-            tooltip="关闭后 Hook / CLI / 网页触发的 env 参数会被忽略"
-          />
+          {/* PC（≥1200px）一行三个、平板（≥768px）一行两个、手机一列一个，互相不挤 */}
+          <Row gutter={24}>
+            <Col xs={24} md={12} xl={8}>
+              <ProFormText
+                name="key"
+                label="项目 Key"
+                tooltip="唯一标识，用于 URL / CLI / Hook 引用，创建后不建议修改"
+                disabled={isEdit}
+                placeholder="例如 my-app（字母数字与 - _）"
+                rules={[
+                  { required: true, message: '请填写项目 Key' },
+                  {
+                    pattern: /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/,
+                    message: '只能包含字母、数字、- 和 _，且以字母或数字开头',
+                  },
+                ]}
+              />
+            </Col>
+            <Col xs={24} md={12} xl={8}>
+              <ProFormText
+                name="name"
+                label="项目名称"
+                rules={[{ required: true, message: '请填写项目名称' }]}
+              />
+            </Col>
+            <Col xs={24} md={24} xl={8}>
+              <ProFormText
+                name="workdir"
+                label="工作目录"
+                placeholder="例如 /srv/worksapce/tio-boot"
+                tooltip="绝对路径。新建时按项目 Key 自动填成 /srv/worksapce/<key>，可手动改；支持 ${WORKSPACE_ROOT} 之类的变量由 shell 展开"
+                rules={[{ required: true, message: '请填写工作目录' }]}
+              />
+            </Col>
+          </Row>
+          <Row gutter={24}>
+            <Col xs={24} md={12} xl={8}>
+              <ProFormSelect
+                name="concurrency"
+                label="并发策略"
+                options={CONCURRENCY_OPTIONS}
+              />
+            </Col>
+            <Col xs={24} md={12} xl={8}>
+              <ProFormSelect
+                name="shell"
+                label="Shell"
+                options={SHELL_OPTIONS}
+                tooltip="auto 会按平台选择 bash -lc / sh -c / pwsh / cmd"
+              />
+            </Col>
+            <Col xs={24} md={12} xl={8}>
+              <ProFormDigit
+                name="timeoutSec"
+                label="默认超时（秒）"
+                min={0}
+                tooltip="0 表示不限制"
+              />
+            </Col>
+          </Row>
+          <Row gutter={24}>
+            <Col xs={24} md={12} xl={8}>
+              <ProFormTextArea name="description" label="描述" fieldProps={{ rows: 2 }} />
+            </Col>
+            <Col xs={24} md={12} xl={8}>
+              <ProFormSwitch
+                name="hookEnabled"
+                label="启用 Hook 触发"
+                tooltip="关闭后该项目的 Hook 地址不可用"
+              />
+            </Col>
+            <Col xs={24} md={12} xl={8}>
+              <ProFormSwitch
+                name="allowEnvOverride"
+                label="允许触发时覆盖环境变量"
+                tooltip="关闭后 Hook / CLI / 网页触发的 env 参数会被忽略"
+              />
+            </Col>
+          </Row>
         </Card>
 
         <Card title="项目类型与依赖构建" style={{ marginBottom: 16 }}>
-          <ProFormRadio.Group
-            name="kind"
-            label="项目类型"
-            width="md"
-            options={PROJECT_KIND_OPTIONS}
-            tooltip="应用项目=常规的构建/部署单元；构建项目=产出被依赖的产物（底层库），只有构建项目能作为别的项目的依赖"
-            rules={[{ required: true, message: '请选择项目类型' }]}
-          />
+          <Row gutter={24}>
+            <Col xs={24} xl={8}>
+              <ProFormRadio.Group
+                name="kind"
+                label="项目类型"
+                options={PROJECT_KIND_OPTIONS}
+                tooltip="应用项目=常规的构建/部署单元；构建项目=产出被依赖的产物（底层库），只有构建项目能作为别的项目的依赖"
+                rules={[{ required: true, message: '请选择项目类型' }]}
+              />
+            </Col>
+            <Col xs={24} xl={16}>
+              <ProFormSelect
+                name="dependencies"
+                label="依赖的构建项目"
+                mode="multiple"
+                allowClear
+                options={dependencyOptions}
+                placeholder="可多选；只列出「构建项目」"
+                tooltip="含依赖执行时，先按依赖顺序构建这些项目，全部成功后才执行本项目。直接依赖会自动递归展开；构建项目之间也可以互相依赖（例如 tio-boot-admin 依赖 tio-boot）。"
+                fieldProps={{ optionFilterProp: 'label' }}
+              />
+            </Col>
+          </Row>
           <Alert
             style={{ marginBottom: 12 }}
             type="info"
@@ -400,17 +462,6 @@ const ProjectEdit: React.FC = () => {
                 ? '构建项目：被别的项目依赖时先构建它，它自己也可以依赖更底层的构建项目（多模块/父 pom 场景）。命令通常是 mvn install / go build 之类产生产物的步骤。'
                 : '应用项目：可声明依赖的构建项目，执行时先按顺序构建它们（网页上点「执行」默认含依赖）。'
             }
-          />
-          <ProFormSelect
-            name="dependencies"
-            label="依赖的构建项目"
-            width="xl"
-            mode="multiple"
-            allowClear
-            options={dependencyOptions}
-            placeholder="可多选；只列出「构建项目」"
-            tooltip="含依赖执行时，先按依赖顺序构建这些项目，全部成功后才执行本项目。直接依赖会自动递归展开；构建项目之间也可以互相依赖（例如 tio-boot-admin 依赖 tio-boot）。"
-            fieldProps={{ optionFilterProp: 'label' }}
           />
           {isEdit && dependencyPlan.order.length > 0 ? (
             dependencyPlan.ok ? (
@@ -450,48 +501,63 @@ const ProjectEdit: React.FC = () => {
                   description={doctorWarning}
                 />
               ) : null}
-              <ProFormText
-                name="gitUrl"
-                label="仓库地址"
-                width="xl"
-                placeholder="https://gitee.com/xxx/yyy.git 或 git@github.com:xxx/yyy.git"
-                rules={[{ required: true, message: '启用 Git 后必须填写仓库地址' }]}
-              />
-              <ProFormText
-                name="gitBranch"
-                label="分支 / Tag / Commit"
-                width="sm"
-                placeholder="main"
-                rules={[{ required: true, message: '请填写分支' }]}
-              />
-              <ProFormSelect
-                name="gitCredentialId"
-                label="Git 凭据"
-                width="md"
-                allowClear
-                options={credentialOptions}
-                placeholder="公开仓库可留空"
-                tooltip="私有仓库请先在「设置 → 凭据管理」中创建凭据"
-              />
-              <ProFormText
-                name="gitSubdir"
-                label="仓库子目录"
-                width="sm"
-                placeholder="monorepo 场景，例如 apps/web"
-              />
-              <ProFormDigit
-                name="gitDepth"
-                label="浅克隆深度"
-                width="sm"
-                min={0}
-                tooltip="0 表示完整克隆"
-              />
-              <ProFormSwitch
-                name="gitClean"
-                label="拉取前 git clean -fdx"
-                tooltip="危险：会删除工作目录中所有未跟踪文件"
-              />
-              <ProFormSwitch name="gitSubmodule" label="递归拉取子模块" />
+              <Row gutter={24}>
+                <Col xs={24} xl={16}>
+                  <ProFormText
+                    name="gitUrl"
+                    label="仓库地址"
+                    placeholder="https://gitee.com/xxx/yyy.git 或 git@github.com:xxx/yyy.git"
+                    rules={[{ required: true, message: '启用 Git 后必须填写仓库地址' }]}
+                  />
+                </Col>
+                <Col xs={24} md={12} xl={8}>
+                  <ProFormText
+                    name="gitBranch"
+                    label="分支 / Tag / Commit"
+                    placeholder="main"
+                    rules={[{ required: true, message: '请填写分支' }]}
+                  />
+                </Col>
+              </Row>
+              <Row gutter={24}>
+                <Col xs={24} md={12} xl={8}>
+                  <ProFormSelect
+                    name="gitCredentialId"
+                    label="Git 凭据"
+                    allowClear
+                    options={credentialOptions}
+                    placeholder="公开仓库可留空"
+                    tooltip="私有仓库请先在「设置 → 凭据管理」中创建凭据"
+                  />
+                </Col>
+                <Col xs={24} md={12} xl={8}>
+                  <ProFormText
+                    name="gitSubdir"
+                    label="仓库子目录"
+                    placeholder="monorepo 场景，例如 apps/web"
+                  />
+                </Col>
+                <Col xs={24} md={12} xl={8}>
+                  <ProFormDigit
+                    name="gitDepth"
+                    label="浅克隆深度"
+                    min={0}
+                    tooltip="0 表示完整克隆"
+                  />
+                </Col>
+              </Row>
+              <Row gutter={24}>
+                <Col xs={24} md={12} xl={8}>
+                  <ProFormSwitch
+                    name="gitClean"
+                    label="拉取前 git clean -fdx"
+                    tooltip="危险：会删除工作目录中所有未跟踪文件"
+                  />
+                </Col>
+                <Col xs={24} md={12} xl={8}>
+                  <ProFormSwitch name="gitSubmodule" label="递归拉取子模块" />
+                </Col>
+              </Row>
             </>
           ) : (
             <Alert

@@ -7,6 +7,7 @@ import {
   PROJECT_KEY_PATTERN,
   SECRET_PLACEHOLDER,
   SHELL_OPTIONS,
+  defaultWorkdir,
 } from '@/utils/constants';
 import { ArrowLeftOutlined, SaveOutlined } from '@ant-design/icons';
 import {
@@ -20,7 +21,7 @@ import {
   ProFormTextArea,
 } from '@ant-design/pro-components';
 import { history, useParams } from '@umijs/max';
-import { Button, Space, Spin, message } from 'antd';
+import { Button, Col, Row, Space, Spin, message } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
 
 /**
@@ -57,6 +58,24 @@ const TasksEdit: React.FC = () => {
   // Secret 变量的原值：编辑时后端只回空串，前端显示占位符，
   // 提交时若仍是占位符就沿用原值，避免「没改也被清空」。
   const originalEnvsRef = useRef<EnvVar[]>([]);
+  const keyValue = ProForm.useWatch('key', form);
+
+  /**
+   * 「工作目录 / 项目名称」是否被用户手动填过。
+   *
+   * 没手动填过时它们跟着「任务 Key」自动生成（工作目录 = `/srv/worksapce/<key>`，
+   * 名称 = Key，只在新建时生效）；用户一旦自己填了内容就不再覆盖，清空后恢复自动生成。
+   */
+  const workdirEditedRef = useRef(false);
+  const nameEditedRef = useRef(false);
+
+  useEffect(() => {
+    if (isEdit) return;
+    const patch: Partial<FormValues> = {};
+    if (!workdirEditedRef.current) patch.workdir = defaultWorkdir(keyValue);
+    if (!nameEditedRef.current) patch.name = (keyValue ?? '').trim();
+    if (Object.keys(patch).length > 0) form.setFieldsValue(patch);
+  }, [form, isEdit, keyValue]);
 
   useEffect(() => {
     if (!isEdit) return;
@@ -193,6 +212,15 @@ const TasksEdit: React.FC = () => {
           ),
         }}
         onFinish={handleSubmit}
+        onValuesChange={(changed) => {
+          // 只有用户自己改过的字段才算手动值；上面的 setFieldsValue 不会触发这里。
+          if (Object.prototype.hasOwnProperty.call(changed, 'workdir')) {
+            workdirEditedRef.current = !!String(changed.workdir ?? '').trim();
+          }
+          if (Object.prototype.hasOwnProperty.call(changed, 'name')) {
+            nameEditedRef.current = !!String(changed.name ?? '').trim();
+          }
+        }}
         initialValues={{
           shell: 'auto',
           timeoutSec: 0,
@@ -204,50 +232,75 @@ const TasksEdit: React.FC = () => {
         }}
       >
         <ProCard title="基本信息" bordered headerBordered style={{ marginBottom: 16 }}>
-          <ProFormText
-            name="key"
-            label="任务 Key"
-            disabled={isEdit}
-            rules={[
-              { required: true, message: '请填写任务 Key' },
-              { pattern: PROJECT_KEY_PATTERN, message: '只能包含字母、数字、- 和 _，且不以符号开头' },
-            ]}
-            placeholder="例如 bench-tio-boot（字母数字与 - _）"
-            tooltip="任务 Key 会作为工作目录占位符 ${TASK_KEY} 的值，创建后不可修改"
-          />
-          <ProFormText
-            name="name"
-            label="任务名称"
-            rules={[{ required: true, message: '请填写任务名称' }]}
-            placeholder="例如：tio-boot 压测"
-          />
-          <ProFormTextArea
-            name="description"
-            label="描述"
-            placeholder="这个任务是干什么的、什么时候该跑"
-            fieldProps={{ rows: 2 }}
-          />
-          <ProFormText
-            name="workdir"
-            label="工作目录"
-            rules={[{ required: true, message: '请填写工作目录' }]}
-            placeholder="例如 /srv/deploy/workspaces/bench"
-            tooltip="支持 ${WORKSPACE_ROOT} / ${TASK_KEY} / ${TASK_NAME} 占位符；目录不存在会自动创建"
-          />
-          <ProFormSelect name="shell" label="Shell" options={SHELL_OPTIONS} />
-          <ProFormDigit
-            name="timeoutSec"
-            label="默认超时（秒）"
-            min={0}
-            tooltip="0 表示不限制；每一步也可以单独设超时"
-          />
-          <ProFormSelect name="concurrency" label="并发策略" options={CONCURRENCY_OPTIONS} />
-          <ProFormSwitch name="hookEnabled" label="启用 Hook 触发" />
-          <ProFormSwitch
-            name="allowEnvOverride"
-            label="允许触发时覆盖环境变量"
-            tooltip="通过 Hook 或接口触发时，请求体里的 env 是否能覆盖任务自身与环境变量"
-          />
+          {/* 与项目表单同一套栅格：PC（≥1200px）一行三个、平板（≥768px）一行两个、手机一列一个 */}
+          <Row gutter={24}>
+            <Col xs={24} md={12} xl={8}>
+              <ProFormText
+                name="key"
+                label="任务 Key"
+                disabled={isEdit}
+                rules={[
+                  { required: true, message: '请填写任务 Key' },
+                  { pattern: PROJECT_KEY_PATTERN, message: '只能包含字母、数字、- 和 _，且不以符号开头' },
+                ]}
+                placeholder="例如 bench-tio-boot（字母数字与 - _）"
+                tooltip="任务 Key 会作为工作目录占位符 ${TASK_KEY} 的值，创建后不可修改"
+              />
+            </Col>
+            <Col xs={24} md={12} xl={8}>
+              <ProFormText
+                name="name"
+                label="任务名称"
+                rules={[{ required: true, message: '请填写任务名称' }]}
+                placeholder="例如：tio-boot 压测"
+              />
+            </Col>
+            <Col xs={24} md={24} xl={8}>
+              <ProFormText
+                name="workdir"
+                label="工作目录"
+                rules={[{ required: true, message: '请填写工作目录' }]}
+                placeholder="例如 /srv/worksapce/bench-tio-boot"
+                tooltip="新建时按任务 Key 自动填成 /srv/worksapce/<key>，可手动改；支持 ${WORKSPACE_ROOT} / ${TASK_KEY} / ${TASK_NAME} 占位符，目录不存在会自动创建"
+              />
+            </Col>
+          </Row>
+          <Row gutter={24}>
+            <Col xs={24} md={12} xl={8}>
+              <ProFormSelect name="concurrency" label="并发策略" options={CONCURRENCY_OPTIONS} />
+            </Col>
+            <Col xs={24} md={12} xl={8}>
+              <ProFormSelect name="shell" label="Shell" options={SHELL_OPTIONS} />
+            </Col>
+            <Col xs={24} md={12} xl={8}>
+              <ProFormDigit
+                name="timeoutSec"
+                label="默认超时（秒）"
+                min={0}
+                tooltip="0 表示不限制；每一步也可以单独设超时"
+              />
+            </Col>
+          </Row>
+          <Row gutter={24}>
+            <Col xs={24} md={12} xl={8}>
+              <ProFormTextArea
+                name="description"
+                label="描述"
+                placeholder="这个任务是干什么的、什么时候该跑"
+                fieldProps={{ rows: 2 }}
+              />
+            </Col>
+            <Col xs={24} md={12} xl={8}>
+              <ProFormSwitch name="hookEnabled" label="启用 Hook 触发" />
+            </Col>
+            <Col xs={24} md={12} xl={8}>
+              <ProFormSwitch
+                name="allowEnvOverride"
+                label="允许触发时覆盖环境变量"
+                tooltip="通过 Hook 或接口触发时，请求体里的 env 是否能覆盖任务自身与环境变量"
+              />
+            </Col>
+          </Row>
         </ProCard>
 
         <ProCard title="环境变量" bordered headerBordered style={{ marginBottom: 16 }}>

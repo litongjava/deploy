@@ -128,6 +128,7 @@ corepack enable && corepack prepare pnpm@latest --activate
 cd /srv && git clone https://gitee.com/ppnt/deploy.git deploy && cd deploy
 cd deploy-server-ui && pnpm install && pnpm build
 cd ../deploy-server && make ui && make linux
+cp -r bin/deploy-server-linux-amd64 /usr/local/bin/deploy-server
 ```
 
 后续会话需确保 `/usr/local/go/bin` 在 PATH 中。也可上传已有源码，省去 clone。
@@ -148,11 +149,12 @@ apt-get install -y git rsync curl nginx
 先调整待上传的 [unit](deploy-server/deploy/deploy-server.service)；监听地址与目录按实际环境改（仓库 unit 用的是 `0.0.0.0:10055` 与 `/srv/deploy`）。
 服务端对外地址**不写进 unit**：装好后在「系统设置 → 服务端外部地址」里填，保存即生效。它会被注入为 `DEPLOY_SERVER_URL`，所以地址变了在页面上改一下就行，不用改 unit、也不用重启。
 
+```sh
+cp deploy/deploy-server.service /etc/systemd/system
+```
+
 ```ini
-ExecStart=/usr/local/bin/deploy-server \
-    -listen 0.0.0.0:10055 \
-    -data-dir /srv/deploy/data \
-    -web-root /srv/deploy/workspaces
+ExecStart=/usr/local/bin/deploy-server -listen 0.0.0.0:10055 -data-dir /srv/deploy/data -web-root /srv/deploy/workspaces
 ```
 
 unit 中这三项配置别删：

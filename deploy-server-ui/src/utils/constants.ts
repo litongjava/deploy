@@ -93,6 +93,21 @@ export const PROJECT_KIND_OPTIONS: { label: string; value: ProjectKind }[] = [
 /** Secret 环境变量的占位符（提交时若仍为该值则保持原值） */
 export const SECRET_PLACEHOLDER = '******';
 
+/**
+ * 新建项目 / 任务时「工作目录」的默认根目录：最终值是 `<根目录>/<Key>`。
+ *
+ * 注意 `worksapce` 是**历史拼写**（见 docs/cases/mosskb-web-部署案例.md §5.1），
+ * 服务器上的 tio-boot 就在这个目录里。改成 `workspaces` 会让项目指向别的目录、
+ * 重新 clone 一份，所以不要"顺手修正"。
+ */
+export const DEFAULT_WORKDIR_ROOT = '/srv/worksapce';
+
+/** 按 Key 生成默认工作目录；Key 为空时返回空串（表单里表现为"还没填"） */
+export function defaultWorkdir(key?: string | null): string {
+  const k = (key ?? '').trim();
+  return k ? `${DEFAULT_WORKDIR_ROOT}/${k}` : '';
+}
+
 export function formatDuration(ms?: number | null): string {
   if (ms === undefined || ms === null || ms < 0) return '-';
   if (ms < 1000) return `${ms} ms`;
