@@ -22,22 +22,22 @@ func newLogsCmd(app *App) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "logs <runId>",
-		Short: "查看运行日志（-f 实时跟随）",
-		Long: `查看指定运行的日志。
+		Short: "show run logs (-f follows live)",
+		Long: `Show the logs of a run.
 
-  deploy logs 88                一次性拉取全部历史日志
-  deploy logs 88 -f             先补历史，再实时跟随到运行结束
-  deploy logs 88 --offset 4096  从指定字节偏移开始拉取
+  deploy logs 88                fetch all historical logs at once
+  deploy logs 88 -f             replay history, then follow live until the run ends
+  deploy logs 88 --offset 4096  start from the given byte offset
 
-跟随模式下断线会自动重连，并按 nextOffset 续拉，不丢日志也不重复。`,
-		Args: exactArgs(1, "用法：deploy logs <runId> [-f] [--offset N]"),
+In follow mode a dropped connection reconnects automatically and resumes from nextOffset: no lost or duplicated logs.`,
+		Args: exactArgs(1, "usage: deploy logs <runId> [-f] [--offset N]"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runID, err := parseRunID(args[0])
 			if err != nil {
 				return err
 			}
 			if offset < 0 {
-				return exitcode.Usagef("--offset 不能为负数")
+				return exitcode.Usagef("--offset must not be negative")
 			}
 			client, err := app.AuthClient()
 			if err != nil {
@@ -73,7 +73,7 @@ func newLogsCmd(app *App) *cobra.Command {
 			p.FlushLog(w)
 
 			if errors.Is(err, context.Canceled) || sigCtx.Err() != nil {
-				p.Infof("已断开日志跟随（%s 未受影响）", runHead(runID, buildNumberOf(result)))
+				p.Infof("log following detached (%s is unaffected)", runHead(runID, buildNumberOf(result)))
 				return nil
 			}
 			if err != nil {
@@ -84,8 +84,8 @@ func newLogsCmd(app *App) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "实时跟随日志直到运行结束")
-	cmd.Flags().Int64Var(&offset, "offset", 0, "起始字节偏移（默认 0，从头开始）")
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "follow logs live until the run ends")
+	cmd.Flags().Int64Var(&offset, "offset", 0, "starting byte offset (default 0, from the beginning)")
 	return cmd
 }
 
@@ -106,7 +106,7 @@ func (a *App) resolveBuildNumber(client *api.Client, runID int64, result *ws.Res
 	defer cancel()
 	run, err := client.GetRun(ctx, runID)
 	if err != nil || run == nil {
-		a.Printer.Verbosef("查询运行 %d 的构建号失败：%v", runID, err)
+		a.Printer.Verbosef("failed to query the build number of run %d: %v", runID, err)
 		return 0
 	}
 	return run.BuildNumber

@@ -9,8 +9,8 @@ import (
 func newWhoamiCmd(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "whoami",
-		Short: "显示当前登录用户与服务器",
-		Args:  exactArgs(0, "whoami 不接受位置参数"),
+		Short: "show the current user and server",
+		Args:  exactArgs(0, "whoami takes no positional arguments"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := app.AuthClient()
 			if err != nil {
@@ -26,17 +26,19 @@ func newWhoamiCmd(app *App) *cobra.Command {
 			p := app.Printer
 			return app.jsonOrHuman(map[string]any{
 				"server":  app.Settings.Server,
-				"context": app.Cfg.Current,
+				"address": app.Settings.Address,
+				"name":    app.Cfg.Current,
 				"user":    user,
 			}, func() {
 				p.String(output.KeyValue([][2]string{
-					{"用户", p.Bold(user.Username)},
-					{"昵称", orDash(user.Nickname)},
-					{"角色", user.Role},
-					{"状态", user.Status},
-					{"服务器", app.Settings.Server},
-					{"context", app.Cfg.Current},
-					{"最近登录", formatTime(user.LastLoginAt)},
+					{"user", p.Bold(user.Username)},
+					{"nickname", orDash(user.Nickname)},
+					{"role", user.Role},
+					{"status", user.Status},
+					{"server", app.Settings.Server},
+					{"name", app.Cfg.Current},
+					{"address", app.Settings.Address},
+					{"last login", formatTime(user.LastLoginAt)},
 				}))
 			})
 		},

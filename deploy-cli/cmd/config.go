@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -13,19 +12,19 @@ import (
 func newConfigCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
-		Short: "读写本地配置（server / token / user / current）",
-		Long: `读写 ~/.deploy/config.yaml。
+		Short: "read and write local config (address / token / user / current)",
+		Long: `Read and write ~/.deploy/config.yaml.
 
-  deploy config get                 显示当前全部配置（token 打码）
-  deploy config get server          读取单项
-  deploy config set server http://127.0.0.1:10055
-  deploy config set current prod    切换 context（不存在则新建）
-  deploy config list                列出所有 context
-  deploy config path                显示配置文件路径`,
+  deploy config get                 show all current config (token masked)
+  deploy config get address         read a single key
+  deploy config set address http://127.0.0.1:10055
+  deploy config set current prod    switch the default server (created if missing)
+  deploy config list                list all servers
+  deploy config path                show the config file path`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
-				return exitcode.Usagef("未知子命令 %q，可用：get、set、list、path", args[0])
+				return exitcode.Usagef("unknown subcommand %q; available: get, set, list, path", args[0])
 			}
 			return cmd.Help()
 		},
@@ -42,7 +41,7 @@ func newConfigCmd(app *App) *cobra.Command {
 func newConfigGetCmd(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "get [key]",
-		Short: "读取配置项（省略 key 时显示全部）",
+		Short: "read a config key (omit key to show everything)",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p := app.Printer
@@ -55,9 +54,9 @@ func newConfigGetCmd(app *App) *cobra.Command {
 				}
 				if p.JSON {
 					return p.JSONOut(map[string]string{
-						"key":     key,
-						"value":   value,
-						"context": app.Cfg.Current,
+						"key":    key,
+						"value":  value,
+						"server": app.Cfg.Current,
 					})
 				}
 				p.Println(value)
@@ -65,14 +64,14 @@ func newConfigGetCmd(app *App) *cobra.Command {
 			}
 
 			current, _ := app.Cfg.Get("current")
-			server, _ := app.Cfg.Get("server")
+			address, _ := app.Cfg.Get("address")
 			token, _ := app.Cfg.Get("token")
 			user, _ := app.Cfg.Get("user")
 
 			if p.JSON {
 				return p.JSONOut(map[string]string{
 					"current": current,
-					"server":  server,
+					"address": address,
 					"token":   maskToken(token),
 					"user":    user,
 					"path":    app.Cfg.Path(),
@@ -80,7 +79,7 @@ func newConfigGetCmd(app *App) *cobra.Command {
 			}
 			p.String(output.KeyValue([][2]string{
 				{"current", current},
-				{"server", orDash(server)},
+				{"address", orDash(address)},
 				{"token", maskToken(token)},
 				{"user", orDash(user)},
 				{"config", app.Cfg.Path()},
@@ -93,8 +92,8 @@ func newConfigGetCmd(app *App) *cobra.Command {
 func newConfigSetCmd(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "set <key> <value>",
-		Short: "写入配置项",
-		Args:  exactArgs(2, "用法：deploy config set <key> <value>（key: server/token/user/current）"),
+		Short: "write a config key",
+		Args:  exactArgs(2, "usage: deploy config set <key> <value> (key: address/token/user/current)"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key := strings.ToLower(strings.TrimSpace(args[0]))
 			if err := app.Cfg.Set(key, args[1]); err != nil {
@@ -105,14 +104,14 @@ func newConfigSetCmd(app *App) *cobra.Command {
 			}
 			p := app.Printer
 			return app.jsonOrHuman(map[string]any{
-				"key":     key,
-				"context": app.Cfg.Current,
-				"path":    app.Cfg.Path(),
+				"key":    key,
+				"server": app.Cfg.Current,
+				"path":   app.Cfg.Path(),
 			}, func() {
 				if key == "token" {
-					p.Printf("已更新 token（context: %s，值: %s）\n", app.Cfg.Current, maskToken(args[1]))
+					p.Printf("token updated (server: %s, value: %s)\n", app.Cfg.Current, maskToken(args[1]))
 				} else {
-					p.Printf("已设置 %s = %s（context: %s）\n", key, args[1], app.Cfg.Current)
+					p.Printf("set %s = %s (server: %s)\n", key, args[1], app.Cfg.Current)
 				}
 			})
 		},
@@ -122,35 +121,32 @@ func newConfigSetCmd(app *App) *cobra.Command {
 func newConfigListCmd(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "列出所有 context",
-		Args:  exactArgs(0, "list 不接受位置参数"),
+		Short: "list all servers",
+		Args:  exactArgs(0, "list takes no positional arguments"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p := app.Printer
-			names := app.Cfg.ContextNames()
-			sort.Strings(names)
+			// 复用 Servers()：按键排序，并跳过配置不存在时造出来的空 default 壳。
+			servers := app.Cfg.Servers(maskToken)
 
 			type ctxView struct {
-				Name   string `json:"name"`
-				Server string `json:"server"`
-				User   string `json:"user"`
-				Token  string `json:"token"`
-				Active bool   `json:"active"`
+				Key     string `json:"key"`  // 与 Name 同值：键就是名字
+				Name    string `json:"name"` // --server 用它
+				Address string `json:"address"`
+				User    string `json:"user"`
+				Token   string `json:"token"`
+				Active  bool   `json:"active"`
 			}
-			views := make([]ctxView, 0, len(names))
-			for _, n := range names {
-				c := app.Cfg.Contexts[n]
-				v := ctxView{Name: n, Active: n == app.Cfg.Current}
-				if c != nil {
-					v.Server = c.Server
-					v.User = c.User
-					v.Token = maskToken(c.Token)
-				}
-				views = append(views, v)
+			views := make([]ctxView, 0, len(servers))
+			for _, s := range servers {
+				views = append(views, ctxView{
+					Key: s.Key, Name: s.Name, Address: s.Address,
+					User: s.User, Token: s.Token, Active: s.Active,
+				})
 			}
 
 			return app.jsonOrHuman(map[string]any{
-				"current":  app.Cfg.Current,
-				"contexts": views,
+				"current": app.Cfg.Current,
+				"servers": views,
 			}, func() {
 				rows := make([][]string, 0, len(views))
 				for _, v := range views {
@@ -158,9 +154,9 @@ func newConfigListCmd(app *App) *cobra.Command {
 					if v.Active {
 						mark = "*"
 					}
-					rows = append(rows, []string{mark, v.Name, orDash(v.Server), orDash(v.User), v.Token})
+					rows = append(rows, []string{mark, v.Name, orDash(v.Address), orDash(v.User), v.Token})
 				}
-				p.String(output.Table([]string{"", "CONTEXT", "SERVER", "USER", "TOKEN"}, rows))
+				p.String(output.Table([]string{"", "NAME", "ADDRESS", "USER", "TOKEN"}, rows))
 			})
 		},
 	}
@@ -169,8 +165,8 @@ func newConfigListCmd(app *App) *cobra.Command {
 func newConfigPathCmd(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "path",
-		Short: "显示配置文件路径",
-		Args:  exactArgs(0, "path 不接受位置参数"),
+		Short: "show the config file path",
+		Args:  exactArgs(0, "path takes no positional arguments"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if app.Printer.JSON {
 				return app.Printer.JSONOut(map[string]string{"path": app.Cfg.Path()})

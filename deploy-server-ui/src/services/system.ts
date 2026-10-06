@@ -6,6 +6,10 @@ import type {
   CredentialInput,
   DoctorResult,
   GitTestResult,
+  MiddlewareField,
+  MiddlewareInstallInput,
+  MiddlewareInstallResult,
+  MiddlewareList,
   ServerInfo,
   SystemSettings,
   ToolchainField,
@@ -55,6 +59,24 @@ export const systemApi = {
       body,
     );
   },
+
+  /** 可一键安装的中间件清单（登录可见，安装仅 admin） */
+  middleware() {
+    return getData<MiddlewareList>('/system/middleware');
+  },
+
+  /** 触发一次中间件操作：以普通 Run 的形式执行，返回可供跳转看日志的 runId */
+  installMiddleware(body: MiddlewareInstallInput) {
+    return postData<MiddlewareInstallResult>('/system/middleware/install', body);
+  },
+
+  /** 保存某个中间件的参数（端口 / 密码 / 数据目录 / 版本），仅 admin */
+  updateMiddleware(key: string, body: { fields: Record<string, string>; mode?: string }) {
+    return putData<{ key: string; fields: MiddlewareField[]; mode: string }>(
+      `/system/middleware/${encodeURIComponent(key)}`,
+      body,
+    );
+  },
 };
 
 /**
@@ -69,6 +91,16 @@ export async function downloadToolchainScript() {
   if (!res.ok) {
     throw new Error(`下载失败（HTTP ${res.status}）`);
   }
+  return res.blob();
+}
+
+/** 中间件安装脚本的下载，做法与上面工具链脚本完全一致（同样需要手动带 token） */
+export async function downloadMiddlewareScript() {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}/system/middleware/script`, {
+    headers: token ? { Authorization: token } : undefined,
+  });
+  if (!res.ok) throw new Error(`下载失败（HTTP ${res.status}）`);
   return res.blob();
 }
 

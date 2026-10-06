@@ -6,6 +6,8 @@
 - [组成与架构](#组成与架构) · [构建与快速开始](#构建与快速开始)
 - [部署到服务器](#部署到服务器)
 - [使用指南](#使用指南) · [命令行客户端](#命令行客户端)
+- [服务器与 `--server`](#服务器与---server多台服务器) · [AI 对接](#ai-对接让-ai-通过-deploy-cli-部署与运维)
+- [中间件一键安装](#中间件一键安装docker--postgresql--mysql--redis--elasticsearch)
 - [排查与测试](#排查与测试) · [平台差异](#平台差异) · [安全提醒](#安全提醒)
 
 ## 组成与架构
@@ -19,8 +21,10 @@
 | ↳ 密码 / 加密 | `golang.org/x/crypto/bcrypt` + 标准库 **AES-256-GCM** |
 | ↳ 配置 | `gopkg.in/yaml.v3`；命令行 > 环境变量 > 配置文件 > 默认值 |
 | ↳ 前端托管 | 标准库 **`embed`**，支持 SPA 路由回退；`/api/` 下的 404 仍返回 JSON |
-| [`deploy-cli/`](deploy-cli/) | CLI：登录、触发部署、跟随日志；Go 1.24 / cobra |
+| ↳ 一键安装 | 两套内嵌脚本 + 独立接口：**构建工具链**（`/system/toolchains`）与**中间件**（`/system/middleware`） |
+| [`deploy-cli/`](deploy-cli/) | CLI：**服务器管理**、登录、触发部署、跟随日志、中间件安装；Go 1.24 / cobra |
 | [`deploy-server-ui/`](deploy-server-ui/) | Web 界面：React 18 / Umi Max 4 / Ant Design 5，裁剪自 Ant Design Pro |
+| [`skills/deploy-cli/`](skills/deploy-cli/SKILL.md) | 给 AI 用的技能说明：怎么选服务器、部署、装中间件、读日志与退出码 |
 | [`tools/`](tools/) | 运维与冒烟脚本：`sshpoke` 做密码认证 SSH 执行/传文件；`remote-scripts` 初始化和校验服务器；`smoke` 验证进程树终止及 API 部署 |
 
 > **仓库**：<https://gitee.com/ppnt/deploy> —— 前端、后端、CLI、工具与文档都在这一个仓库里：
@@ -30,8 +34,9 @@
 >   deploy-server/        ← 服务端（Go）
 >   deploy-server-ui/     ← Web 界面（React）
 >   deploy-cli/           ← 命令行客户端（Go）
+>   skills/deploy-cli/    ← 给 AI 用的技能说明
 >   tools/                ← 服务器初始化与冒烟脚本
->   docs/                 ← 需求规格说明、API 契约
+>   docs/                 ← 需求规格说明、API 契约、AI 对接
 > ```
 
 命令在**服务端所在机器**执行，模型预留 Runner 字段；Git 准备是项目级开关；`admin` / `user` 按项目归属判权。
@@ -524,57 +529,137 @@ curl -X POST 'http://<服务器地址>:10055/api/v1/hooks' \
 Linux/macOS 在仓库根目录构建：
 
 ```bash
-cd deploy-cli && go build -o deploy .
+cd deploy-cli && go build -o deploy ./cmd/deploy
 ```
 
 Windows 在仓库根目录构建：
 
 ```powershell
 cd deploy-cli
-go build -o deploy.exe .
+go build -o deploy.exe ./cmd/deploy
+# 或者：go install ./cmd/deploy   （装进 $GOPATH/bin，命令名就是 deploy）
 ```
 
 将产物放入 PATH 后使用下面的 `deploy` 命令；Windows 也可在产物目录用 `.\deploy.exe`。
-配置文件为 `~/.deploy/config.yaml`（Windows：`%USERPROFILE%\.deploy\config.yaml`），结构如下；token 替换为登录或 API 令牌：
+配置文件为 `~/.deploy/config.yaml`（Windows：`%USERPROFILE%\.deploy\config.yaml`），**里面装的是「服务器」清单**：
+`contexts` 下的键就是服务器名字，部署时用 `--server <名字>` 指定要操作哪一台，`server update <旧名> --name <新名>` 改名：
 
 ```yaml
-current: default
+current: test
 contexts:
-  default:
-    server: http://192.168.31.97:10055
+  test:
+    address: http://192.168.31.97:10055
     token: <你的token>
     user: admin
+    comment: 测试机
+  prod:
+    address: http://10.0.0.5:10055
+    token: <另一个token>
+    user: admin
+    comment: 生产
 ```
 
-优先级：**flag > 环境变量（`DEPLOY_SERVER` / `DEPLOY_TOKEN`）> 配置文件 > 默认值**。CI 可用环境变量避免配置落盘。
-常用命令（替换服务器地址、API 令牌、项目 Key 与运行 ID）：
+优先级：**flag（`-a/--address` / `--token` / `--server`）> 环境变量（`DEPLOY_ADDRESS` / `DEPLOY_TOKEN`；`DEPLOY_SERVER` 为地址的历史名，仍兼容但优先级更低）> 配置文件 > 默认值**。
+CI 可用环境变量避免配置落盘。用服务器名字管理多台服务器见[服务器与 `--server`](#服务器与---server多台服务器)。
+常用命令（替换服务器名字、项目 Key 与运行 ID）：
 
 ```bash
-deploy login -s 'http://<服务器地址>:10055' -u admin
-deploy login -s 'http://<服务器地址>:10055' --token '<API令牌>'
-deploy whoami
+deploy server add 97 -a 'http://192.168.31.97:10055' -t '<API令牌>' -u admin
+deploy server list                        # 列出全部服务器（NAME=名字，即配置里的键；token 打码）
+deploy whoami                             # 当前登录用户与服务器
 deploy project list
 deploy project get my-app
-deploy run my-app -f
+deploy run my-app -f                      # 跟随日志
+deploy run my-app --wait --json           # 只等结果，机器可读
 deploy run my-app -e TAG=v1.2.3 --branch release -f
 deploy logs 88 -f
 deploy runs list --project my-app --status failed
 deploy stop 88
 deploy doctor
-deploy config set server 'http://<另一服务器地址>:10055'
+deploy middleware list                    # 中间件状态
+deploy middleware install redis --dry-run --no-follow
+deploy --server prod run my-app --wait    # 指定另一台服务器
 deploy version
 ```
 
 | 退出码 | 含义 |
 |---|---|
 | `0` | 成功 |
-| `1` | 部署失败（failed / timeout / error） |
-| `2` | 用法错误 |
+| `1` | 部署失败（failed / timeout / error / canceled） |
+| `2` | 用法错误（参数不对、服务器名字不存在） |
 | `3` | 鉴权失败 |
 | `4` | 网络或服务不可用 |
 
+**业务失败也返回 HTTP 200**（信封里 `success:false`），CLI 已把它映射成退出码，判断成败请看退出码与 `--json` 字段。
 `Ctrl+C` 默认**只断开日志跟随，不取消运行**；加 `--cancel-on-interrupt` 才取消运行。
 `--json` 输出机器可读结果，提示走 stderr；登录密码交互输入不回显，非 TTY 或 `--no-color` 会剥离 ANSI。
+
+## 服务器与 `--server`（多台服务器）
+
+需求把「服务端部署与初始化」交给使用者手工完成，CLI 只接受**名字、地址、token**。
+它们都存在本地配置文件里，用 `--server <名字>` 选择。**名字就是配置里的键**：
+`server update <旧名> --name <新名>` 改的就是它，`current` 会跟着改名走：
+
+```bash
+# 1) 使用者手工部署并初始化服务端（浏览器创建管理员）
+# 2) 在服务端「个人设置 → API Token」创建一个 dk_ 前缀的长期令牌
+# 3) 交给 CLI（非交互，一条命令）
+deploy server add 97 -a http://192.168.31.97:10055 -t dk_xxxxxxxx -u admin
+```
+
+| 命令 | 作用 |
+|---|---|
+| `deploy server list` | 列出全部服务器（当前服务器带 `*`，`NAME` 是名字，即配置里的键；token 打码） |
+| `deploy server get <名字>` | 看单个服务器的名字/地址/用户/是否当前 |
+| `deploy server add <名字> -a <地址> -t <token> [-u <用户>]` | 新建或覆盖，并设为默认（`--no-set-current` 可不让它成为默认） |
+| `deploy server use <名字>` | 切换默认服务器 |
+| `deploy server update <名字> [-a] [-t] [-u] [--name 新名] [--comment]` | 只改传了的字段；`--name` 是改名（键与 `current` 一起改） |
+| `deploy server remove <名字> [--yes]` | 删除一个服务器 |
+| `deploy server current` | 打印当前服务器名字 |
+| `deploy --server <名字> <任何命令>` | 临时指定服务器，优先于配置里的 `current` |
+
+要点：
+
+- **token 建议用 API Token（`dk_` 前缀）而不是登录得到的 JWT**：JWT 会过期，无人值守的 AI/CI 用它会突然 401。
+- **名字**允许中文（如 `测试机`）与点/短横线，但不能含空格、冒号或斜杠（它参与命令行定位）。
+- `update --name <新名>` 就是**改名（改键）**：地址/token/用户名整条搬过去，`current` 跟着走；
+  新名已存在、为空或非法时报用法错误（退出码 2），不会静默覆盖。
+- 名字不存在时命令会返回**退出码 2** 并提示 `deploy server list`，不会静默连到默认地址。
+  `login --name <名字>` 不再要求先 `server add`：该服务器不存在时，会在**登录成功后自动创建**并写入。
+- 配置文件权限收紧到 0600；`deploy server list` 等命令输出里的 token 一律打码。
+- `deploy login` 仍然可用（用用户名密码换 JWT）；写入目标是 `--name` 指定的服务器（缺省 `default`），不存在则在登录成功后自动创建。全局 `--server` **不决定写入目标**，只决定这次请求用哪台已存服务器的地址/token（只传 `--server X` 而不传 `--name` 时会打一条 stderr 警告）。
+- 地址覆盖只认 `-a/--address`：旧的 `--server` 地址别名已删除，`-s` 简写也早已移除；`service` 命令别名同样已删除，服务器清单一律用 `deploy server ...` 管理。
+
+## AI 对接（让 AI 通过 deploy-cli 部署与运维）
+
+AI 不需要专有协议：**deploy-cli + `--json` 就是接口**。会执行 shell 的 Agent（Claude Code、Codex、Cursor、自研脚本）都能直接驱动。
+
+```bash
+deploy --help                 # 全部子命令
+deploy <子命令> --help         # 某个子命令的参数
+deploy server list --json     # 我配了哪几台服务器（{current, path, servers:[{key,name,address,user,comment,token,active}]}）
+deploy whoami                 # 当前连的服务器与用户（退出码 3=鉴权失败、4=不可达）
+deploy project list --json    # 服务器上有什么项目
+deploy middleware list --json # 中间件状态
+```
+
+这些命令给出的都是**运行时事实**而不是写死的文档：项目列表、中间件状态、服务端版本都在里面，
+所以不会过期。这里**没有给 AI 专用的命令** —— AI 用的就是普通人用的 `deploy`。
+
+给 AI 的三条硬约定：
+
+1. **先看命令树与当前连接**（`deploy --help`、`deploy server list --json`、`deploy whoami`），
+   不要猜项目 key 与服务器名字。
+2. **长任务用 `--wait --json` 或 `--no-follow --json` 拿 `runId`**，再 `deploy logs <runId> -f`；
+   只看触发结果里的 `queued` 不能判定成败。
+3. **改服务器状态前先 `--dry-run`**（中间件 `install` 支持），并把计划说给使用者确认。
+
+完整说明见 [docs/ai/AI对接.md](docs/ai/AI对接.md)（含「为什么不做 MCP」的分析）；
+给 Agent 的技能说明在 [skills/deploy-cli/SKILL.md](skills/deploy-cli/SKILL.md)，
+可以整个目录拷到 Agent 的 skills 目录直接使用。
+
+> **token 等于服务器权限**。平台本质是远程命令执行，请给 AI 配**测试服务器**的 token，
+> 生产服务器单独一个键，不要交给无人值守的 Agent。
 
 ## 环境自检与系统设置
 
@@ -652,6 +737,100 @@ CERTBOT_EXTRA_PACKAGES=python3-certbot-dns-cloudflare \
 
 - 装完回「环境自检」点**重新检测**即可看到新的版本与路径。
 
+## 中间件一键安装（docker / postgresql / mysql / redis / elasticsearch）
+
+上一条装的是**构建工具链**（无状态、装完即用）；这里装的是**有状态服务**：
+有端口、有密码、有数据卷，装完还要能启停查，重复点「安装」也**不能**把数据冲掉。
+两者刻意分成两套组件表、两个内嵌脚本、两个接口（`/system/toolchains` 与 `/system/middleware`），
+因为它们对「重装」的容忍度完全不同。
+
+| 中间件 | 默认方式 | 说明 | 大致体积 |
+|---|---|---|---|
+| `docker` | **native**（只能原生） | 其余四项默认都跑在它的容器里，所以它是前置 | 约 400 MB |
+| `postgresql` | docker | 数据卷持久化，密码留空则随机生成 | 约 150 MB（镜像） |
+| `mysql` | docker | 数据卷持久化，root 密码留空则随机生成 | 约 600 MB（镜像） |
+| `redis` | docker | 开启 AOF 持久化 | 约 40 MB（镜像） |
+| `elasticsearch` | docker（只能容器） | 单节点 + 关闭安全（内网自用） | 约 1.4 GB |
+
+安装位置与命名（容器方式）：容器名 `deploy-mw-<key>`，数据卷 `deploy-mw-<key>-data`，
+统一加 `deploy-mw-` 前缀避免和服务器上已有的容器撞名。
+
+### 网页
+
+侧边栏「环境自检」页 → 下半部分**中间件面板**：勾选 →「安装所选」/「一键安装缺失（n）」，
+确认后跳到运行详情页看实时日志（安装就是一次普通运行，可取消、可重跑、可下载日志）。
+另有「启动 / 停止 / 重启 / 移除」按钮（都要二次确认），以及「预演（dry-run）」与「下载脚本」。
+每一行都能「编辑」参数（端口、密码、版本、安装方式）。
+
+### CLI
+
+```bash
+deploy middleware list                        # 状态表：方式 / 已装 / 在跑 / 版本 / 位置
+deploy middleware get redis                   # 单个中间件的状态与可编辑参数
+deploy middleware install redis --dry-run --no-follow   # 先预演（只打印计划）
+deploy middleware install redis --no-follow   # 真装，返回 runId
+deploy logs <runId> -f                        # 跟安装日志
+deploy middleware install --missing --no-follow         # 只装缺失的
+deploy middleware install redis -m native     # 指定方式（docker / native）
+deploy middleware start|stop|restart redis --no-follow  # 启停
+deploy middleware logs redis --no-follow      # 最近 100 行日志
+deploy middleware set redis -p REDIS_PORT=16380 -p REDIS_PASSWORD=<密码>
+deploy middleware remove redis --yes --no-follow        # 只删容器，**数据卷保留**
+deploy middleware fields redis                # 列出可编辑参数
+deploy middleware script > install.sh         # 导出内嵌脚本，可拿去手动跑
+```
+
+`--no-follow` 是给脚本/AI 用的（触发后立刻返回 `runId`）；不加则默认跟随日志。
+`remove` 在非交互环境**必须**加 `--yes`。
+
+### 参数与密码
+
+可编辑参数直接就是脚本读的**环境变量名**（`PG_PORT`、`REDIS_PASSWORD`、`ES_VERSION`…），
+改完保存，下次安装/重建时生效。
+
+- **密码类参数（`*_PASSWORD`）在服务端加密存储**（AES-GCM，与项目 Secret 同一套密钥），
+  接口只回「已设置 / 未设置」，**绝不出明文**；命令行回显里也会被打成 `***`。
+- 密码留空 = 安装时随机生成 32 位，并在日志末尾「连接信息」里**明文出现一次**（请立即保存）。
+  之后可用 `docker inspect deploy-mw-<key> --format '{{.Config.Env}}'` 回看。
+- `deploy middleware set <key> -p XXX_PASSWORD=` （传空串）= **清空已保存的密码**，回到随机生成；
+  不传该键 = 保持原密码不变。所以「只改端口」不会误清密码。
+- `elasticsearch` 只支持容器方式、`docker` 只支持原生方式，传错会被明确拒绝而不是静默换路。
+
+### 边界与已知坑
+
+- **只在 Linux 服务端可用**（脚本基于 bash + apt/dnf + docker）。其他平台可以点「预演」看计划。
+- **幂等**：已装且在跑的默认跳过，**不会重建容器**（重建才有丢数据的风险）。
+  要换镜像/版本用 `--force`，它会删容器重建、**数据卷保留**。
+- **移除不删数据**：`remove` 只删容器（原生方式则不卸载系统包，只提示手动命令），
+  数据卷与数据目录一律保留。要彻底删数据得手动 `docker volume rm deploy-mw-<key>-data` —— 这是破坏性操作。
+- **镜像拉不动是常态**：Docker Hub 在国内网络常常不通，或服务器给 docker 守护进程配的代理已失效
+  （`systemctl show docker --property=Environment` 能看到 `HTTP(S)_PROXY`，配置在
+  `/etc/systemd/system/docker.service.d/*.conf`）。脚本会先 pull，**失败但本地已有该 tag 时自动回退用本地镜像**；
+  本地也没有才失败，并打印排查命令。注意 `docker pull` 每次都要先问 registry 要 manifest，
+  所以**即使镜像就在本地，pull 也会失败**——这就是回退分支存在的理由。拉取默认会等约 60 秒超时才回退，跟日志时别以为卡死了。
+- **端口冲突很常见**：服务器上往往已经跑着 redis/postgres/es。脚本在端口被占用时只**警告并继续**
+  （`IGNORE_PORT_CONFLICT=1`），容器可能因此起不来 —— 先用 `deploy middleware get <key>` 看端口，
+  必要时 `set` 换端口。
+- **默认参数对公网不安全**：Redis 可能无密码、ES 关闭了安全（`xpack.security.enabled=false`）、
+  数据库端口直接暴露。只在内网使用；公网暴露前必须加固。
+- 安装记录按内置项目 `system-middleware` 归类（工具链是 `system-toolchain`），
+  在「运行」页按项目筛选就能回看每一次装/停/删。
+
+### 手动执行（不经过平台）
+
+```bash
+bash install-middleware.sh --list                        # 只看状态
+bash install-middleware.sh --only docker,redis           # 装指定中间件
+bash install-middleware.sh --only postgresql --mode native
+bash install-middleware.sh --action restart --only redis
+bash install-middleware.sh --remove --only redis         # 数据卷保留
+bash install-middleware.sh --dry-run --only all          # 预演
+PG_PORT=15432 REDIS_PASSWORD=secret bash install-middleware.sh --only postgresql,redis
+```
+
+脚本源文件是 [deploy-server/internal/middleware/install.sh](deploy-server/internal/middleware/install.sh)，
+也可以用 `deploy middleware script` 或页面上「下载脚本」导出。
+
 ## 排查与测试
 
 **先看响应体 `success`：业务失败也可能返回 HTTP 200，不能仅凭状态码判断成功。** 业务码与格式见 [API 契约](docs/API设计.md)。
@@ -671,6 +850,13 @@ CERTBOT_EXTRA_PACKAGES=python3-certbot-dns-cloudflare \
 | `database is locked` | 已使用 WAL、`busy_timeout`、连接池上限 1；检查其他进程是否直接打开 `deploy.db` |
 | 重启后仍显示运行中 | 正常应标成中断；检查 `/srv/deploy/data` 是否可写 |
 | Hook 鉴权/权限/限流失败 | 检查令牌错误、删除、过期或项目归档；确认启用 Hook；超限等一分钟或调整限流 |
+| `endpoint not found: /api/v1/system/middleware` | 服务端是旧版本（中间件接口自 0.6.0 起提供）；升级二进制后重启 |
+| 中间件安装失败但日志说「本机已有镜像」 | 那只是**警告**：拉取失败后回退到了本地镜像，真正的失败在下一行；继续往下读日志 |
+| 中间件安装一直 `running`、日志停在「拉取镜像」 | 正常，`docker pull` 默认要等约 60 秒才超时回退。国内网络可给 docker 配镜像加速或代理 |
+| 中间件装完容器立刻退出 | 多数是端口被占用或数据目录权限。日志末尾有 `docker logs <容器名>` 的尾部输出；也可 `deploy middleware logs <key>` |
+| `nothingToDo: true` | 要装的都已装好；想重建（换镜像/版本）加 `--force`，数据卷会保留 |
+| `--server` 报 `server "x" does not exist` | 键打错了（不是 `name` 标签）；`deploy server list` 看已配的服务器，或 `deploy server add` 新建 |
+| `deploy` 命令返回 3 但密码没错 | 用的可能是过期的 JWT。改用 API Token（`dk_` 前缀）：`deploy server update <键> -t <新token>` |
 
 忘记管理员密码有三条路，按影响从小到大选择：
 
@@ -700,7 +886,10 @@ cd deploy-server && go test ./... -count=1
 cd ../deploy-cli && go test ./... -count=1
 ```
 
-服务端集成测试覆盖登录、建项目、执行、日志、Hook、取消、权限隔离、Secret 打码与 WebSocket；CLI 原验收为 81 个用例。
+服务端集成测试覆盖登录、建项目、执行、日志、Hook、取消、权限隔离、Secret 打码与 WebSocket；
+中间件接口另有一组用例（清单与顺序、未知组件/动作/方式的拒绝、参数加密不回明文、
+逐组件安装方式、脚本 `ALL_COMPONENTS` 与 Go 侧组件表逐项一致）；
+CLI 原验收为 81 个用例，另加服务器管理、`--server` 选择与中间件动作的用例。
 Windows 冒烟脚本（在仓库根目录执行，第二条替换服务器地址）：
 
 ```powershell

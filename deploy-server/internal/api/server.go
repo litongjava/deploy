@@ -147,6 +147,10 @@ func (s *Server) Router() *gin.Engine {
 		// 环境工具链一键安装：安装以普通 Run 的形式执行（见 handlers_toolchain.go）。
 		// 只读的清单给所有登录用户看，真正动手安装仅限 admin。
 		a.GET("/system/toolchains", s.listToolchains)
+		// 中间件（docker/postgresql/mysql/redis/elasticsearch）一键安装与启停。
+		// 与工具链刻意分开：那边是无状态构建工具，这边是有状态服务（端口/密码/数据卷，
+		// 且「重装」有丢数据的风险），混在一个面板里容易误操作。见 handlers_middleware.go。
+		a.GET("/system/middleware", s.listMiddleware)
 
 		admin := a.Group("", RequireAdmin())
 		{
@@ -160,6 +164,9 @@ func (s *Server) Router() *gin.Engine {
 			admin.POST("/system/toolchains/install", s.installToolchains)
 			admin.PUT("/system/toolchains/:key", s.updateToolchainFields)
 			admin.GET("/system/toolchains/script", s.downloadToolchainScript)
+			admin.POST("/system/middleware/install", s.installMiddleware)
+			admin.PUT("/system/middleware/:key", s.updateMiddlewareFields)
+			admin.GET("/system/middleware/script", s.downloadMiddlewareScript)
 		}
 	}
 

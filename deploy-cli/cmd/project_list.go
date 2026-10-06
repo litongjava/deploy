@@ -16,8 +16,8 @@ func newProjectListCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "列出项目（表格输出）",
-		Args:    exactArgs(0, "list 不接受位置参数"),
+		Short:   "list projects (table output)",
+		Args:    exactArgs(0, "list takes no positional arguments"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := app.AuthClient()
 			if err != nil {
@@ -40,7 +40,7 @@ func newProjectListCmd(app *App) *cobra.Command {
 			p := app.Printer
 			return app.jsonOrHuman(result, func() {
 				if len(result.List) == 0 {
-					p.Println("（没有匹配的项目）")
+					p.Println("(no matching projects)")
 					return
 				}
 				rows := make([][]string, 0, len(result.List))
@@ -55,7 +55,7 @@ func newProjectListCmd(app *App) *cobra.Command {
 					}
 					name := proj.Name
 					if proj.Archived {
-						name += "（已归档）"
+						name += "(archived)"
 					}
 					rows = append(rows, []string{
 						proj.Key,
@@ -65,14 +65,14 @@ func newProjectListCmd(app *App) *cobra.Command {
 						p.Status(status),
 					})
 				}
-				p.String(output.Table([]string{"KEY", "名称", "工作目录", "最近运行", "状态"}, rows))
-				p.Printf("共 %d 个，第 %d 页（每页 %d）\n", result.Total, result.Page, result.PageSize)
+				p.String(output.Table([]string{"KEY", "name", "workdir", "last run", "status"}, rows))
+				p.Printf("total %d, page %d (page size %d)\n", result.Total, result.Page, result.PageSize)
 			})
 		},
 	}
-	cmd.Flags().IntVar(&page, "page", 1, "页码（从 1 开始）")
-	cmd.Flags().IntVar(&pageSize, "page-size", 50, "每页条数（最大 200）")
-	cmd.Flags().StringVar(&keyword, "keyword", "", "按关键字过滤")
-	cmd.Flags().BoolVar(&archived, "archived", false, "只列出已归档的项目")
+	cmd.Flags().IntVar(&page, "page", 1, "page number (starts at 1)")
+	cmd.Flags().IntVar(&pageSize, "page-size", 50, "page size (max 200)")
+	cmd.Flags().StringVar(&keyword, "keyword", "", "filter by keyword")
+	cmd.Flags().BoolVar(&archived, "archived", false, "only list archived projects")
 	return cmd
 }

@@ -117,7 +117,7 @@ func Table(headers []string, rows [][]string) string {
 	return b.String()
 }
 
-// KeyValue 渲染 "键: 值" 的简单对齐块，键在左侧补空格。
+// KeyValue 渲染 "key: value" 的简单对齐块，键在左侧补空格。
 func KeyValue(pairs [][2]string) string {
 	width := 0
 	for _, p := range pairs {

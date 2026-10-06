@@ -20,11 +20,12 @@ import (
 // App 持有全局 flag、配置与打印机，供各子命令共享。
 type App struct {
 	// 全局 flag
-	ServerFlag string
-	TokenFlag  string
-	JSONFlag   bool
-	NoColor    bool
-	Verbose    bool
+	AddressFlag string
+	TokenFlag   string
+	ServerFlag  string
+	JSONFlag    bool
+	NoColor     bool
+	Verbose     bool
 
 	Cfg      *config.Config
 	Printer  *output.Printer
@@ -48,13 +49,18 @@ func buildRoot(out, errw io.Writer) *cobra.Command {
 
 	root := &cobra.Command{
 		Use:   "deploy",
-		Short: "轻量命令式 CI/CD 平台的命令行客户端",
-		Long: `deploy 是 CI/CD 平台的命令行客户端。
+		Short: "command-line client for the lightweight imperative CI/CD platform",
+		Long: `deploy is the command-line client for the CI/CD platform.
 
-配置文件：~/.deploy/config.yaml（Windows: %USERPROFILE%\.deploy\config.yaml）
-配置优先级：命令行 flag > 环境变量(DEPLOY_SERVER/DEPLOY_TOKEN) > 配置文件 > 默认值
+Servers (name + address + token) are stored in ~/.deploy/config.yaml
+(Windows: %USERPROFILE%\.deploy\config.yaml).
 
-退出码：0 成功 / 1 部署失败 / 2 用法错误 / 3 鉴权失败 / 4 网络或服务不可用`,
+A server's name IS its config key: ` + "`--server <name>`" + ` selects it, and
+` + "`server update <old> --name <new>`" + ` renames it (current follows the new name).
+
+Precedence: flags (-a/--address, --token) > env vars (DEPLOY_ADDRESS/DEPLOY_TOKEN) > config file (the server named by --server) > defaults
+
+Exit codes: 0 success / 1 deploy failed / 2 usage error / 3 auth failure / 4 network or service unavailable`,
 		Version:       version.String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -64,12 +70,21 @@ func buildRoot(out, errw io.Writer) *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
-				return exitcode.Usagef("未知命令 %q，执行 `deploy --help` 查看全部命令", args[0])
+				return exitcode.Usagef("unknown command %q; run `deploy --help` to see all commands", args[0])
 			}
 			return cmd.Help()
 		},
 	}
 	root.SetVersionTemplate("deploy version {{.Version}}\n")
+	root.Example = `  # sign in to a server (writes the token into the server named by --name; created if missing)
+  deploy login -a http://192.168.31.97:10055 -u admin --name 97
+
+  # list servers, then rename one (the name IS the config key; current follows)
+  deploy server list
+  deploy server update default --name 97
+
+  # run a project against a specific server, without changing the default
+  deploy --server 97 run my-app --wait --json`
 	if out != nil {
 		root.SetOut(out)
 	}
@@ -81,22 +96,25 @@ func buildRoot(out, errw io.Writer) *cobra.Command {
 	})
 
 	pf := root.PersistentFlags()
-	pf.StringVar(&app.ServerFlag, "server", "", "服务端地址（覆盖配置与环境变量），如 http://127.0.0.1:10055")
-	pf.StringVar(&app.TokenFlag, "token", "", "API Token 或 JWT（覆盖配置与环境变量）")
-	pf.BoolVar(&app.JSONFlag, "json", false, "以 JSON 输出结果，stdout 只输出机器可读内容")
-	pf.BoolVar(&app.NoColor, "no-color", false, "禁用彩色输出（非 TTY 自动禁用）")
-	pf.BoolVar(&app.Verbose, "verbose", false, "输出调试信息到 stderr")
+	addAddressFlag(pf, &app.AddressFlag, "server address (overrides config and env), e.g. http://127.0.0.1:10055")
+	pf.StringVar(&app.TokenFlag, "token", "", "API token or JWT (overrides config and env)")
+	pf.StringVar(&app.ServerFlag, "server", "", "use the configured server with this key (overrides the default), e.g. --server test")
+	pf.BoolVar(&app.JSONFlag, "json", false, "output JSON; stdout carries machine-readable data only")
+	pf.BoolVar(&app.NoColor, "no-color", false, "disable colored output (auto-disabled when not a TTY)")
+	pf.BoolVar(&app.Verbose, "verbose", false, "write debug information to stderr")
 
 	root.AddCommand(
 		newLoginCmd(app),
 		newLogoutCmd(app),
 		newWhoamiCmd(app),
+		newServerCmd(app),
 		newProjectCmd(app),
 		newRunCmd(app),
 		newLogsCmd(app),
 		newRunsCmd(app),
 		newStopCmd(app),
 		newDoctorCmd(app),
+		newMiddlewareCmd(app),
 		newConfigCmd(app),
 		newVersionCmd(app),
 	)
@@ -107,14 +125,14 @@ func buildRoot(out, errw io.Writer) *cobra.Command {
 func (a *App) init() error {
 	path, err := config.DefaultPath()
 	if err != nil {
-		return exitcode.Wrap(exitcode.Usage, err, "定位配置文件失败")
+		return exitcode.Wrap(exitcode.Usage, err, "cannot locate the config file")
 	}
 	cfg, err := config.Load(path)
 	if err != nil {
 		return exitcode.Wrap(exitcode.Usage, err, "")
 	}
 	a.Cfg = cfg
-	a.Settings = config.Resolve(a.ServerFlag, a.TokenFlag, os.Getenv, cfg)
+	a.Settings = config.Resolve(a.AddressFlag, a.TokenFlag, a.ServerFlag, os.Getenv, cfg)
 	out, errw := a.out, a.errw
 	if out == nil {
 		out = os.Stdout
@@ -123,9 +141,10 @@ func (a *App) init() error {
 		errw = os.Stderr
 	}
 	a.Printer = output.New(out, errw, a.JSONFlag, a.NoColor, a.Verbose)
-	a.Printer.Verbosef("配置文件: %s", path)
-	a.Printer.Verbosef("服务端: %s（来源: %s）", a.Settings.Server, a.Settings.ServerSource)
-	a.Printer.Verbosef("token: %s（来源: %s）", maskToken(a.Settings.Token), a.Settings.TokenSource)
+	a.Printer.Verbosef("config file: %s", path)
+	a.Printer.Verbosef("server: %s (source: %s)", a.Settings.Server, a.Settings.ServerSource)
+	a.Printer.Verbosef("address: %s (source: %s)", a.Settings.Address, a.Settings.AddressSource)
+	a.Printer.Verbosef("token: %s (source: %s)", maskToken(a.Settings.Token), a.Settings.TokenSource)
 	return nil
 }
 
@@ -134,10 +153,16 @@ func (a *App) Client() (*api.Client, error) {
 	if a.client != nil {
 		return a.client, nil
 	}
-	if strings.TrimSpace(a.Settings.Server) == "" {
-		return nil, exitcode.Usagef("未配置服务端地址，请执行 `deploy login -s <URL>` 或设置 DEPLOY_SERVER")
+	// `--server` 点名的服务器不在配置文件里：这不是「没配地址」，而是打错了键。
+	// 分开报错，否则使用者会去翻配置文件找地址，而问题其实在 --server 上。
+	if a.Settings.ServerMissing {
+		return nil, exitcode.Usagef("server %q does not exist; run `deploy server list` to see configured servers, "+
+			"or create it with `deploy server add %s -a <address> -t <token>`", a.Settings.Server, a.Settings.Server)
 	}
-	c := api.New(a.Settings.Server, a.Settings.Token)
+	if strings.TrimSpace(a.Settings.Address) == "" {
+		return nil, exitcode.Usagef("no server address configured; run `deploy login -a <URL>` or set DEPLOY_ADDRESS")
+	}
+	c := api.New(a.Settings.Address, a.Settings.Token)
 	c.Verbose = a.Verbose
 	if a.errw != nil {
 		c.LogOut = a.errw
@@ -155,7 +180,7 @@ func (a *App) AuthClient() (*api.Client, error) {
 		return nil, err
 	}
 	if strings.TrimSpace(c.Token) == "" {
-		return nil, exitcode.Authf("未登录：请先执行 `deploy login`，或设置 DEPLOY_TOKEN / --token")
+		return nil, exitcode.Authf("not signed in: run `deploy login` first, or set DEPLOY_TOKEN / --token")
 	}
 	return c, nil
 }
@@ -168,7 +193,7 @@ func (a *App) ctx() (context.Context, context.CancelFunc) {
 // saveConfig 保存配置并把失败归为用法/本地环境错误。
 func (a *App) saveConfig() error {
 	if err := a.Cfg.Save(); err != nil {
-		return exitcode.Wrap(exitcode.Usage, err, "保存配置失败")
+		return exitcode.Wrap(exitcode.Usage, err, "cannot save config")
 	}
 	return nil
 }

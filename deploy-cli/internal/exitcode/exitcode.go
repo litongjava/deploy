@@ -51,7 +51,7 @@ func (e *Error) Error() string {
 	case e.Err != nil:
 		return e.Err.Error()
 	}
-	return fmt.Sprintf("命令以退出码 %d 结束", e.Code)
+	return fmt.Sprintf("command exited with code %d", e.Code)
 }
 
 // Unwrap 支持 errors.Is / errors.As 穿透。

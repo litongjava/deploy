@@ -18,7 +18,7 @@ func TestLoadMissingFileReturnsEmptyConfig(t *testing.T) {
 	if c.Current != DefaultContext {
 		t.Fatalf("Current = %q", c.Current)
 	}
-	if c.Active().Server != "" {
+	if c.Active().Address != "" {
 		t.Fatalf("空配置的 server 应为空")
 	}
 }
@@ -30,7 +30,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := c.Active()
-	ctx.Server = "http://127.0.0.1:8080"
+	ctx.Address = "http://127.0.0.1:8080"
 	ctx.Token = "eyJhbGciOi.abc.def"
 	ctx.User = "admin"
 	if err := c.Save(); err != nil {
@@ -42,7 +42,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := got.Active()
-	if a.Server != ctx.Server || a.Token != ctx.Token || a.User != ctx.User {
+	if a.Address != ctx.Address || a.Token != ctx.Token || a.User != ctx.User {
 		t.Fatalf("round trip mismatch: %+v", a)
 	}
 	if got.Current != "default" {
@@ -89,15 +89,15 @@ func TestLoadInvalidYAML(t *testing.T) {
 func TestMultiContext(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	c, _ := Load(path)
-	c.Active().Server = "http://a"
+	c.Active().Address = "http://a"
 	c.Active().Token = "ta"
 	if err := c.UseContext("prod"); err != nil {
 		t.Fatal(err)
 	}
-	if got := c.Active().Server; got != "http://a" {
+	if got := c.Active().Address; got != "http://a" {
 		t.Fatalf("新 context 应继承 server，得到 %q", got)
 	}
-	c.Active().Server = "https://prod.example.com"
+	c.Active().Address = "https://prod.example.com"
 	c.Active().Token = "tp"
 	if err := c.Save(); err != nil {
 		t.Fatal(err)
@@ -149,7 +149,7 @@ func TestGetSet(t *testing.T) {
 	}
 }
 
-func TestNormalizeServer(t *testing.T) {
+func TestNormalizeAddress(t *testing.T) {
 	cases := map[string]string{
 		"http://a:8080/":        "http://a:8080",
 		"a:8080":                "http://a:8080",
@@ -158,21 +158,21 @@ func TestNormalizeServer(t *testing.T) {
 		"http://127.0.0.1:8080": "http://127.0.0.1:8080",
 	}
 	for in, want := range cases {
-		if got := NormalizeServer(in); got != want {
-			t.Fatalf("NormalizeServer(%q) = %q, want %q", in, got, want)
+		if got := NormalizeAddress(in); got != want {
+			t.Fatalf("NormalizeAddress(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
 
 func TestResolvePrecedence(t *testing.T) {
 	cfg, _ := Load(filepath.Join(t.TempDir(), "config.yaml"))
-	cfg.Active().Server = "http://from-config"
+	cfg.Active().Address = "http://from-config"
 	cfg.Active().Token = "token-config"
 	cfg.Active().User = "cfguser"
 
 	env := func(k string) string {
 		switch k {
-		case EnvServer:
+		case EnvAddress:
 			return "http://from-env"
 		case EnvToken:
 			return "token-env"
@@ -180,27 +180,38 @@ func TestResolvePrecedence(t *testing.T) {
 		return ""
 	}
 
+	// 历史名 DEPLOY_SERVER 仍然作为地址生效（优先级低于 DEPLOY_ADDRESS）
+	legacyEnv := func(k string) string {
+		if k == EnvServer {
+			return "http://from-legacy-env"
+		}
+		return ""
+	}
+	if s := Resolve("", "", "", legacyEnv, cfg); s.Address != "http://from-legacy-env" || s.AddressSource != "env" {
+		t.Fatalf("DEPLOY_SERVER 应仍被接受: %+v", s)
+	}
+
 	// flag 最高
-	s := Resolve("http://from-flag", "token-flag", env, cfg)
-	if s.Server != "http://from-flag" || s.Token != "token-flag" {
+	s := Resolve("http://from-flag", "token-flag", "", env, cfg)
+	if s.Address != "http://from-flag" || s.Token != "token-flag" {
 		t.Fatalf("flag 优先级错误: %+v", s)
 	}
-	if s.ServerSource != "flag" || s.TokenSource != "flag" {
+	if s.AddressSource != "flag" || s.TokenSource != "flag" {
 		t.Fatalf("来源标记错误: %+v", s)
 	}
 
 	// 其次 env
-	s = Resolve("", "", env, cfg)
-	if s.Server != "http://from-env" || s.Token != "token-env" {
+	s = Resolve("", "", "", env, cfg)
+	if s.Address != "http://from-env" || s.Token != "token-env" {
 		t.Fatalf("env 优先级错误: %+v", s)
 	}
-	if s.ServerSource != "env" || s.TokenSource != "env" {
+	if s.AddressSource != "env" || s.TokenSource != "env" {
 		t.Fatalf("来源标记错误: %+v", s)
 	}
 
 	// 再其次配置文件
-	s = Resolve("", "", func(string) string { return "" }, cfg)
-	if s.Server != "http://from-config" || s.Token != "token-config" {
+	s = Resolve("", "", "", func(string) string { return "" }, cfg)
+	if s.Address != "http://from-config" || s.Token != "token-config" {
 		t.Fatalf("config 优先级错误: %+v", s)
 	}
 	if s.User != "cfguser" {
@@ -209,9 +220,9 @@ func TestResolvePrecedence(t *testing.T) {
 
 	// 最后默认值
 	empty, _ := Load(filepath.Join(t.TempDir(), "config.yaml"))
-	s = Resolve("", "", func(string) string { return "" }, empty)
-	if s.Server != DefaultServer {
-		t.Fatalf("默认 server = %q, want %q", s.Server, DefaultServer)
+	s = Resolve("", "", "", func(string) string { return "" }, empty)
+	if s.Address != DefaultAddress {
+		t.Fatalf("默认 server = %q, want %q", s.Address, DefaultAddress)
 	}
 	if s.Token != "" || s.TokenSource != "none" {
 		t.Fatalf("默认 token 应为空: %+v", s)
@@ -219,8 +230,8 @@ func TestResolvePrecedence(t *testing.T) {
 }
 
 func TestResolveNilConfigAndNilGetenv(t *testing.T) {
-	s := Resolve("  ", "  ", nil, nil)
-	if s.Server != DefaultServer || s.Token != "" {
+	s := Resolve("  ", "  ", "", nil, nil)
+	if s.Address != DefaultAddress || s.Token != "" {
 		t.Fatalf("got %+v", s)
 	}
 }
@@ -243,5 +254,152 @@ func TestActiveCreatesMissingContext(t *testing.T) {
 	}
 	if _, ok := c.Contexts["ghost"]; !ok {
 		t.Fatal("contexts 未写入")
+	}
+}
+
+// --- 键就是名字：改名 = 改键，current 跟着走；不再有独立的 name 标签 ---
+
+func TestRenameServerMovesKeyAndCurrent(t *testing.T) {
+	c, _ := Load(filepath.Join(t.TempDir(), "config.yaml"))
+	addr, token := "http://a", "ta"
+	if _, err := c.UpsertServer("971", &addr, &token, nil, nil, true); err != nil {
+		t.Fatalf("UpsertServer: %v", err)
+	}
+	if err := c.RenameServer("971", "97"); err != nil {
+		t.Fatalf("RenameServer: %v", err)
+	}
+	if _, ok := c.Contexts["971"]; ok {
+		t.Fatalf("旧键应消失，contexts=%v", c.ContextNames())
+	}
+	ctx, ok := c.Contexts["97"]
+	if !ok {
+		t.Fatalf("新键应存在，contexts=%v", c.ContextNames())
+	}
+	if ctx.Address != "http://a" || ctx.Token != "ta" {
+		t.Fatalf("改名应保留字段: %+v", ctx)
+	}
+	if c.Current != "97" {
+		t.Fatalf("current 应跟到新键，得到 %q", c.Current)
+	}
+}
+
+func TestRenameServerRejectsCollisionAndEmpty(t *testing.T) {
+	c, _ := Load(filepath.Join(t.TempDir(), "config.yaml"))
+	if _, err := c.UpsertServer("971", nil, nil, nil, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.UpsertServer("97", nil, nil, nil, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.RenameServer("971", "97"); err == nil {
+		t.Fatal("改成已存在的名字应报错")
+	}
+	if err := c.RenameServer("971", ""); err == nil {
+		t.Fatal("改成空名应报错")
+	}
+	if err := c.RenameServer("ghost", "x"); err == nil {
+		t.Fatal("对不存在的名字应报错")
+	}
+	if err := c.RenameServer("971", "971"); err != nil {
+		t.Fatalf("同名应是无操作: %v", err)
+	}
+}
+
+func TestConfigDoesNotWriteNameField(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	c, _ := Load(path)
+	addr := "http://a"
+	if _, err := c.UpsertServer("97", &addr, nil, nil, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "name:") {
+		t.Fatalf("配置不应再写 name 标签:\n%s", raw)
+	}
+}
+
+// 老配置文件即使带遗留的 name: 标签，加载后也只看键（name 被忽略）。
+func TestLegacyNameLabelIsIgnored(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	legacy := "current: 971\ncontexts:\n    971:\n        name: \"97\"\n        address: http://192.168.31.97:10055\n        token: eyJhbGci\n"
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svcs := c.Servers(func(s string) string { return s })
+	if len(svcs) != 1 {
+		t.Fatalf("期望 1 台服务器，得到 %d", len(svcs))
+	}
+	if svcs[0].Key != "971" || svcs[0].Name != "971" {
+		t.Fatalf("键才是名字，期望 key=name=971，得到 key=%q name=%q", svcs[0].Key, svcs[0].Name)
+	}
+	if svcs[0].Address != "http://192.168.31.97:10055" {
+		t.Fatalf("address = %q", svcs[0].Address)
+	}
+}
+
+// 老配置文件里的地址键是 server:：读取时必须仍然生效（见 Context.UnmarshalYAML）。
+func TestLegacyConfigWithoutNameStillLists(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	legacy := "current: default\ncontexts:\n    default:\n        server: http://192.168.31.97:10055\n        token: eyJhbGci\n        user: admin\n"
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svcs := c.Servers(func(s string) string { return s })
+	if len(svcs) != 1 {
+		t.Fatalf("期望 1 台服务器，得到 %d", len(svcs))
+	}
+	if svcs[0].Name != "default" {
+		t.Fatalf("名字应是键 default，得到 %q", svcs[0].Name)
+	}
+	if svcs[0].Address != "http://192.168.31.97:10055" {
+		t.Fatalf("server = %q", svcs[0].Address)
+	}
+}
+
+// 写出的配置文件用 address: 键；旧文件的 server: 键仍能读（兼容逻辑见 Context.UnmarshalYAML）。
+func TestSaveWritesAddressKeyNotServerKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr, token := "http://127.0.0.1:8080", "dk_abc"
+	if _, err := c.UpsertServer("97", &addr, &token, nil, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "address: http://127.0.0.1:8080") {
+		t.Fatalf("应写出 address: 键:\n%s", b)
+	}
+	if strings.Contains(string(b), "server:") {
+		t.Fatalf("不应再写出 server: 键:\n%s", b)
+	}
+	back, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, ok := back.GetServer("97")
+	if !ok || ctx.Address != "http://127.0.0.1:8080" || ctx.Token != "dk_abc" {
+		t.Fatalf("round-trip 失败: %+v", ctx)
 	}
 }

@@ -647,6 +647,82 @@ export interface ToolchainInstallResult {
   message?: string;
 }
 
+/* --------------------------- 中间件安装 --------------------------- */
+
+export interface MiddlewareField {
+  key: string;
+  label: string;
+  default: string;
+  placeholder: string;
+  help: string;
+  value: string;
+}
+
+export interface MiddlewareProbe {
+  name: string;
+  found: boolean;
+  version: string;
+  path: string;
+}
+
+export interface MiddlewareComponent {
+  key: string; // docker | postgresql | mysql | redis | elasticsearch
+  name: string;
+  note: string;
+  category: string; // runtime | database | cache | search
+  estimate: string;
+  installed: boolean;
+  running: boolean;
+  version: string;
+  path: string;
+  detail: string; // 例：容器名 / 数据目录 / 端口
+  modes: string[]; // ["docker","native"]
+  defaultMode: string; // "docker"
+  mode: string; // 当前生效的方式
+  effectiveMode: string;
+  nativeSupported: boolean;
+  probes: MiddlewareProbe[];
+  fields: MiddlewareField[];
+}
+
+export interface MiddlewareList {
+  supported: boolean;
+  platform: string;
+  dockerAvailable: boolean;
+  dockerVersion: string;
+  components: MiddlewareComponent[];
+  missing: string[];
+  running: string[];
+  scriptPath: string;
+  scriptUrl: string;
+  projectKey: string;
+  mirror: string;
+  hint: string;
+}
+
+export interface MiddlewareInstallInput {
+  components: string[]; // 空数组 = 所有缺失的
+  mode?: string; // docker | native，空 = 各组件的默认
+  action?: string; // install | start | stop | restart | remove | upgrade | logs，默认 install
+  dryRun?: boolean;
+  force?: boolean;
+  mirror?: string; // cn | off
+}
+
+export interface MiddlewareInstallResult {
+  runId: number;
+  buildNumber: number;
+  status: string;
+  projectKey: string;
+  components: string[];
+  action: string;
+  dryRun: boolean;
+  command: string;
+  logUrl: string;
+  nothingToDo?: boolean;
+  message?: string;
+}
+
 /* --------------------------- WebSocket 帧 --------------------------- */
 
 export type WsFrame =

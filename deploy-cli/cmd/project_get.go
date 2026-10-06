@@ -12,8 +12,8 @@ import (
 func newProjectGetCmd(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "get <key>",
-		Short: "查看项目详情（含命令列表与环境变量）",
-		Args:  exactArgs(1, "用法：deploy project get <key>"),
+		Short: "show project details (including commands and env vars)",
+		Args:  exactArgs(1, "usage: deploy project get <key>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := app.AuthClient()
 			if err != nil {
@@ -29,35 +29,35 @@ func newProjectGetCmd(app *App) *cobra.Command {
 
 			p := app.Printer
 			return app.jsonOrHuman(proj, func() {
-				gitInfo := "未启用"
+				gitInfo := "disabled"
 				if proj.UseGit {
 					gitInfo = proj.GitURL + " @" + orDash(proj.GitBranch)
 					if proj.GitSubdir != "" {
-						gitInfo += "（子目录 " + proj.GitSubdir + "）"
+						gitInfo += "(subdir " + proj.GitSubdir + ")"
 					}
 				}
 				p.String(output.KeyValue([][2]string{
 					{"Key", p.Bold(proj.Key)},
-					{"名称", orDash(proj.Name)},
-					{"描述", orDash(proj.Description)},
-					{"工作目录", orDash(proj.Workdir)},
+					{"name", orDash(proj.Name)},
+					{"description", orDash(proj.Description)},
+					{"workdir", orDash(proj.Workdir)},
 					{"Shell", orDash(proj.Shell)},
-					{"并发策略", orDash(proj.Concurrency)},
-					{"超时", strconv.Itoa(proj.TimeoutSec) + " 秒（0=不限）"},
+					{"concurrency", orDash(proj.Concurrency)},
+					{"timeout", strconv.Itoa(proj.TimeoutSec) + " s (0 = unlimited)"},
 					{"Git", gitInfo},
-					{"Hook 触发", boolText(proj.HookEnabled)},
-					{"允许覆盖环境变量", boolText(proj.AllowEnvOverride)},
-					{"负责人", orDash(proj.OwnerName)},
-					{"已归档", boolText(proj.Archived)},
-					{"最近运行", formatTime(proj.LastRunAt) + "  " + orDash(proj.LastRunStatus)},
-					{"运行次数", strconv.Itoa(proj.RunCount)},
-					{"创建时间", formatTime(proj.CreatedAt)},
+					{"Hook trigger", boolText(proj.HookEnabled)},
+					{"allow env override", boolText(proj.AllowEnvOverride)},
+					{"owner", orDash(proj.OwnerName)},
+					{"archived", boolText(proj.Archived)},
+					{"last run", formatTime(proj.LastRunAt) + "  " + orDash(proj.LastRunStatus)},
+					{"run count", strconv.Itoa(proj.RunCount)},
+					{"created at", formatTime(proj.CreatedAt)},
 				}))
 
 				p.Println()
-				p.Println(p.Bold("命令列表"))
+				p.Println(p.Bold("commands"))
 				if len(proj.Commands) == 0 {
-					p.Println("（没有命令）")
+					p.Println("(no commands)")
 				} else {
 					rows := make([][]string, 0, len(proj.Commands))
 					for _, c := range proj.Commands {
@@ -70,12 +70,12 @@ func newProjectGetCmd(app *App) *cobra.Command {
 							oneLine(c.Script, 60),
 						})
 					}
-					p.String(output.Table([]string{"#", "ID", "名称", "启用", "失败策略", "脚本"}, rows))
+					p.String(output.Table([]string{"#", "ID", "name", "enabled", "failure strategy", "script"}, rows))
 				}
 
 				if len(proj.Envs) > 0 {
 					p.Println()
-					p.Println(p.Bold("环境变量"))
+					p.Println(p.Bold("env vars"))
 					rows := make([][]string, 0, len(proj.Envs))
 					for _, e := range proj.Envs {
 						value := e.Value
@@ -93,9 +93,9 @@ func newProjectGetCmd(app *App) *cobra.Command {
 
 func boolText(b bool) string {
 	if b {
-		return "是"
+		return "yes"
 	}
-	return "否"
+	return "no"
 }
 
 // oneLine 把多行脚本压成一行并截断，便于表格展示。

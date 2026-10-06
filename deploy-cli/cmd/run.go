@@ -28,20 +28,20 @@ func newRunCmd(app *App) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "run <projectKey>",
-		Short: "触发项目运行（-f 跟随日志，--wait 等待结果）",
-		Long: `触发一次项目运行。
+		Short: "trigger a project run (-f follows logs, --wait waits for the result)",
+		Long: `Trigger a project run.
 
-  deploy run my-app                    触发后立刻返回（打印 runId）
-  deploy run my-app -f                 先补历史日志，再实时跟随到结束
-  deploy run my-app --wait             不打印日志，只等结果
+  deploy run my-app                    return immediately (prints the runId)
+  deploy run my-app -f                 replay history, then follow live until the end
+  deploy run my-app --wait             print no logs, just wait for the result
   deploy run my-app -e TAG=v1 --branch main
 
-Ctrl+C 默认只断开日志跟随，不会取消运行；加上 --cancel-on-interrupt 才会调用取消接口。`,
-		Args: exactArgs(1, "用法：deploy run <projectKey> [-f] [-e K=V] [--branch REF] [--wait] [--cancel-on-interrupt]"),
+Ctrl+C only detaches log following by default and does not cancel the run; add --cancel-on-interrupt to call the cancel endpoint.`,
+		Args: exactArgs(1, "usage: deploy run <projectKey> [-f] [-e K=V] [--branch REF] [--wait] [--cancel-on-interrupt]"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key := strings.TrimSpace(args[0])
 			if key == "" {
-				return exitcode.Usagef("项目 key 不能为空")
+				return exitcode.Usagef("project key must not be empty")
 			}
 			// 先做纯本地校验，再触碰网络与鉴权（保证用法错误优先返回退出码 2）。
 			envMap, err := parseEnvPairs(envPairs)
@@ -50,7 +50,7 @@ Ctrl+C 默认只断开日志跟随，不会取消运行；加上 --cancel-on-int
 			}
 			for _, id := range commandIDs {
 				if id <= 0 {
-					return exitcode.Usagef("--command-id 必须是正整数，收到 %d", id)
+					return exitcode.Usagef("--command-id must be a positive integer, got %d", id)
 				}
 			}
 			client, err := app.AuthClient()
@@ -81,9 +81,9 @@ Ctrl+C 默认只断开日志跟随，不会取消运行；加上 --cancel-on-int
 					"logUrl":      res.LogURL,
 					"statusUrl":   res.StatusURL,
 				}, func() {
-					p.Printf("已触发运行 ID #%d（项目 %s，构建号 #%d，状态 %s）\n",
+					p.Printf("triggered run ID #%d (project %s, build #%d, status %s)\n",
 						res.RunID, key, res.BuildNumber, res.Status)
-					p.Infof("跟随日志：deploy logs %d -f", res.RunID)
+					p.Infof("follow logs: deploy logs %d -f", res.RunID)
 				})
 			}
 
@@ -94,10 +94,10 @@ Ctrl+C 默认只断开日志跟随，不会取消运行；加上 --cancel-on-int
 				return app.followRun(sigCtx, client, res.RunID, res.BuildNumber, cancelOnInterrupt)
 			}
 
-			p.Infof("%s 已触发，等待结束…", runHead(res.RunID, res.BuildNumber))
+			p.Infof("%s triggered, waiting for it to finish...", runHead(res.RunID, res.BuildNumber))
 			run, err := waitForRun(sigCtx, client, res.RunID, 0, p)
 			if errors.Is(err, context.Canceled) {
-				p.Infof("已停止等待（%s 仍在继续）", runHead(res.RunID, res.BuildNumber))
+				p.Infof("stopped waiting (%s is still running)", runHead(res.RunID, res.BuildNumber))
 				return nil
 			}
 			if err != nil {
@@ -111,12 +111,12 @@ Ctrl+C 默认只断开日志跟随，不会取消运行；加上 --cancel-on-int
 	}
 
 	f := cmd.Flags()
-	f.BoolVarP(&follow, "follow", "f", false, "先补历史日志，再通过 WebSocket 实时跟随到结束")
-	f.BoolVar(&wait, "wait", false, "等待运行结束后返回（不输出日志）")
-	f.StringVar(&branch, "branch", "", "指定分支 / ref（写入 requestedRef）")
-	f.StringArrayVarP(&envPairs, "env", "e", nil, "触发时覆盖环境变量 K=V，可重复")
-	f.Int64SliceVar(&commandIDs, "command-id", nil, "只执行指定命令 ID，可重复")
-	f.BoolVar(&cancelOnInterrupt, "cancel-on-interrupt", false, "Ctrl+C 时调用取消接口并退出")
+	f.BoolVarP(&follow, "follow", "f", false, "replay history first, then follow live over WebSocket until the end")
+	f.BoolVar(&wait, "wait", false, "wait for the run to finish and return (no logs)")
+	f.StringVar(&branch, "branch", "", "branch / ref to use (written to requestedRef)")
+	f.StringArrayVarP(&envPairs, "env", "e", nil, "override env vars K=V at trigger time; repeatable")
+	f.Int64SliceVar(&commandIDs, "command-id", nil, "only run the given command IDs; repeatable")
+	f.BoolVar(&cancelOnInterrupt, "cancel-on-interrupt", false, "call the cancel endpoint on Ctrl+C and exit")
 
 	return cmd
 }
@@ -133,7 +133,7 @@ func (a *App) followRun(ctx context.Context, client *api.Client, runID int64, bu
 		Verbose: verboseFn(p),
 		OnStatus: func(_ string, step *ws.Step) {
 			if step != nil {
-				p.Verbosef("步骤 [%d] %s", step.SortOrder, step.Name)
+				p.Verbosef("step [%d] %s", step.SortOrder, step.Name)
 			}
 		},
 	}
@@ -158,7 +158,7 @@ func (a *App) handleInterrupt(client *api.Client, runID int64, buildNumber int, 
 	p := a.Printer
 
 	if !cancelRun {
-		p.Infof("已断开日志跟随（%s 未取消；重新跟随：deploy logs %d -f）", runHead(runID, buildNumber), runID)
+		p.Infof("log following detached (%s was not cancelled; follow again: deploy logs %d -f)", runHead(runID, buildNumber), runID)
 		if result != nil && result.Terminated {
 			return a.finishRun(runID, buildNumber, result.Status, result.ExitCode, result.DurationMs)
 		}
@@ -170,9 +170,9 @@ func (a *App) handleInterrupt(client *api.Client, runID int64, buildNumber int, 
 	err := client.CancelRun(cctx, runID)
 	cancel()
 	if err != nil {
-		p.Warnf("取消运行失败：%v", err)
+		p.Warnf("cancelling the run failed: %v", err)
 	} else {
-		p.Infof("已请求取消 %s，等待其结束…", runHead(runID, buildNumber))
+		p.Infof("requested cancellation of %s, waiting for it to finish...", runHead(runID, buildNumber))
 	}
 
 	run, werr := waitForRun(context.Background(), client, runID, 30*time.Second, p)
@@ -180,7 +180,7 @@ func (a *App) handleInterrupt(client *api.Client, runID int64, buildNumber int, 
 		return werr
 	}
 	if run == nil {
-		p.Warnf("等待 %s 结束超时", runHead(runID, buildNumber))
+		p.Warnf("timed out waiting for %s to finish", runHead(runID, buildNumber))
 		return exitcode.Fail(exitcode.DeployFailed)
 	}
 	return a.finishRun(run.ID, run.BuildNumber, run.Status, run.ExitCode, run.DurationMs)
@@ -212,10 +212,10 @@ func (a *App) finishRun(runID int64, buildNumber int, status string, exitCode *i
 		return nil
 	}
 	if status == "" {
-		p.Errorf("未能获取 %s 的最终状态", runHead(runID, buildNumber))
+		p.Errorf("could not get the final state of %s", runHead(runID, buildNumber))
 		return exitcode.Fail(exitcode.DeployFailed)
 	}
-	p.Errorf("%s 未成功：status=%s", runHead(runID, buildNumber), status)
+	p.Errorf("%s did not succeed: status=%s", runHead(runID, buildNumber), status)
 	return exitcode.Fail(exitcode.DeployFailed)
 }
 
@@ -237,9 +237,9 @@ func waitForRun(ctx context.Context, client *api.Client, runID int64, timeout ti
 			if api.IsTerminalStatus(run.Status) {
 				return run, nil
 			}
-			p.Verbosef("运行 #%d 状态 %s，等待中…", runID, run.Status)
+			p.Verbosef("run #%d status %s, waiting...", runID, run.Status)
 		case isTransient(err):
-			p.Verbosef("查询运行状态失败（%v），继续等待", err)
+			p.Verbosef("failed to query the run status (%v), still waiting", err)
 		default:
 			return nil, err
 		}

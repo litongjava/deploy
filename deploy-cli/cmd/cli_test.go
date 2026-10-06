@@ -227,6 +227,9 @@ func (f *fakeAPI) handler() http.Handler {
 		f.cancelCalls++
 		writeOK(w, nil)
 	})
+	mux.HandleFunc("GET /api/v1/healthz", func(w http.ResponseWriter, r *http.Request) {
+		writeOK(w, map[string]any{"status": "ok", "version": "0.5.0", "time": "2026-01-01T00:00:00+08:00"})
+	})
 	mux.HandleFunc("GET /api/v1/system/doctor", func(w http.ResponseWriter, r *http.Request) {
 		if !f.authorized(w, r) {
 			return
@@ -331,7 +334,7 @@ func TestUnknownCommandIsUsageError(t *testing.T) {
 	if code != exitcode.Usage {
 		t.Fatalf("exit=%d want %d", code, exitcode.Usage)
 	}
-	if !strings.Contains(errw, "未知命令") {
+	if !strings.Contains(errw, "unknown command") {
 		t.Fatalf("stderr = %q", errw)
 	}
 }
@@ -395,11 +398,11 @@ func TestAuthRequiredReturnsExitCode3(t *testing.T) {
 func TestConfigSetGetRoundTrip(t *testing.T) {
 	path := isolateConfig(t)
 
-	code, _, _ := exec(t, "config", "set", "server", "http://127.0.0.1:9999")
+	code, _, _ := exec(t, "config", "set", "address", "http://127.0.0.1:9999")
 	if code != exitcode.OK {
 		t.Fatalf("config set exit=%d", code)
 	}
-	code, out, _ := exec(t, "config", "get", "server")
+	code, out, _ := exec(t, "config", "get", "address")
 	if code != exitcode.OK || strings.TrimSpace(out) != "http://127.0.0.1:9999" {
 		t.Fatalf("config get = %q (exit=%d)", out, code)
 	}
@@ -456,11 +459,11 @@ func TestEnvVarsBeatConfigFile(t *testing.T) {
 	f := &fakeAPI{}
 	srv := startFake(t, f)
 
-	if code, _, _ := exec(t, "config", "set", "server", "http://127.0.0.1:1"); code != exitcode.OK {
+	if code, _, _ := exec(t, "config", "set", "address", "http://127.0.0.1:1"); code != exitcode.OK {
 		t.Fatal("config set failed")
 	}
 	// 环境变量应当覆盖配置文件
-	t.Setenv("DEPLOY_SERVER", srv.URL)
+	t.Setenv("DEPLOY_ADDRESS", srv.URL)
 	t.Setenv("DEPLOY_TOKEN", f.token)
 	code, out, _ := exec(t, "whoami")
 	if code != exitcode.OK {
@@ -479,7 +482,7 @@ func TestLoginProjectRunStopFlow(t *testing.T) {
 	srv := startFake(t, f)
 
 	// login
-	code, out, errw := exec(t, "login", "-s", srv.URL, "-u", "admin", "-p", "pw")
+	code, out, errw := exec(t, "login", "-a", srv.URL, "-u", "admin", "-p", "pw")
 	if code != exitcode.OK {
 		t.Fatalf("login exit=%d out=%q err=%q", code, out, errw)
 	}
@@ -490,15 +493,15 @@ func TestLoginProjectRunStopFlow(t *testing.T) {
 		t.Fatalf("whoami exit=%d", code)
 	}
 	var who struct {
-		Server string `json:"server"`
-		User   struct {
+		Address string `json:"address"`
+		User    struct {
 			Username string `json:"username"`
 		} `json:"user"`
 	}
 	if err := json.Unmarshal([]byte(out), &who); err != nil {
 		t.Fatalf("whoami JSON: %v (%q)", err, out)
 	}
-	if who.User.Username != "admin" || who.Server != srv.URL {
+	if who.User.Username != "admin" || who.Address != srv.URL {
 		t.Fatalf("whoami = %+v", who)
 	}
 
@@ -525,6 +528,83 @@ func TestLoginProjectRunStopFlow(t *testing.T) {
 	// project create 缺参数 → 用法错误
 	if code, _, _ = exec(t, "project", "create", "--key", "bad key", "--workdir", "/x", "--command", "ls"); code != exitcode.Usage {
 		t.Fatalf("非法 key 应返回 2，得到 %d", code)
+	}
+
+	// project create --file：Windows 上没有 $(cat ...)，用 JSON + scriptFile 表达
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "sh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sh", "01-recon.sh"), []byte("echo recon\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sh", "02-build.sh"), []byte("mvn -q package\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spec := map[string]any{
+		"key": "from-file", "name": "来自文件", "workdir": "/srv/from-file",
+		"useGit": true, "gitUrl": "https://example.com/x.git", "gitBranch": "main",
+		"env": map[string]string{"APP_PORT": "10062"},
+		"commands": []map[string]any{
+			{"name": "环境勘察", "scriptFile": "sh/01-recon.sh"},
+			{"name": "Maven 构建", "scriptFile": filepath.Join("sh", "02-build.sh")},
+		},
+	}
+	b, _ := json.Marshal(spec)
+	specPath := filepath.Join(dir, "project.json")
+	if err := os.WriteFile(specPath, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errw = exec(t, "project", "create", "--file", specPath)
+	if code != exitcode.OK {
+		t.Fatalf("project create --file exit=%d out=%q err=%q", code, out, errw)
+	}
+	if f.lastCreateBody["key"] != "from-file" || f.lastCreateBody["workdir"] != "/srv/from-file" {
+		t.Fatalf("文件里的项目字段没进请求体: %+v", f.lastCreateBody)
+	}
+	if f.lastCreateBody["useGit"] != true || f.lastCreateBody["gitUrl"] != "https://example.com/x.git" {
+		t.Fatalf("文件里的 git 字段没进请求体: %+v", f.lastCreateBody)
+	}
+	cmds, _ := f.lastCreateBody["commands"].([]any)
+	if len(cmds) != 2 {
+		t.Fatalf("commands = %+v", f.lastCreateBody["commands"])
+	}
+	first, _ := cmds[0].(map[string]any)
+	if first["name"] != "环境勘察" || first["script"] != "echo recon\n" {
+		t.Fatalf("第一条命令 = %+v", first)
+	}
+	second, _ := cmds[1].(map[string]any)
+	if second["script"] != "mvn -q package\n" {
+		t.Fatalf("scriptFile 未按 Windows 反斜杠读取: %+v", second)
+	}
+	envs, _ := f.lastCreateBody["envs"].([]any)
+	if len(envs) != 1 {
+		t.Fatalf("envs = %+v", f.lastCreateBody["envs"])
+	}
+	if e0, _ := envs[0].(map[string]any); e0["key"] != "APP_PORT" || e0["value"] != "10062" {
+		t.Fatalf("env 简写没解析: %+v", envs[0])
+	}
+
+	// 显式 flag 覆盖文件；且不因为没传 --command 就丢掉文件里的命令
+	code, out, errw = exec(t, "project", "create", "--file", specPath, "--key", "override-key")
+	if code != exitcode.OK {
+		t.Fatalf("--file + --key 覆盖 exit=%d err=%q", code, errw)
+	}
+	if f.lastCreateBody["key"] != "override-key" {
+		t.Fatalf("显式 --key 应覆盖文件: %+v", f.lastCreateBody)
+	}
+	if cs, _ := f.lastCreateBody["commands"].([]any); len(cs) != 2 {
+		t.Fatalf("覆盖 key 时命令应仍来自文件: %+v", f.lastCreateBody["commands"])
+	}
+
+	// 文件不存在 / scriptFile 缺失 → 用法错误（退出码 2），不是 panic
+	if code, _, _ = exec(t, "project", "create", "--file", filepath.Join(dir, "nope.json")); code != exitcode.Usage {
+		t.Fatalf("不存在的 --file 应返回 2，得到 %d", code)
+	}
+	badSpec := filepath.Join(dir, "bad.json")
+	_ = os.WriteFile(badSpec, []byte(`{"key":"bad","workdir":"/x","commands":[{"name":"a","scriptFile":"sh/missing.sh"}]}`), 0o600)
+	if code, _, _ = exec(t, "project", "create", "--file", badSpec); code != exitcode.Usage {
+		t.Fatalf("缺失 scriptFile 应返回 2，得到 %d", code)
 	}
 
 	// run（不跟随）
@@ -624,7 +704,7 @@ func TestRunFollowOverWebSocket(t *testing.T) {
 	}
 	srv := startFake(t, f)
 
-	if code, _, _ := exec(t, "login", "-s", srv.URL, "-u", "admin", "-p", "pw"); code != exitcode.OK {
+	if code, _, _ := exec(t, "login", "-a", srv.URL, "-u", "admin", "-p", "pw"); code != exitcode.OK {
 		t.Fatal("login failed")
 	}
 
@@ -638,7 +718,7 @@ func TestRunFollowOverWebSocket(t *testing.T) {
 	if strings.Contains(out, "\x1b[") {
 		t.Fatalf("非 TTY 下 ANSI 未被剥离: %q", out)
 	}
-	if !strings.Contains(out, "运行 ID #88（构建号 #13）") {
+	if !strings.Contains(out, "run ID #88 (build #13)") {
 		t.Fatalf("摘要应同时标注全局 run ID 与项目内构建号: %q", out)
 	}
 	if strings.Contains(out, "运行 #88  ") {
@@ -681,10 +761,10 @@ func TestRunFollowOverWebSocket(t *testing.T) {
 
 // 摘要里的运行标识必须同时区分全局 run ID 与项目内构建号。
 func TestRunHeadFormatting(t *testing.T) {
-	if got := runHead(3, 2); got != "运行 ID #3（构建号 #2）" {
+	if got := runHead(3, 2); got != "run ID #3 (build #2)" {
 		t.Fatalf("runHead(3,2) = %q", got)
 	}
-	if got := runHead(3, 0); got != "运行 ID #3" {
+	if got := runHead(3, 0); got != "run ID #3" {
 		t.Fatalf("构建号未知时应只显示 run ID，得到 %q", got)
 	}
 }
@@ -695,7 +775,7 @@ func TestRunWaitFailedReturnsExitCode1(t *testing.T) {
 	f := &fakeAPI{runStatus: "failed", runExitCode: 2}
 	srv := startFake(t, f)
 
-	if code, _, _ := exec(t, "login", "-s", srv.URL, "-u", "admin", "-p", "pw"); code != exitcode.OK {
+	if code, _, _ := exec(t, "login", "-a", srv.URL, "-u", "admin", "-p", "pw"); code != exitcode.OK {
 		t.Fatal("login failed")
 	}
 	code, out, errw := exec(t, "run", "my-app", "--wait")
@@ -713,7 +793,7 @@ func TestUnauthorizedReturnsExitCode3(t *testing.T) {
 	f := &fakeAPI{unauthorized: true}
 	srv := startFake(t, f)
 
-	if code, _, _ := exec(t, "login", "-s", srv.URL, "-u", "admin", "-p", "pw"); code != exitcode.OK {
+	if code, _, _ := exec(t, "login", "-a", srv.URL, "-u", "admin", "-p", "pw"); code != exitcode.OK {
 		t.Fatal("login failed")
 	}
 	code, _, errw := exec(t, "project", "list")
@@ -728,7 +808,7 @@ func TestLoginWithBadTokenDoesNotSave(t *testing.T) {
 	f := &fakeAPI{unauthorized: true}
 	srv := startFake(t, f)
 
-	code, _, _ := exec(t, "login", "-s", srv.URL, "--token", "bad-token")
+	code, _, _ := exec(t, "login", "-a", srv.URL, "--token", "bad-token")
 	if code != exitcode.Auth {
 		t.Fatalf("exit=%d want %d", code, exitcode.Auth)
 	}
@@ -744,11 +824,11 @@ func TestLoginWrongPasswordExitCode3(t *testing.T) {
 	f := &fakeAPI{}
 	srv := startFake(t, f)
 
-	code, _, errw := exec(t, "login", "-s", srv.URL, "-u", "admin", "-p", "wrong")
+	code, _, errw := exec(t, "login", "-a", srv.URL, "-u", "admin", "-p", "wrong")
 	if code != exitcode.Auth {
 		t.Fatalf("exit=%d want %d", code, exitcode.Auth)
 	}
-	if !strings.Contains(errw, "登录失败") {
+	if !strings.Contains(errw, "sign-in failed") {
 		t.Fatalf("stderr = %q", errw)
 	}
 }
@@ -760,7 +840,7 @@ func TestServerDownReturnsExitCode4(t *testing.T) {
 	url := srv.URL
 	srv.Close()
 
-	code, _, errw := exec(t, "login", "-s", url, "-u", "admin", "-p", "pw")
+	code, _, errw := exec(t, "login", "-a", url, "-u", "admin", "-p", "pw")
 	if code != exitcode.Network {
 		t.Fatalf("exit=%d want %d (%s)", code, exitcode.Network, errw)
 	}
@@ -769,22 +849,22 @@ func TestServerDownReturnsExitCode4(t *testing.T) {
 // 非交互环境缺少密码必须报用法错误，而不是卡住等待输入。
 func TestLoginNonInteractiveRequiresPassword(t *testing.T) {
 	isolateConfig(t)
-	code, _, _ := exec(t, "login", "-s", "http://127.0.0.1:8080", "-u", "admin")
+	code, _, _ := exec(t, "login", "-a", "http://127.0.0.1:8080", "-u", "admin")
 	if code != exitcode.Usage {
 		t.Fatalf("exit=%d want %d", code, exitcode.Usage)
 	}
 }
 
-// --server/--token 全局 flag 优先级最高。
+// --address/--token 全局 flag 优先级最高（覆盖配置文件里的地址）。
 func TestGlobalFlagsBeatEverything(t *testing.T) {
 	isolateConfig(t)
 	f := &fakeAPI{}
 	srv := startFake(t, f)
 
-	if code, _, _ := exec(t, "config", "set", "server", "http://127.0.0.1:1"); code != exitcode.OK {
+	if code, _, _ := exec(t, "config", "set", "address", "http://127.0.0.1:1"); code != exitcode.OK {
 		t.Fatal("config set failed")
 	}
-	code, out, _ := exec(t, "--server", srv.URL, "--token", "flag-token", "whoami", "--json")
+	code, out, _ := exec(t, "--address", srv.URL, "--token", "flag-token", "whoami", "--json")
 	if code != exitcode.OK {
 		t.Fatalf("exit=%d out=%q", code, out)
 	}
@@ -795,8 +875,8 @@ func TestGlobalFlagsBeatEverything(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("whoami --json 不是合法 JSON: %v (%q)", err, out)
 	}
-	if got["server"] != srv.URL {
-		t.Fatalf("server = %v, want %v", got["server"], srv.URL)
+	if got["address"] != srv.URL {
+		t.Fatalf("address = %v, want %v", got["address"], srv.URL)
 	}
 }
 

@@ -10,8 +10,8 @@ import (
 func newLogoutCmd(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "logout",
-		Short: "清除当前 context 的 token",
-		Args:  exactArgs(0, "logout 不接受位置参数"),
+		Short: "clear the token of the current server",
+		Args:  exactArgs(0, "logout takes no positional arguments"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p := app.Printer
 
@@ -19,7 +19,7 @@ func newLogoutCmd(app *App) *cobra.Command {
 			if client, err := app.Client(); err == nil && client.Token != "" {
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				if lerr := client.Logout(ctx); lerr != nil {
-					p.Verbosef("调用 /auth/logout 失败（忽略）：%v", lerr)
+					p.Verbosef("call to /auth/logout failed (ignored): %v", lerr)
 				}
 				cancel()
 			}
@@ -31,13 +31,13 @@ func newLogoutCmd(app *App) *cobra.Command {
 				return err
 			}
 			return app.jsonOrHuman(map[string]any{
-				"context": app.Cfg.Current,
+				"server":  app.Cfg.Current,
 				"cleared": had,
 			}, func() {
 				if had {
-					p.Printf("已清除 context %q 的 token\n", app.Cfg.Current)
+					p.Printf("cleared the token of server %q\n", app.Cfg.Current)
 				} else {
-					p.Printf("context %q 本来就没有保存 token\n", app.Cfg.Current)
+					p.Printf("server %q had no token stored\n", app.Cfg.Current)
 				}
 			})
 		},

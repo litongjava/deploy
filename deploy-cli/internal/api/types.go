@@ -286,6 +286,92 @@ type Health struct {
 	Time    string `json:"time"`
 }
 
+// ---------- 中间件（GET/POST /system/middleware*） ----------
+
+// MiddlewareField 是中间件的一个可编辑参数。
+//
+// Secret 为 true 时 Value 恒为空串 —— 服务端绝不回密码明文，
+// 只用 Set 表示「已经配过密码了」。
+type MiddlewareField struct {
+	Key         string `json:"key"`
+	Label       string `json:"label"`
+	Default     string `json:"default"`
+	Placeholder string `json:"placeholder"`
+	Help        string `json:"help"`
+	Secret      bool   `json:"secret"`
+	Value       string `json:"value"`
+	Set         bool   `json:"set"`
+}
+
+// MiddlewareProbe 是页面上展示的探测项。
+type MiddlewareProbe struct {
+	Name  string `json:"name"`
+	Found bool   `json:"found"`
+}
+
+// MiddlewareComponent 是一种中间件的当前状态。
+type MiddlewareComponent struct {
+	Key             string            `json:"key"`
+	Name            string            `json:"name"`
+	Note            string            `json:"note"`
+	Category        string            `json:"category"`
+	Estimate        string            `json:"estimate"`
+	Installed       bool              `json:"installed"`
+	Running         bool              `json:"running"`
+	Version         string            `json:"version"`
+	Path            string            `json:"path"`
+	Detail          string            `json:"detail"`
+	Modes           []string          `json:"modes"`
+	DefaultMode     string            `json:"defaultMode"`
+	Mode            string            `json:"mode"`
+	EffectiveMode   string            `json:"effectiveMode"`
+	NativeSupported bool              `json:"nativeSupported"`
+	Probes          []MiddlewareProbe `json:"probes"`
+	Fields          []MiddlewareField `json:"fields"`
+}
+
+// MiddlewareList 是 GET /system/middleware 的 data。
+type MiddlewareList struct {
+	Supported       bool                  `json:"supported"`
+	Platform        string                `json:"platform"`
+	DockerAvailable bool                  `json:"dockerAvailable"`
+	DockerVersion   string                `json:"dockerVersion"`
+	Components      []MiddlewareComponent `json:"components"`
+	Missing         []string              `json:"missing"`
+	Running         []string              `json:"running"`
+	Actions         []string              `json:"actions"`
+	ScriptPath      string                `json:"scriptPath"`
+	ScriptURL       string                `json:"scriptUrl"`
+	ProjectKey      string                `json:"projectKey"`
+	Hint            string                `json:"hint"`
+	InstallCmd      string                `json:"installCmd"`
+}
+
+// MiddlewareInstallRequest 是 POST /system/middleware/install 的请求体。
+type MiddlewareInstallRequest struct {
+	Components []string `json:"components,omitempty"`
+	Mode       string   `json:"mode,omitempty"`
+	Action     string   `json:"action,omitempty"`
+	DryRun     bool     `json:"dryRun,omitempty"`
+	Force      bool     `json:"force,omitempty"`
+	Mirror     string   `json:"mirror,omitempty"`
+}
+
+// MiddlewareInstallResult 是安装/启停操作的返回 data。
+type MiddlewareInstallResult struct {
+	RunID       int64    `json:"runId"`
+	BuildNumber int      `json:"buildNumber"`
+	Status      string   `json:"status"`
+	ProjectKey  string   `json:"projectKey"`
+	Components  []string `json:"components"`
+	Action      string   `json:"action"`
+	DryRun      bool     `json:"dryRun"`
+	Command     string   `json:"command"`
+	LogURL      string   `json:"logUrl"`
+	NothingToDo bool     `json:"nothingToDo"`
+	Message     string   `json:"message"`
+}
+
 // FormatDuration 把毫秒格式化成人类可读的耗时。
 func FormatDuration(ms int64) string {
 	if ms <= 0 {

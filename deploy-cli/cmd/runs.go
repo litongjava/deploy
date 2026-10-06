@@ -13,11 +13,11 @@ import (
 func newRunsCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "runs",
-		Short: "运行历史（runs list）",
+		Short: "run history (runs list)",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
-				return exitcode.Usagef("未知子命令 %q，可用：list", args[0])
+				return exitcode.Usagef("unknown subcommand %q; available: list", args[0])
 			}
 			return cmd.Help()
 		},
@@ -37,17 +37,17 @@ func newRunsListCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "列出运行历史（可按项目/状态过滤）",
-		Long: `列出运行历史。
+		Short:   "list run history (filterable by project/status)",
+		Long: `List run history.
 
   deploy runs list
   deploy runs list --project my-app --status failed --page 2
 
-status 取值：queued/running/success/failed/canceled/timeout/error`,
-		Args: exactArgs(0, "list 不接受位置参数"),
+status values: queued/running/success/failed/canceled/timeout/error`,
+		Args: exactArgs(0, "list takes no positional arguments"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if status != "" && !validRunStatus(status) {
-				return exitcode.Usagef("--status 只能是 queued/running/success/failed/canceled/timeout/error，收到 %q", status)
+				return exitcode.Usagef("--status must be queued/running/success/failed/canceled/timeout/error, got %q", status)
 			}
 			client, err := app.AuthClient()
 			if err != nil {
@@ -64,7 +64,7 @@ status 取值：queued/running/success/failed/canceled/timeout/error`,
 			p := app.Printer
 			return app.jsonOrHuman(result, func() {
 				if len(result.List) == 0 {
-					p.Println("（没有匹配的运行）")
+					p.Println("(no matching runs)")
 					return
 				}
 				rows := make([][]string, 0, len(result.List))
@@ -86,17 +86,17 @@ status 取值：queued/running/success/failed/canceled/timeout/error`,
 					})
 				}
 				p.String(output.Table(
-					[]string{"RUN", "项目", "构建号", "状态", "触发方式", "触发人", "开始时间", "耗时", "退出码"},
+					[]string{"RUN", "project", "build", "status", "trigger", "triggered by", "started at", "duration", "exit code"},
 					rows))
-				p.Printf("共 %d 条，第 %d 页（每页 %d）\n", result.Total, result.Page, result.PageSize)
+				p.Printf("total %d, page %d (page size %d)\n", result.Total, result.Page, result.PageSize)
 			})
 		},
 	}
 
-	cmd.Flags().StringVar(&project, "project", "", "按项目 key 过滤")
-	cmd.Flags().StringVar(&status, "status", "", "按状态过滤：queued/running/success/failed/canceled/timeout/error")
-	cmd.Flags().IntVar(&page, "page", 1, "页码（从 1 开始）")
-	cmd.Flags().IntVar(&pageSize, "page-size", 20, "每页条数（最大 200）")
+	cmd.Flags().StringVar(&project, "project", "", "filter by project key")
+	cmd.Flags().StringVar(&status, "status", "", "filter by status: queued/running/success/failed/canceled/timeout/error")
+	cmd.Flags().IntVar(&page, "page", 1, "page number (starts at 1)")
+	cmd.Flags().IntVar(&pageSize, "page-size", 20, "page size (max 200)")
 	return cmd
 }
 

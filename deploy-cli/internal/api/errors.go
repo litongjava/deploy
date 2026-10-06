@@ -45,7 +45,7 @@ func NewError(status, code int, message string) *Error {
 // TransportError 把底层网络错误包成 *Error（HTTPStatus=0 → 退出码 4）。
 func TransportError(op string, err error) *Error {
 	return &Error{
-		Message: fmt.Sprintf("%s 失败: %v", op, err),
+		Message: fmt.Sprintf("%s failed: %v", op, err),
 		cause:   err,
 	}
 }
@@ -56,7 +56,7 @@ func TransportError(op string, err error) *Error {
 // 退出码因此是 4（网络或服务不可用）。原始 HTTP 状态码写进 message 保留信息。
 func ProtocolError(op string, status int, err error) *Error {
 	return &Error{
-		Message: fmt.Sprintf("%s 的响应不符合 API 契约（HTTP %d）: %v", op, status, err),
+		Message: fmt.Sprintf("%s returned a response that violates the API contract (HTTP %d): %v", op, status, err),
 		cause:   err,
 	}
 }
@@ -66,11 +66,11 @@ func (e *Error) Error() string {
 	case e.Message != "":
 		return e.Message
 	case e.Code != 0:
-		return fmt.Sprintf("服务端返回错误码 %d", e.Code)
+		return fmt.Sprintf("server returned error code %d", e.Code)
 	case e.HTTPStatus != 0:
 		return fmt.Sprintf("HTTP %d", e.HTTPStatus)
 	default:
-		return "未知 API 错误"
+		return "unknown API error"
 	}
 }
 

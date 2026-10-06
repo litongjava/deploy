@@ -1,6 +1,11 @@
 import { authApi } from '@/services/auth';
 import { clearToken } from '@/services/authStore';
-import { LogoutOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
+import {
+  LogoutOutlined,
+  QuestionCircleOutlined,
+  SettingOutlined,
+  UserOutlined,
+} from '@ant-design/icons';
 import { history, useModel } from '@umijs/max';
 import { Spin } from 'antd';
 import { createStyles } from 'antd-style';
@@ -70,6 +75,11 @@ export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({ children }) =
         loginOut();
         return;
       }
+      if (key === 'help') {
+        // 原来顶栏那个「?」只是个 hover 提示（title 里写明接口契约在哪），没有点击行为；
+        // 挪进下拉菜单后也保持只做提示，不能落到下面这条默认的「个人设置」跳转上。
+        return;
+      }
       history.push(`/settings/profile`);
     },
     [setInitialState, loginOut],
@@ -107,6 +117,12 @@ export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({ children }) =
       key: 'settings',
       icon: <SettingOutlined />,
       label: '系统设置',
+    },
+    {
+      key: 'help',
+      icon: <QuestionCircleOutlined />,
+      // 顶栏那个「?」的 title 提示原样保留：悬停在这一项上仍能看到接口契约的位置
+      label: <span title="接口契约见 docs/API设计.md">帮助</span>,
     },
     {
       type: 'divider' as const,

@@ -12,8 +12,8 @@ func newVersionCmd(app *App) *cobra.Command {
 	var short bool
 	cmd := &cobra.Command{
 		Use:   "version",
-		Short: "打印版本信息",
-		Args:  exactArgs(0, "version 不接受位置参数"),
+		Short: "print version information",
+		Args:  exactArgs(0, "version takes no positional arguments"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if app.Printer.JSON {
 				return app.Printer.JSONOut(map[string]string{
@@ -33,6 +33,6 @@ func newVersionCmd(app *App) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&short, "short", false, "只输出版本号")
+	cmd.Flags().BoolVar(&short, "short", false, "print the version number only")
 	return cmd
 }

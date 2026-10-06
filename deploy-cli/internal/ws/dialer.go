@@ -38,7 +38,7 @@ func NewDialer(c *api.Client) *Dialer {
 // StreamLogs 建立到 /api/v1/ws/runs/{id}?token=...&offset=n 的连接。
 func (d *Dialer) StreamLogs(ctx context.Context, runID, offset int64) (Conn, error) {
 	if d.Client == nil {
-		return nil, fmt.Errorf("ws: 缺少 api.Client")
+		return nil, fmt.Errorf("ws: missing api.Client")
 	}
 	q := url.Values{}
 	q.Set("offset", strconv.FormatInt(offset, 10))
@@ -58,10 +58,10 @@ func (d *Dialer) StreamLogs(ctx context.Context, runID, offset int64) (Conn, err
 			return nil, &api.Error{
 				HTTPStatus: resp.StatusCode,
 				Code:       codeFromStatus(resp.StatusCode),
-				Message:    fmt.Sprintf("WebSocket 握手失败（HTTP %d）: %v", resp.StatusCode, err),
+				Message:    fmt.Sprintf("WebSocket handshake failed (HTTP %d): %v", resp.StatusCode, err),
 			}
 		}
-		return nil, api.TransportError("建立 WebSocket 连接", err)
+		return nil, api.TransportError("open WebSocket connection", err)
 	}
 	return &gorillaConn{conn: conn}, nil
 }
@@ -90,7 +90,7 @@ func (g *gorillaConn) ReadFrame() (*Frame, error) {
 	}
 	var f Frame
 	if err := json.Unmarshal(data, &f); err != nil {
-		return nil, fmt.Errorf("解析 WebSocket 帧失败: %w", err)
+		return nil, fmt.Errorf("cannot parse WebSocket frame: %w", err)
 	}
 	return &f, nil
 }

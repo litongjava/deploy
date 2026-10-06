@@ -601,8 +601,110 @@ bash install-toolchains.sh --dry-run             # 预演
 bash install-toolchains.sh --list                # 只列状态
 ```
 
-### `GET /api/v1/system/info` （登录）
+### `GET /api/v1/system/middleware` （登录）
 
+中间件（docker / postgresql / mysql / redis / elasticsearch）清单与当前状态。
+前半段与 `GET /system/toolchains` 同构，区别在中间件多了**安装方式（mode）**与**运行状态**两个维度。
+
+```json
+{ "supported": true, "platform": "linux/amd64",
+  "dockerAvailable": true, "dockerVersion": "Docker version 29.8.1, build 4a63305",
+  "components": [
+    { "key":"redis", "name":"Redis", "note":"…", "category":"cache", "estimate":"约 40 MB（镜像）",
+      "installed": true, "running": true, "version":"redis:latest",
+      "path":"container:deploy-mw-redis",
+      "detail":"容器 deploy-mw-redis（running）  卷 deploy-mw-redis-data  端口 16379",
+      "modes":["docker","native"], "defaultMode":"docker",
+      "mode":"docker", "effectiveMode":"docker", "nativeSupported": true,
+      "probes":[{"name":"容器 deploy-mw-redis","found":true},{"name":"redis-server","found":false}],
+      "fields":[{"key":"REDIS_PORT","label":"端口","default":"6379","value":"16379","secret":false,"set":false},
+                {"key":"REDIS_PASSWORD","label":"密码","default":"","value":"","secret":true,"set":true}] } ],
+  "missing":["postgresql","mysql","elasticsearch"], "running":["docker","redis"],
+  "actions":["install","start","stop","restart","upgrade","logs","remove"],
+  "scriptPath":"/srv/deploy/data/middleware/install.sh", "scriptUrl":"/api/v1/system/middleware/script",
+  "projectKey":"system-middleware", "hint":"…", "installCmd":"bash … --only <中间件> [--mode …]" }
+```
+
+字段语义（都有对应的服务端用例）：
+
+- `modes` / `defaultMode`：该中间件可选的方式与默认方式。`docker` 只有 `native`、`elasticsearch` 只有 `docker`。
+- `mode`：**保存的配置**（来自 `PUT /system/middleware/{key}`）；`effectiveMode`：**实际在跑的方式**
+  （容器装了就是 `docker`，原生包装了就是 `native`）。两者可能不同 —— 例如配置成 native、但实际上有个旧容器在跑。
+- `installed` / `running` 分开：**装了但没在跑**（容器 `exited`）是常见状态，要能区分出来。
+- `probes[].found` 逐项独立：容器探测与原生命令探测是两条互斥的事实，
+  不会「一荣俱荣」（否则会出现「容器 ✔ + psql ✔」这种自相矛盾的面板）。
+- `fields[].secret=true` 的参数（`*_PASSWORD`）**永远不回明文**，`value` 恒为空串，
+  改用 `set` 表示「是否已保存过」。密文以 AES-GCM 存在 `settings` 表的 `middleware.<key>` 下。
+- `dockerAvailable=false` 时容器方式不可用；`supported=false` 表示服务端不是 Linux（只能 dry-run）。
+
+### `PUT /api/v1/system/middleware/{key}` （**仅 admin**）
+
+保存某个中间件的参数与安装方式。请求体 `{"fields":{"REDIS_PORT":"16379"},"mode":"docker"}`。
+
+- 未知参数名或未知方式返回 `40000`（参数名会作为环境变量注入脚本、方式会进命令行，必须挡住）。
+- 普通参数传空串 = 回默认（从 `values` 里删掉）。
+- 密码参数三态：**传空串 = 清空**（下次安装随机生成）、**传占位符 `******` = 保持原密文**、
+  **不传该键 = 不动**。这样「只改端口」不会误清密码，而「想换密码」也有明确表达方式。
+- 响应回最新的 `fields`（密码仍只有 `set`）与 `mode`。
+
+### `POST /api/v1/system/middleware/install` （**仅 admin**）
+
+触发一次中间件操作，返回可直接跳去看日志的 Run。
+
+```json
+{ "components":["redis","postgresql"], "mode":"docker", "action":"install",
+  "dryRun":false, "force":false, "mirror":"cn" }
+```
+
+| 字段 | 说明 |
+|---|---|
+| `components` | 中间件 key 列表（可逗号分隔）。**空数组只对 `install` 合法**，表示「所有缺失的」 |
+| `mode` | `docker` / `native`，留空按各组件的默认方式 |
+| `action` | `install`（默认）/ `start` / `stop` / `restart` / `remove` / `upgrade` / `logs` |
+| `dryRun` | 只打印计划，不做任何修改（`install` 用） |
+| `force` | 已安装的也重建（容器方式**保留数据卷**） |
+
+响应：
+```json
+{ "runId": 88, "buildNumber": 7, "status": "queued", "projectKey": "system-middleware",
+  "components": ["redis"], "action": "install", "dryRun": false,
+  "command": "bash '/srv/deploy/data/middleware/install.sh' --only redis --action install --mode-of redis=docker",
+  "logUrl": "/api/v1/runs/88/log" }
+```
+
+约束与语义：
+
+- 未知中间件、未知动作、未知方式、`native` 但组件不支持（如 `elasticsearch`）一律 `40000`，
+  **提前拦掉**而不是让使用者在日志里发现「这一项被跳过了」。
+- `action != install` 时 `components` 不能为空：否则「清空勾选后点停止」会意外停掉所有中间件。
+- 非 Linux 服务端：真操作返回 `40000`，`dryRun` 仍可用于预览。
+- 每个组件的方式用 `--mode-of <组件>=<方式>` 逐个传给脚本（脚本只认一个全局 `--mode`，
+  而各组件的方式可能不同）；这些方式同时记进 `runs.params` 的 `mode.<组件>` 便于回看。
+- 参数（含**解密后的密码**）作为运行参数注入本次运行，并记进 `runs.params` —— 这是有意的：
+  脚本随机生成的密码不会出现在参数里，但使用者填的必须能回看，否则「这次按什么装的」无从查起。
+  **平台不对 Run 参数打码**（它们本来就是使用者自己的配置），而日志里的命令行回显会被脚本打成 `***`。
+- 内置项目 `system-middleware`（名称「中间件安装（系统）」）首次使用时自动创建，
+  **命令只有一条且每次触发时更新**；`hookEnabled=false`。
+  与工具链的 `system-toolchain` **分开**：两者的运行历史混在一起会让「上次装数据库是什么时候」难查。
+- 全部已装且无需动作时返回 `{ "runId": 0, "nothingToDo": true }`。
+
+### `GET /api/v1/system/middleware/script` （**仅 admin**）
+
+以 `text/x-shellscript` 返回内嵌的中间件安装脚本，供人工审查或拷到 Linux 机器上手动执行：
+
+```bash
+bash install-middleware.sh --list                        # 只看状态
+bash install-middleware.sh --only docker,redis           # 装指定中间件
+bash install-middleware.sh --only postgresql --mode native
+bash install-middleware.sh --action restart --only redis
+bash install-middleware.sh --remove --only redis         # 数据卷保留
+bash install-middleware.sh --dry-run --only all
+```
+
+脚本里 `ALL_COMPONENTS` 是组件清单的**单一事实来源**（脚本按它执行、页面与 CLI 按它展示），
+与 Go 侧的 `middleware.AllKeys()` 必须逐项同序一致，有测试盯着。
+
+### `GET /api/v1/system/info` （登录）
 服务器基本信息与资源占用，供顶层菜单「服务器」（`/server-info`）页面使用。
 
 ```json
@@ -692,3 +794,11 @@ bash install-toolchains.sh --list                # 只列状态
 `deploy-cli` 只依赖这些，实现顺序也照这个来：
 `/auth/login`、`/auth/me`、`/projects`(GET/POST)、`/projects/{key}`(GET)、`/projects/{key}/run`、
 `/runs/{id}`、`/runs/{id}/log`、`/runs/{id}/cancel`、`/runs`(GET)、`/system/doctor`、`/healthz`、WS `/ws/runs/{id}`。
+
+中间件与任务相关（`cli` 的 `middleware` 命令组）：
+
+`/system/middleware`(GET)、`/system/middleware/install`(POST)、`/system/middleware/{key}`(PUT)、
+`/system/middleware/script`(GET)、`/tasks`(GET/POST)、`/tasks/{key}`(GET/PUT/DELETE)、`/tasks/{key}/run`(POST)。
+
+> 服务器（键 / 名称 / 地址 / token）**不经过任何接口**：它是 CLI 的本地配置（`~/.deploy/config.yaml`），
+> 服务端不知道也不需要知道。`--server` 只是在 CLIENT 侧决定用哪一条服务器配置的 `address` + `token` 去发请求。

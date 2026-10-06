@@ -124,7 +124,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 		ctx = context.Background()
 	}
 	if c.BaseURL == "" {
-		return exitcode.Usagef("未配置服务端地址")
+		return exitcode.Usagef("no server address configured")
 	}
 	endpoint := c.URL(path, query)
 
@@ -132,13 +132,13 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
-			return exitcode.Wrap(exitcode.Usage, err, "序列化请求体失败")
+			return exitcode.Wrap(exitcode.Usage, err, "cannot serialize request body")
 		}
 		reader = bytes.NewReader(b)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
 	if err != nil {
-		return exitcode.Wrap(exitcode.Usage, err, "构造 HTTP 请求失败")
+		return exitcode.Wrap(exitcode.Usage, err, "cannot build HTTP request")
 	}
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
@@ -155,23 +155,23 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	start := time.Now()
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
-		c.verbose("%s %s → 传输失败: %v", method, endpoint, err)
+		c.verbose("%s %s -> transport failed: %v", method, endpoint, err)
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return exitcode.Wrap(exitcode.Network, ctxErr, "%s %s 失败", method, endpoint)
+			return exitcode.Wrap(exitcode.Network, ctxErr, "%s %s failed", method, endpoint)
 		}
-		return TransportError(fmt.Sprintf("请求 %s %s", method, endpoint), err)
+		return TransportError(fmt.Sprintf("request %s %s", method, endpoint), err)
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 	if err != nil {
-		return TransportError(fmt.Sprintf("读取 %s %s 的响应", method, endpoint), err)
+		return TransportError(fmt.Sprintf("read the response of %s %s", method, endpoint), err)
 	}
-	c.verbose("%s %s → HTTP %d（%d 字节，耗时 %s）", method, endpoint, resp.StatusCode, len(raw), time.Since(start).Round(time.Millisecond))
+	c.verbose("%s %s -> HTTP %d (%d bytes, took %s)", method, endpoint, resp.StatusCode, len(raw), time.Since(start).Round(time.Millisecond))
 
 	if len(raw) == 0 {
 		if resp.StatusCode >= 400 {
-			return NewError(resp.StatusCode, 0, fmt.Sprintf("HTTP %d（响应体为空）", resp.StatusCode))
+			return NewError(resp.StatusCode, 0, fmt.Sprintf("HTTP %d (empty response body)", resp.StatusCode))
 		}
 		return nil
 	}
@@ -179,7 +179,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	var env envelope
 	if err := json.Unmarshal(raw, &env); err != nil {
 		if resp.StatusCode >= 400 {
-			return NewError(resp.StatusCode, 0, fmt.Sprintf("HTTP %d：%s", resp.StatusCode, snippet(raw)))
+			return NewError(resp.StatusCode, 0, fmt.Sprintf("HTTP %d: %s", resp.StatusCode, snippet(raw)))
 		}
 		return ProtocolError(fmt.Sprintf("%s %s", method, endpoint), resp.StatusCode, err)
 	}
@@ -207,7 +207,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 		return nil
 	}
 	if err := json.Unmarshal(env.Data, out); err != nil {
-		return ProtocolError(fmt.Sprintf("%s %s 的 data 字段", method, endpoint), resp.StatusCode, err)
+		return ProtocolError(fmt.Sprintf("the data field of %s %s", method, endpoint), resp.StatusCode, err)
 	}
 	return nil
 }
@@ -219,7 +219,7 @@ func snippet(b []byte) string {
 		s = s[:200] + "..."
 	}
 	if s == "" {
-		return "(空)"
+		return "(empty)"
 	}
 	return s
 }
@@ -265,6 +265,70 @@ func (c *Client) Doctor(ctx context.Context) (*Doctor, error) {
 		return nil, err
 	}
 	return &out, nil
+}
+
+// ---------- 中间件 ----------
+
+// Middleware 调 GET /system/middleware（清单 + 当前状态 + 可编辑参数）。
+func (c *Client) Middleware(ctx context.Context) (*MiddlewareList, error) {
+	var out MiddlewareList
+	if err := c.do(ctx, http.MethodGet, "/system/middleware", nil, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// InstallMiddleware 调 POST /system/middleware/install。
+//
+// 与工具链安装同一套路：服务端只创建一个普通 Run，前端/CLI 拿到 runId 后
+// 用 `deploy logs <id> -f` 跟日志即可。不会阻塞等安装完成。
+func (c *Client) InstallMiddleware(ctx context.Context, req *MiddlewareInstallRequest) (*MiddlewareInstallResult, error) {
+	if req == nil {
+		req = &MiddlewareInstallRequest{}
+	}
+	var out MiddlewareInstallResult
+	if err := c.do(ctx, http.MethodPost, "/system/middleware/install", nil, req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateMiddleware 调 PUT /system/middleware/{key}，保存参数与安装方式。
+func (c *Client) UpdateMiddleware(ctx context.Context, key string, fields map[string]string, mode string) (map[string]any, error) {
+	body := map[string]any{"fields": fields}
+	if mode != "" {
+		body["mode"] = mode
+	}
+	var out map[string]any
+	if err := c.do(ctx, http.MethodPut, "/system/middleware/"+url.PathEscape(key), nil, body, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// MiddlewareScript 调 GET /system/middleware/script，取回内嵌安装脚本原文。
+func (c *Client) MiddlewareScript(ctx context.Context) (string, error) {
+	endpoint := c.URL("/system/middleware/script", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return "", exitcode.Wrap(exitcode.Usage, err, "cannot build HTTP request")
+	}
+	if c.Token != "" {
+		req.Header.Set("Authorization", c.Token)
+	}
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return "", TransportError("request "+endpoint, err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
+	if err != nil {
+		return "", TransportError("read "+endpoint+" response", err)
+	}
+	if resp.StatusCode >= 400 {
+		return "", NewError(resp.StatusCode, 0, fmt.Sprintf("HTTP %d: %s", resp.StatusCode, snippet(raw)))
+	}
+	return string(raw), nil
 }
 
 // ---------- 项目 ----------

@@ -1,4 +1,4 @@
-import { AvatarDropdown, AvatarName, Footer, Question } from '@/components';
+import { AvatarDropdown, AvatarName, Footer } from '@/components';
 import { authApi } from '@/services/auth';
 import { SETUP_PATH, getToken } from '@/services/authStore';
 import type { Settings as LayoutSettings } from '@ant-design/pro-components';
@@ -79,7 +79,6 @@ export const layout: RunTimeLayoutConfig = ({ initialState, setInitialState }) =
   return {
     title: defaultSettings.title,
     logo: defaultSettings.logo,
-    actionsRender: () => [<Question key="question" />],
     avatarProps: {
       title: <AvatarName />,
       render: (_, avatarChildren) => {

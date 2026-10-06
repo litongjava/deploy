@@ -10,12 +10,22 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"golang.org/x/term"
 
 	"deploy-cli/internal/api"
 	"deploy-cli/internal/exitcode"
 	"deploy-cli/internal/output"
 )
+
+// addAddressFlag 注册地址 flag：只认 -a/--address。
+//
+// 早期版本把 --server 当作地址的隐藏兼容别名；现在 --server 表示「用哪台已配置的服务器」，
+// 这个词不能再借给地址，所以别名已删除（老脚本请改用 -a/--address）。
+// 也保留删除 -s 简写的结论：地址只认 -a/--address，server 这个词留给「哪台服务器」。
+func addAddressFlag(fs *pflag.FlagSet, p *string, usage string) {
+	fs.StringVarP(p, "address", "a", "", usage)
+}
 
 // exactArgs 校验参数个数，错误归为用法错误（退出码 2）。
 func exactArgs(n int, usage string) cobra.PositionalArgs {
@@ -32,7 +42,7 @@ func parseRunID(s string) (int64, error) {
 	s = strings.TrimSpace(s)
 	id, err := strconv.ParseInt(s, 10, 64)
 	if err != nil || id <= 0 {
-		return 0, exitcode.Usagef("运行 ID 必须是正整数，收到 %q", s)
+		return 0, exitcode.Usagef("run ID must be a positive integer, got %q", s)
 	}
 	return id, nil
 }
@@ -46,11 +56,11 @@ func parseEnvPairs(pairs []string) (map[string]string, error) {
 	for _, p := range pairs {
 		i := strings.Index(p, "=")
 		if i <= 0 {
-			return nil, exitcode.Usagef("环境变量格式应为 K=V，收到 %q", p)
+			return nil, exitcode.Usagef("environment variables must be K=V, got %q", p)
 		}
 		k := strings.TrimSpace(p[:i])
 		if k == "" {
-			return nil, exitcode.Usagef("环境变量名不能为空：%q", p)
+			return nil, exitcode.Usagef("environment variable name must not be empty: %q", p)
 		}
 		out[k] = p[i+1:]
 	}
@@ -74,7 +84,7 @@ func formatTime(s string) string {
 // maskToken 隐藏 token 中间部分。
 func maskToken(s string) string {
 	if s == "" {
-		return "(未设置)"
+		return "(not set)"
 	}
 	if len(s) <= 10 {
 		return strings.Repeat("*", len(s))
@@ -118,7 +128,7 @@ func promptLine(label, def string) (string, error) {
 			if errors.Is(err, io.EOF) && sb.Len() > 0 {
 				return strings.TrimSpace(sb.String()), nil
 			}
-			return "", exitcode.Wrap(exitcode.Usage, err, "读取输入失败")
+			return "", exitcode.Wrap(exitcode.Usage, err, "cannot read input")
 		}
 	}
 }
@@ -129,11 +139,11 @@ func readPassword(label string) (string, error) {
 	b, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Fprintln(os.Stderr)
 	if err != nil {
-		return "", exitcode.Wrap(exitcode.Usage, err, "读取密码失败")
+		return "", exitcode.Wrap(exitcode.Usage, err, "cannot read password")
 	}
 	pw := strings.TrimSpace(string(b))
 	if pw == "" {
-		return "", exitcode.Usagef("密码不能为空")
+		return "", exitcode.Usagef("password must not be empty")
 	}
 	return pw, nil
 }
@@ -155,19 +165,19 @@ func isTransient(err error) bool {
 // 而 API 里处处用的是全局 runId，两个数字含义不同，必须同时标注清楚。
 func runHead(runID int64, buildNumber int) string {
 	if buildNumber > 0 {
-		return fmt.Sprintf("运行 ID #%d（构建号 #%d）", runID, buildNumber)
+		return fmt.Sprintf("run ID #%d (build #%d)", runID, buildNumber)
 	}
-	return fmt.Sprintf("运行 ID #%d", runID)
+	return fmt.Sprintf("run ID #%d", runID)
 }
 
 // statusLine 组合「运行标识 + 状态 + 退出码 + 耗时」的摘要文本。
 func (a *App) statusLine(runID int64, buildNumber int, status string, exitCode *int, durationMs int64) string {
 	line := runHead(runID, buildNumber) + "  " + a.Printer.Status(status)
 	if exitCode != nil {
-		line += fmt.Sprintf("  退出码 %d", *exitCode)
+		line += fmt.Sprintf("  exit code %d", *exitCode)
 	}
 	if durationMs > 0 {
-		line += "  耗时 " + api.FormatDuration(durationMs)
+		line += "  took " + api.FormatDuration(durationMs)
 	}
 	return line
 }

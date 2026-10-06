@@ -96,10 +96,32 @@ deploy-server/
   internal/runlog/       日志落盘 + 打码 + 发布订阅
   internal/runner/       执行引擎（进程树、超时、取消、Git 准备）
   internal/api/          HTTP 路由、中间件、各 handler、WebSocket
+  internal/toolchain/    构建工具链一键安装（内嵌 install.sh）
+  internal/middleware/   中间件一键安装（内嵌 install.sh：docker/PG/MySQL/Redis/ES）
   internal/web/          前端静态资源 embed
   deploy/                systemd 单元
   scripts/build.ps1      Windows 构建脚本
 ```
+
+> 注意 `internal/api` 里的「中间件」是 Gin 的 HTTP middleware（认证、CORS、日志），
+> 与 `internal/middleware` 那个包（基础设施中间件：数据库/缓存/搜索）**不是一回事**，
+> 目录名撞车是历史原因，看 import 路径区分。
+
+## 两套一键安装
+
+| | 构建工具链 | 中间件 |
+|---|---|---|
+| 接口 | `/api/v1/system/toolchains` | `/api/v1/system/middleware` |
+| 包 | `internal/toolchain` | `internal/middleware` |
+| 组件 | cc / java / maven / nvm / node / pnpm / go / rust / certbot | docker / postgresql / mysql / redis / elasticsearch |
+| 状态 | 无状态，装完即用 | **有状态**：端口、密码、数据卷 |
+| 重装 | 无害 | 有丢数据风险，所以要 `force` 且保留数据卷 |
+| 内置项目 | `system-toolchain` | `system-middleware` |
+
+两者共用同一套「内嵌脚本落盘 → 当普通 Run 跑」的机制，所以实时日志、取消、重跑、下载全都复用。
+中间件那套另有两处特别之处：**密码参数走 `secret.Box` 加密存储、接口只回是否已设置**，
+以及组件多两个维度（安装方式 `docker`/`native` 与动作 `install`/`start`/`stop`/…）。
+细节见 [docs/API设计.md](../docs/API设计.md) 的 §8。
 
 ## 测试
 
@@ -109,6 +131,8 @@ go test ./... -count=1
 
 `internal/api/integration_test.go` 会把「登录 → 建项目 → 执行 → 看日志 → Hook 触发 → 取消 → 权限隔离」
 整条主链路真的跑一遍，可以当作需求文档里 MVP 验收清单的自动化版本。
+`internal/api/middleware_test.go` 覆盖中间件清单、方式/动作的拒绝、参数加密不回明文、
+逐组件安装方式与脚本组件表一致性（一律用 `dryRun` 触发，测试**不会真的装东西**）。
 
 ## 跨平台注意
 

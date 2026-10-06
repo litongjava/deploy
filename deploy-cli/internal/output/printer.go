@@ -97,12 +97,12 @@ func (p *Printer) Infof(format string, args ...any) {
 
 // Warnf 写 stderr 并加 [警告] 前缀。
 func (p *Printer) Warnf(format string, args ...any) {
-	fmt.Fprintf(p.Err, "%s %s\n", p.Yellow("[警告]"), fmt.Sprintf(format, args...))
+	fmt.Fprintf(p.Err, "%s %s\n", p.Yellow("[warn]"), fmt.Sprintf(format, args...))
 }
 
 // Errorf 写 stderr 并加 [错误] 前缀。
 func (p *Printer) Errorf(format string, args ...any) {
-	fmt.Fprintf(p.Err, "%s %s\n", p.Red("[错误]"), fmt.Sprintf(format, args...))
+	fmt.Fprintf(p.Err, "%s %s\n", p.Red("[error]"), fmt.Sprintf(format, args...))
 }
 
 // Verbosef 仅在 --verbose 时写 stderr。
@@ -117,7 +117,7 @@ func (p *Printer) Verbosef(format string, args ...any) {
 func (p *Printer) JSONOut(v any) error {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		return fmt.Errorf("序列化 JSON 失败: %w", err)
+		return fmt.Errorf("cannot serialize JSON: %w", err)
 	}
 	if _, err := p.Out.Write(append(b, '\n')); err != nil {
 		return err
@@ -131,7 +131,7 @@ func (p *Printer) JSONOut(v any) error {
 func (p *Printer) JSONLine(v any) error {
 	b, err := json.Marshal(v)
 	if err != nil {
-		return fmt.Errorf("序列化 JSON 失败: %w", err)
+		return fmt.Errorf("cannot serialize JSON: %w", err)
 	}
 	if _, err := p.Out.Write(append(b, '\n')); err != nil {
 		return err

@@ -509,7 +509,7 @@ curl -s -X POST $BASE/projects/mosskb-web/run -H "Authorization: $TOKEN" \
 curl -s "$BASE/runs/<runId>/log" -H "Authorization: $TOKEN"
 ```
 
-CLI：`deploy run mosskb-web -f`（`deploy login -s http://192.168.31.97:10055 -u admin` 之后）。
+CLI：`deploy run mosskb-web -f`（`deploy login -a http://192.168.31.97:10055 -u admin` 之后）。
 
 ---
 

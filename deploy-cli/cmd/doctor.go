@@ -14,11 +14,11 @@ import (
 func newDoctorCmd(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
-		Short: "调用服务端自检接口，展示环境检查结果",
-		Long: `调用 GET /api/v1/system/doctor，彩色展示服务端环境自检结果。
+		Short: "call the server doctor endpoint and show the environment report",
+		Long: `Calls GET /api/v1/system/doctor and prints the server environment report.
 
-平台不负责安装工具链，只报告缺失项并给出安装提示。`,
-		Args: exactArgs(0, "doctor 不接受位置参数"),
+The platform does not install toolchains; it only reports what is missing and how to install it.`,
+		Args: exactArgs(0, "doctor takes no positional arguments"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := app.AuthClient()
 			if err != nil {
@@ -35,20 +35,20 @@ func newDoctorCmd(app *App) *cobra.Command {
 			p := app.Printer
 			return app.jsonOrHuman(doc, func() {
 				p.String(output.KeyValue([][2]string{
-					{"客户端", "deploy-cli " + version.Version},
-					{"服务器", app.Settings.Server},
-					{"服务端版本", fmt.Sprintf("%s（%s/%s，go %s）", orDash(doc.ServerVersion), orDash(doc.OS), orDash(doc.Arch), orDash(doc.GoVersion))},
-					{"主机名", orDash(doc.Hostname)},
-					{"已运行", strconv.FormatInt(doc.UptimeSec, 10) + " 秒"},
-					{"工作目录", fmt.Sprintf("%s  %s 可写", orDash(doc.WebRoot), p.OK(doc.WebRootWritable))},
-					{"数据目录", fmt.Sprintf("%s  %s 可写", orDash(doc.DataDir), p.OK(doc.DataDirWritable))},
-					{"Shell", fmt.Sprintf("%s（%s）可用: %s", orDash(doc.Shell.Selected), orDash(doc.Shell.Path), strings.Join(doc.Shell.Available, ", "))},
+					{"client", "deploy-cli " + version.Version},
+					{"server", app.Settings.Server},
+					{"server version", fmt.Sprintf("%s (%s/%s, go %s)", orDash(doc.ServerVersion), orDash(doc.OS), orDash(doc.Arch), orDash(doc.GoVersion))},
+					{"hostname", orDash(doc.Hostname)},
+					{"uptime", strconv.FormatInt(doc.UptimeSec, 10) + " s"},
+					{"workdir", fmt.Sprintf("%s  %s writable", orDash(doc.WebRoot), p.OK(doc.WebRootWritable))},
+					{"data dir", fmt.Sprintf("%s  %s writable", orDash(doc.DataDir), p.OK(doc.DataDirWritable))},
+					{"Shell", fmt.Sprintf("%s (%s) available: %s", orDash(doc.Shell.Selected), orDash(doc.Shell.Path), strings.Join(doc.Shell.Available, ", "))},
 				}))
 
 				p.Println()
-				p.Println(p.Bold("环境自检"))
+				p.Println(p.Bold("environment report"))
 				if len(doc.Checks) == 0 {
-					p.Println("（服务端未返回自检项）")
+					p.Println("(the server returned no checks)")
 					return
 				}
 				for _, c := range doc.Checks {
@@ -57,16 +57,16 @@ func newDoctorCmd(app *App) *cobra.Command {
 					case c.Found && c.Version != "":
 						line += c.Version
 					case c.Found:
-						line += "已安装"
+						line += "installed"
 					default:
-						line += p.Red("未找到")
+						line += p.Red("not found")
 					}
 					if c.Path != "" {
 						line += "  " + p.Dim(c.Path)
 					}
 					p.Println(line)
 					if !c.Found && c.Hint != "" {
-						p.Println("      " + p.Yellow("提示: "+c.Hint))
+						p.Println("      " + p.Yellow("hint: "+c.Hint))
 					}
 				}
 				missing := 0
@@ -77,9 +77,9 @@ func newDoctorCmd(app *App) *cobra.Command {
 				}
 				p.Println()
 				if missing == 0 {
-					p.Println(p.Green(fmt.Sprintf("全部 %d 项检查通过", len(doc.Checks))))
+					p.Println(p.Green(fmt.Sprintf("all %d checks passed", len(doc.Checks))))
 				} else {
-					p.Println(p.Yellow(fmt.Sprintf("%d/%d 项缺失，按上面的提示安装即可", missing, len(doc.Checks))))
+					p.Println(p.Yellow(fmt.Sprintf("%d/%d missing; install them following the hints above", missing, len(doc.Checks))))
 				}
 			})
 		},

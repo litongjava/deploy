@@ -8,11 +8,11 @@ func newStopCmd(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:     "stop <runId>",
 		Aliases: []string{"cancel"},
-		Short:   "取消正在运行的任务",
-		Long: `调用 POST /runs/{id}/cancel 取消运行。
+		Short:   "cancel a running task",
+		Long: `Calls POST /runs/{id}/cancel to cancel a run.
 
-接口是幂等的：运行已结束或已取消时同样返回成功。`,
-		Args: exactArgs(1, "用法：deploy stop <runId>"),
+The endpoint is idempotent: it also succeeds when the run already finished or was cancelled.`,
+		Args: exactArgs(1, "usage: deploy stop <runId>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runID, err := parseRunID(args[0])
 			if err != nil {
@@ -30,7 +30,7 @@ func newStopCmd(app *App) *cobra.Command {
 			}
 			p := app.Printer
 			return app.jsonOrHuman(map[string]any{"runId": runID, "canceled": true}, func() {
-				p.Printf("已请求取消运行 #%d\n", runID)
+				p.Printf("requested cancellation of run #%d\n", runID)
 			})
 		},
 	}

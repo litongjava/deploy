@@ -113,7 +113,7 @@ func (f *Follower) Follow(ctx context.Context, opts Options) (*Result, error) {
 		logf = func(string, ...any) {}
 	}
 	if f.Logs == nil {
-		return nil, exitcode.Netf("缺少日志来源")
+		return nil, exitcode.Netf("log source is missing")
 	}
 
 	res := &Result{RunID: opts.RunID, FinalOffset: opts.Offset}
@@ -140,9 +140,9 @@ func (f *Follower) Follow(ctx context.Context, opts Options) (*Result, error) {
 			failures++
 			res.LastError = err.Error()
 			if opts.MaxRetries > 0 && failures > opts.MaxRetries {
-				return res, exitcode.Wrap(exitcode.Network, err, "拉取历史日志连续失败 %d 次", failures)
+				return res, exitcode.Wrap(exitcode.Network, err, "failed to fetch log history %d times in a row", failures)
 			}
-			logf("拉取历史日志失败（%v），%s 后重试", err, backoff)
+			logf("failed to fetch log history (%v), retrying in %s", err, backoff)
 			if werr := opts.Sleep(ctx, backoff); werr != nil {
 				res.Interrupted = true
 				return res, werr
@@ -190,9 +190,9 @@ func (f *Follower) Follow(ctx context.Context, opts Options) (*Result, error) {
 			res.Reconnects++
 			res.LastError = err.Error()
 			if opts.MaxRetries > 0 && failures > opts.MaxRetries {
-				return res, exitcode.Wrap(exitcode.Network, err, "WebSocket 连续重连失败 %d 次", failures)
+				return res, exitcode.Wrap(exitcode.Network, err, "WebSocket reconnect failed %d times in a row", failures)
 			}
-			logf("WebSocket 连接失败（%v），%s 后重试", err, backoff)
+			logf("WebSocket connection failed (%v), retrying in %s", err, backoff)
 			if werr := opts.Sleep(ctx, backoff); werr != nil {
 				res.Interrupted = true
 				return res, werr
@@ -216,7 +216,7 @@ func (f *Follower) Follow(ctx context.Context, opts Options) (*Result, error) {
 			return res, ctx.Err()
 		}
 		if err != nil && !retriable(err) {
-			return res, fmt.Errorf("读取日志流失败: %w", err)
+			return res, fmt.Errorf("cannot read log stream: %w", err)
 		}
 		failures++
 		res.Reconnects++
@@ -224,9 +224,9 @@ func (f *Follower) Follow(ctx context.Context, opts Options) (*Result, error) {
 			res.LastError = err.Error()
 		}
 		if opts.MaxRetries > 0 && failures > opts.MaxRetries {
-			return res, exitcode.Wrap(exitcode.Network, err, "日志流连续断开 %d 次", failures)
+			return res, exitcode.Wrap(exitcode.Network, err, "log stream disconnected %d times in a row", failures)
 		}
-		logf("日志流已断开（%v），%s 后从 offset=%d 重连", err, backoff, offset)
+		logf("log stream disconnected (%v); retrying in %s from offset=%d", err, backoff, offset)
 		if werr := opts.Sleep(ctx, backoff); werr != nil {
 			res.Interrupted = true
 			return res, werr
@@ -285,7 +285,7 @@ func (f *Follower) catchUp(ctx context.Context, opts Options, offset int64, logf
 		}
 		if stalls >= 3 {
 			// 服务端既没有新数据也没有推进 offset：不再空转，交给上层重连/轮询。
-			logf("日志无新增（offset=%d），暂停补齐", offset)
+			logf("no new log data (offset=%d), pausing catch-up", offset)
 			return offset, nil
 		}
 	}
@@ -330,14 +330,14 @@ func readStream(ctx context.Context, conn Conn, opts Options, res *Result, offse
 			if opts.OnStatus != nil {
 				opts.OnStatus(frame.Status, frame.Step)
 			}
-			logf("运行状态: %s", frame.Status)
+			logf("run status: %s", frame.Status)
 		case FrameTruncated:
 			// 服务端把跟不上的订阅者踢掉了：运行并没有结束，服务端随即会关连接，
 			// 上层按 offset 重连即可续上（这里什么都不做，等 ReadFrame 报错）。
 			if frame.NextOffset > *offset {
 				*offset = frame.NextOffset
 			}
-			logf("日志流被服务端截断（%s），按 offset=%d 重连", frame.Message, *offset)
+			logf("log stream truncated by server (%s), reconnecting at offset=%d", frame.Message, *offset)
 		case FrameExit:
 			if frame.NextOffset > *offset {
 				*offset = frame.NextOffset
@@ -346,15 +346,15 @@ func readStream(ctx context.Context, conn Conn, opts Options, res *Result, offse
 				// exit 帧的契约是「运行已结束」。老版本服务端在踢掉慢订阅者时
 				// 也会发 exit，但那时运行还在跑 —— 当成结束会让日志永久缺尾，
 				// 所以这里只把它当「本次连接到此为止」，等连接断开后按 offset 重连。
-				logf("收到非终态的 exit 帧（status=%s），按 offset=%d 重连", frame.Status, *offset)
+				logf("received a non-terminal exit frame (status=%s), reconnecting at offset=%d", frame.Status, *offset)
 				continue
 			}
 			return true, frame.Status, frame.ExitCode, frame.DurationMs, nil
 		case FrameError:
 			res.LastError = frame.Message
-			logf("服务端推送错误帧: %s", frame.Message)
+			logf("server pushed an error frame: %s", frame.Message)
 		default:
-			logf("忽略未知帧类型 %q", frame.Type)
+			logf("ignoring unknown frame type %q", frame.Type)
 		}
 	}
 }

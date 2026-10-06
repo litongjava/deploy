@@ -16,7 +16,7 @@ echo "退出码=$?"
 
 echo
 echo "=== 1) login ==="
-"$CLI" login -s "$BASE" -u admin -p admin12345
+"$CLI" login -a "$BASE" -u admin -p admin12345
 echo "退出码=$?"
 
 echo
@@ -52,7 +52,7 @@ echo "退出码=$code $([ "$code" = "3" ] && echo '（正确）' || echo '（期
 
 echo
 echo "=== 8) 退出码语义：服务端不可达应为 4 ==="
-"$CLI" project list --server http://127.0.0.1:59999 >/dev/null 2>&1
+"$CLI" project list -a http://127.0.0.1:59999 >/dev/null 2>&1
 code=$?
 echo "退出码=$code $([ "$code" = "4" ] && echo '（正确）' || echo '（期望 4）')"
 

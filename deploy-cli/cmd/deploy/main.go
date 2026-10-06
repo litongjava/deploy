@@ -34,9 +34,9 @@ func main() {
 	}
 
 	// 人类可读的错误一律走 stderr：--json 时 stdout 保持纯净。
-	fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+	fmt.Fprintf(os.Stderr, "error: %v\n", err)
 	if hint := hintFor(code); hint != "" {
-		fmt.Fprintf(os.Stderr, "提示: %s\n", hint)
+		fmt.Fprintf(os.Stderr, "hint: %s\n", hint)
 	}
 	os.Exit(code)
 }
@@ -44,11 +44,11 @@ func main() {
 func hintFor(code int) string {
 	switch code {
 	case exitcode.Auth:
-		return "未登录或 token 已失效：执行 `deploy login` 重新登录，或用 `deploy whoami` 确认身份"
+		return "not signed in, or the token has expired: run `deploy login` again, or `deploy whoami` to check"
 	case exitcode.Network:
-		return "检查服务端是否启动、地址是否正确（deploy config get server）"
+		return "check that the server is running and the address is right (`deploy config get address`)"
 	case exitcode.Usage:
-		return "执行 `deploy --help` 或 `deploy <命令> --help` 查看用法"
+		return "run `deploy --help` or `deploy <command> --help` for usage"
 	default:
 		return ""
 	}

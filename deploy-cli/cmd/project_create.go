@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
@@ -24,6 +27,7 @@ var (
 
 func newProjectCreateCmd(app *App) *cobra.Command {
 	var (
+		filePath         string
 		key              string
 		name             string
 		workdir          string
@@ -47,34 +51,119 @@ func newProjectCreateCmd(app *App) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "create",
-		Short: "创建项目（交互式向导或命令行参数）",
-		Long: `创建项目。
+		Short: "create a project (interactive wizard or flags)",
+		Long: `Create a project.
 
-非交互（CI）示例：
-  deploy project create --key my-app --name 我的应用 --workdir /srv/workspaces/my-app \
-      --command "git pull" --command "构建::npm run build" --env MODE=prod
+Non-interactive (CI) example:
+  deploy project create --key my-app --name my-app --workdir /srv/workspaces/my-app \
+      --command "git pull" --command "build::npm run build" --env MODE=prod
 
---command 可重复；用 "名称::脚本" 的形式可以指定命令名称（省略则自动命名）。
-不带参数运行时进入交互式向导。`,
-		Args: exactArgs(0, "create 不接受位置参数"),
+--command is repeatable; use "name::script" to name a command (otherwise it is auto-named).
+
+--file reads a JSON project definition. This is the easy path on Windows, where
+$(cat sh\01.sh) does not work, and it keeps the definition in version control.
+Explicit flags override the file. Each command sets either "script" (inline) or
+"scriptFile" (a path relative to the JSON file):
+
+  {
+    "key": "tio-boot-web-hello",
+    "name": "tio-boot web hello",
+    "workdir": "/srv/deploy/workspaces/tio-boot-web-hello",
+    "useGit": true,
+    "gitUrl": "https://gitee.com/ppnt/tio-boot-web-hello.git",
+    "gitBranch": "main",
+    "env": {"APP_PORT": "10062"},
+    "commands": [
+      {"name": "1. 环境勘察（只读）", "scriptFile": "sh/01-recon.sh"},
+      {"name": "2. Maven 构建生产包", "scriptFile": "sh/02-build.sh"}
+    ]
+  }
+
+Running without flags or --file starts the interactive wizard.`,
+		Args: exactArgs(0, "create takes no positional arguments"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p := app.Printer
 			interactive := isInteractive()
+
+			// ---- --file：JSON 项目定义（显式 flag 覆盖文件里的值）----
+			var fileCmds []api.CommandInput
+			if strings.TrimSpace(filePath) != "" {
+				pf, baseDir, err := loadProjectFile(filePath)
+				if err != nil {
+					return err
+				}
+				if !cmd.Flags().Changed("key") && pf.Key != "" {
+					key = pf.Key
+				}
+				if !cmd.Flags().Changed("name") && pf.Name != "" {
+					name = pf.Name
+				}
+				if !cmd.Flags().Changed("description") && pf.Description != "" {
+					description = pf.Description
+				}
+				if !cmd.Flags().Changed("workdir") && pf.Workdir != "" {
+					workdir = pf.Workdir
+				}
+				if !cmd.Flags().Changed("shell") && pf.Shell != "" {
+					shell = pf.Shell
+				}
+				if !cmd.Flags().Changed("timeout") && pf.TimeoutSec != nil {
+					timeoutSec = *pf.TimeoutSec
+				}
+				if !cmd.Flags().Changed("concurrency") && pf.Concurrency != "" {
+					concurrency = pf.Concurrency
+				}
+				if !cmd.Flags().Changed("hook") && pf.HookEnabled != nil {
+					hook = *pf.HookEnabled
+				}
+				if !cmd.Flags().Changed("use-git") && pf.UseGit != nil {
+					useGit = *pf.UseGit
+				}
+				if !cmd.Flags().Changed("git-url") && pf.GitURL != "" {
+					gitURL = pf.GitURL
+				}
+				if !cmd.Flags().Changed("git-branch") && pf.GitBranch != "" {
+					gitBranch = pf.GitBranch
+				}
+				if !cmd.Flags().Changed("git-subdir") && pf.GitSubdir != "" {
+					gitSubdir = pf.GitSubdir
+				}
+				if !cmd.Flags().Changed("git-depth") && pf.GitDepth != nil {
+					gitDepth = *pf.GitDepth
+				}
+				if !cmd.Flags().Changed("git-clean") && pf.GitClean != nil {
+					gitClean = *pf.GitClean
+				}
+				if !cmd.Flags().Changed("git-submodule") && pf.GitSubmodule != nil {
+					gitSubmodule = *pf.GitSubmodule
+				}
+				if !cmd.Flags().Changed("allow-env-override") && pf.AllowEnvOverride != nil {
+					allowEnvOverride = *pf.AllowEnvOverride
+				}
+				if len(commandSpecs) == 0 {
+					if fileCmds, err = pf.commandInputs(baseDir, orDefault(failStrategy, "abort")); err != nil {
+						return err
+					}
+				}
+				if len(envPairs) == 0 {
+					envPairs = pf.envPairs()
+				}
+			}
 
 			// ---- key ----
 			key = strings.TrimSpace(key)
 			if key == "" {
 				if !interactive {
-					return exitcode.Usagef("非交互环境必须提供 --key")
+					return exitcode.Usagef("non-interactive shell: --key is required")
 				}
 				var err error
-				if key, err = promptLine("项目 key（字母/数字/-/_，用于 URL）", ""); err != nil {
+				if key, err = promptLine("project key (letters/digits/-/_; used in the URL)", ""); err != nil {
 					return err
 				}
 				key = strings.TrimSpace(key)
 			}
 			if !projectKeyRE.MatchString(key) {
-				return exitcode.Usagef("项目 key 不合法：%q（需以字母或数字开头，只能含字母/数字/./-/_）", key)
+				return exitcode.Usagef("invalid project key %q (must start with a letter or digit; only letters/digits/./-/_ allowed)", key)
 			}
 
 			// ---- name ----
@@ -82,7 +171,7 @@ func newProjectCreateCmd(app *App) *cobra.Command {
 			if name == "" {
 				if interactive {
 					var err error
-					if name, err = promptLine("项目名称", key); err != nil {
+					if name, err = promptLine("project name", key); err != nil {
 						return err
 					}
 				} else {
@@ -94,51 +183,51 @@ func newProjectCreateCmd(app *App) *cobra.Command {
 			workdir = strings.TrimSpace(workdir)
 			if workdir == "" {
 				if !interactive {
-					return exitcode.Usagef("非交互环境必须提供 --workdir（服务端上的绝对路径）")
+					return exitcode.Usagef("non-interactive shell: --workdir is required (absolute path on the server)")
 				}
 				var err error
-				if workdir, err = promptLine("工作目录", defaultWorkdir(key)); err != nil {
+				if workdir, err = promptLine("workdir", defaultWorkdir(key)); err != nil {
 					return err
 				}
 			}
 
 			// ---- commands ----
-			if len(commandSpecs) == 0 && interactive {
-				p.Infof("逐条输入命令脚本，直接回车结束：")
+			if len(commandSpecs) == 0 && len(fileCmds) == 0 && interactive {
+				p.Infof("enter command scripts one by one; press Enter to finish:")
 				for i := 1; ; i++ {
-					script, err := promptLine(fmt.Sprintf("命令 %d 脚本", i), "")
+					script, err := promptLine(fmt.Sprintf("command %d script", i), "")
 					if err != nil {
 						return err
 					}
 					if strings.TrimSpace(script) == "" {
 						break
 					}
-					cname, err := promptLine("  命令名称", fmt.Sprintf("步骤 %d", i))
+					cname, err := promptLine("  command name", fmt.Sprintf("step %d", i))
 					if err != nil {
 						return err
 					}
 					commandSpecs = append(commandSpecs, cname+"::"+script)
 				}
 			}
-			if len(commandSpecs) == 0 {
-				return exitcode.Usagef("至少需要一条命令，请用 --command \"脚本\" 提供（可重复）")
+			if len(commandSpecs) == 0 && len(fileCmds) == 0 {
+				return exitcode.Usagef("at least one command is required; pass --command script (repeatable) or use --file with commands")
 			}
 
 			// ---- 校验枚举值 ----
 			if !validShells[shell] {
-				return exitcode.Usagef("--shell 只能是 auto/bash/sh/pwsh/cmd，收到 %q", shell)
+				return exitcode.Usagef("--shell must be auto/bash/sh/pwsh/cmd, got %q", shell)
 			}
 			if !validConcurrency[concurrency] {
-				return exitcode.Usagef("--concurrency 只能是 queue/allow/cancelPrev，收到 %q", concurrency)
+				return exitcode.Usagef("--concurrency must be queue/allow/cancelPrev, got %q", concurrency)
 			}
 			if !validFailStrategy[failStrategy] {
-				return exitcode.Usagef("--fail-strategy 只能是 abort/continue，收到 %q", failStrategy)
+				return exitcode.Usagef("--fail-strategy must be abort/continue, got %q", failStrategy)
 			}
 			if timeoutSec < 0 {
-				return exitcode.Usagef("--timeout 不能为负数")
+				return exitcode.Usagef("--timeout must not be negative")
 			}
 			if useGit && strings.TrimSpace(gitURL) == "" {
-				return exitcode.Usagef("启用 --use-git 时必须提供 --git-url")
+				return exitcode.Usagef("--git-url is required when --use-git is set")
 			}
 
 			envMap, err := parseEnvPairs(envPairs)
@@ -146,11 +235,14 @@ func newProjectCreateCmd(app *App) *cobra.Command {
 				return err
 			}
 
-			cmds := make([]api.CommandInput, 0, len(commandSpecs))
+			cmds := fileCmds
+			if len(cmds) == 0 {
+				cmds = make([]api.CommandInput, 0, len(commandSpecs))
+			}
 			for i, spec := range commandSpecs {
 				cname, script := splitCommandSpec(i+1, spec)
 				if strings.TrimSpace(script) == "" {
-					return exitcode.Usagef("第 %d 条命令的脚本为空", i+1)
+					return exitcode.Usagef("command %d has an empty script", i+1)
 				}
 				cmds = append(cmds, api.CommandInput{
 					Name:         cname,
@@ -203,48 +295,181 @@ func newProjectCreateCmd(app *App) *cobra.Command {
 				return err
 			}
 			return app.jsonOrHuman(proj, func() {
-				p.Printf("已创建项目 %s（id=%d，命令 %d 条，环境变量 %d 个）\n",
+				p.Printf("created project %s (id=%d, %d commands, %d env vars)\n",
 					p.Bold(proj.Key), proj.ID, len(proj.Commands), len(proj.Envs))
 				p.String(output.KeyValue([][2]string{
-					{"工作目录", orDash(proj.Workdir)},
+					{"workdir", orDash(proj.Workdir)},
 					{"Shell", orDash(proj.Shell)},
-					{"并发策略", orDash(proj.Concurrency)},
+					{"concurrency", orDash(proj.Concurrency)},
 				}))
-				p.Infof("提示：执行 `deploy run %s` 触发一次运行", proj.Key)
+				p.Infof("hint: run `deploy run %s` to trigger a run", proj.Key)
 			})
 		},
 	}
 
 	f := cmd.Flags()
-	f.StringVar(&key, "key", "", "项目 key（唯一，用于 URL，字母/数字/-/_）")
-	f.StringVar(&name, "name", "", "项目名称（默认与 key 相同）")
-	f.StringVar(&workdir, "workdir", "", "工作目录（服务端绝对路径）")
-	f.StringVar(&description, "description", "", "描述")
-	f.StringVar(&shell, "shell", "auto", "shell 类型：auto/bash/sh/pwsh/cmd")
-	f.StringVar(&concurrency, "concurrency", "queue", "并发策略：queue/allow/cancelPrev")
-	f.IntVar(&timeoutSec, "timeout", 0, "整体超时（秒，0=不限）")
-	f.StringArrayVar(&commandSpecs, "command", nil, "命令脚本，可重复；\"名称::脚本\" 可指定名称")
-	f.StringArrayVar(&envPairs, "env", nil, "环境变量 K=V，可重复")
-	f.StringVar(&failStrategy, "fail-strategy", "abort", "命令失败策略：abort/continue")
-	f.BoolVar(&hook, "hook", true, "允许 Hook 触发（--hook=false 关闭）")
-	f.BoolVar(&allowEnvOverride, "allow-env-override", true, "允许触发时用 -e 覆盖环境变量")
-	f.BoolVar(&useGit, "use-git", false, "启用 Git 准备阶段（需配合 --git-url）")
-	f.StringVar(&gitURL, "git-url", "", "Git 仓库地址")
-	f.StringVar(&gitBranch, "git-branch", "main", "Git 默认分支")
-	f.StringVar(&gitSubdir, "git-subdir", "", "Git 子目录")
-	f.IntVar(&gitDepth, "git-depth", 0, "Git 浅克隆深度（0=完整）")
-	f.BoolVar(&gitClean, "git-clean", false, "拉取前清理工作区")
-	f.BoolVar(&gitSubmodule, "git-submodule", false, "递归拉取子模块")
+	f.StringVar(&filePath, "file", "", "read the project definition from a JSON file (explicit flags override the file)")
+	f.StringVar(&key, "key", "", "project key (unique, used in the URL; letters/digits/-/_)")
+	f.StringVar(&name, "name", "", "project name (defaults to the key)")
+	f.StringVar(&workdir, "workdir", "", "workdir (absolute path on the server)")
+	f.StringVar(&description, "description", "", "description")
+	f.StringVar(&shell, "shell", "auto", "shell type: auto/bash/sh/pwsh/cmd")
+	f.StringVar(&concurrency, "concurrency", "queue", "concurrency: queue/allow/cancelPrev")
+	f.IntVar(&timeoutSec, "timeout", 0, "overall timeout in seconds (0 = unlimited)")
+	f.StringArrayVar(&commandSpecs, "command", nil, "command script; repeatable; \"name::script\" sets the name")
+	f.StringArrayVar(&envPairs, "env", nil, "env var K=V; repeatable")
+	f.StringVar(&failStrategy, "fail-strategy", "abort", "command failure strategy: abort/continue")
+	f.BoolVar(&hook, "hook", true, "allow Hook triggers (disable with --hook=false)")
+	f.BoolVar(&allowEnvOverride, "allow-env-override", true, "allow -e to override env vars at trigger time")
+	f.BoolVar(&useGit, "use-git", false, "enable the Git prepare phase (requires --git-url)")
+	f.StringVar(&gitURL, "git-url", "", "Git repository URL")
+	f.StringVar(&gitBranch, "git-branch", "main", "default Git branch")
+	f.StringVar(&gitSubdir, "git-subdir", "", "Git subdirectory")
+	f.IntVar(&gitDepth, "git-depth", 0, "Git shallow clone depth (0 = full)")
+	f.BoolVar(&gitClean, "git-clean", false, "clean the workdir before fetching")
+	f.BoolVar(&gitSubmodule, "git-submodule", false, "fetch submodules recursively")
 
 	return cmd
 }
 
-// splitCommandSpec 支持 "名称::脚本"；没有 "::" 时自动命名。
+// projectFile 是 `deploy project create --file <path.json>` 读取的项目定义。
+//
+// 字段名与 API 的 ProjectInput、`deploy project get --json` 对齐，所以可以把现有项目
+// 导出后改一改再建。每条命令的脚本二选一：script 内联，或 scriptFile 指向一个文件
+// （相对 JSON 文件所在目录，Windows 的 sh\01.sh 写法也能用）。
+type projectFile struct {
+	Key              string            `json:"key"`
+	Name             string            `json:"name"`
+	Description      string            `json:"description"`
+	Workdir          string            `json:"workdir"`
+	Shell            string            `json:"shell"`
+	TimeoutSec       *int              `json:"timeoutSec"`
+	Concurrency      string            `json:"concurrency"`
+	HookEnabled      *bool             `json:"hookEnabled"`
+	UseGit           *bool             `json:"useGit"`
+	GitURL           string            `json:"gitUrl"`
+	GitBranch        string            `json:"gitBranch"`
+	GitSubdir        string            `json:"gitSubdir"`
+	GitDepth         *int              `json:"gitDepth"`
+	GitClean         *bool             `json:"gitClean"`
+	GitSubmodule     *bool             `json:"gitSubmodule"`
+	AllowEnvOverride *bool             `json:"allowEnvOverride"`
+	Commands         []projectFileCmd  `json:"commands"`
+	Envs             []api.EnvVarInput `json:"envs"`
+	// Env 是 envs 的简写形式：{"APP_PORT": "10062"}。
+	Env map[string]string `json:"env"`
+}
+
+// projectFileCmd 是文件里的一条命令。
+type projectFileCmd struct {
+	Name            string `json:"name"`
+	Script          string `json:"script"`
+	ScriptFile      string `json:"scriptFile"`
+	Enabled         *bool  `json:"enabled"`
+	FailStrategy    string `json:"failStrategy"`
+	WorkdirOverride string `json:"workdirOverride"`
+	TimeoutSec      int    `json:"timeoutSec"`
+	ShellOverride   string `json:"shellOverride"`
+}
+
+// loadProjectFile 读取并解析 --file；同时返回 JSON 所在目录（用于解析 scriptFile）。
+func loadProjectFile(path string) (*projectFile, string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, "", exitcode.Usagef("cannot read --file %s: %v", path, err)
+	}
+	var pf projectFile
+	if err := json.Unmarshal(b, &pf); err != nil {
+		return nil, "", exitcode.Usagef("cannot parse --file %s as JSON: %v", path, err)
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		abs = path
+	}
+	return &pf, filepath.Dir(abs), nil
+}
+
+// commandInputs 把文件里的命令转成 API 入参；scriptFile 相对 JSON 目录读取。
+func (pf *projectFile) commandInputs(baseDir, defaultFailStrategy string) ([]api.CommandInput, error) {
+	out := make([]api.CommandInput, 0, len(pf.Commands))
+	for i, c := range pf.Commands {
+		script := c.Script
+		if strings.TrimSpace(c.ScriptFile) != "" {
+			if strings.TrimSpace(script) != "" {
+				return nil, exitcode.Usagef("command %d sets both script and scriptFile; pick one", i+1)
+			}
+			p := c.ScriptFile
+			if !filepath.IsAbs(p) {
+				p = filepath.Join(baseDir, filepath.FromSlash(p))
+			}
+			b, err := os.ReadFile(p)
+			if err != nil {
+				return nil, exitcode.Usagef("command %d: cannot read scriptFile %s: %v", i+1, c.ScriptFile, err)
+			}
+			script = string(b)
+		}
+		if strings.TrimSpace(script) == "" {
+			return nil, exitcode.Usagef("command %d has an empty script (set script or scriptFile)", i+1)
+		}
+		name := strings.TrimSpace(c.Name)
+		if name == "" {
+			name = fmt.Sprintf("step %d", i+1)
+		}
+		enabled := true
+		if c.Enabled != nil {
+			enabled = *c.Enabled
+		}
+		out = append(out, api.CommandInput{
+			Name:            name,
+			Script:          script,
+			SortOrder:       i + 1,
+			Enabled:         enabled,
+			FailStrategy:    orDefault(c.FailStrategy, defaultFailStrategy),
+			WorkdirOverride: c.WorkdirOverride,
+			TimeoutSec:      c.TimeoutSec,
+			ShellOverride:   c.ShellOverride,
+		})
+	}
+	return out, nil
+}
+
+// envPairs 把 envs 数组与 env 简写映射合并成 K=V（同名以 envs 为准），供 parseEnvPairs 复用。
+func (pf *projectFile) envPairs() []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(pf.Envs)+len(pf.Env))
+	for _, e := range pf.Envs {
+		k := strings.TrimSpace(e.Key)
+		if k == "" || seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, k+"="+e.Value)
+	}
+	keys := make([]string, 0, len(pf.Env))
+	for k := range pf.Env {
+		tk := strings.TrimSpace(k)
+		if tk != "" && !seen[tk] {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		tk := strings.TrimSpace(k)
+		if seen[tk] {
+			continue
+		}
+		seen[tk] = true
+		out = append(out, tk+"="+pf.Env[k])
+	}
+	return out
+}
+
+// splitCommandSpec 支持 "name::script"；没有 "::" 时自动命名。
 func splitCommandSpec(index int, spec string) (string, string) {
 	if parts := strings.SplitN(spec, "::", 2); len(parts) == 2 && strings.TrimSpace(parts[0]) != "" {
 		return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
 	}
-	return fmt.Sprintf("步骤 %d", index), strings.TrimSpace(spec)
+	return fmt.Sprintf("step %d", index), strings.TrimSpace(spec)
 }
 
 func orDefault(v, def string) string {
