@@ -1,7 +1,7 @@
 /**
  * English messages.
  *
- '* Keys are the **Chinese source strings** (see zh-CN.ts)': the app calls `t('新建项目')`,
+ * Keys are the **Chinese source strings** (see zh-CN.ts): the app calls `t('新建项目')`,
  * so this file is the only place that actually needs English wording.
  *
  * Anything missing here falls back to the Chinese key itself, so a gap shows up as
@@ -9,25 +9,36 @@
  * `node .i18n-keys-report.cjs` to list gaps and stale entries.
  *
  * Placeholders are `{name}` and must match the ones the call site passes
- '* (see the `t('...', { name': value })` call). `${WORKDIR}`-style shell variables are
- '* **not** placeholders': those strings are called without a params object, so `t()`
+ * (see the `t('...', { name: value })` call). `${WORKDIR}`-style shell variables are
+ * **not** placeholders: those strings are called without a params object, so `t()`
  * returns them verbatim.
  */
 export default {
-  // ===== Route menu names (umi's layout plugin looks up `menu.<route name>`) =====
+  // ===== Route menu names（id 由路由层级决定，见 src/locales/zh-CN.ts 的说明） =====
+
+  'menu.登录': 'Sign in',
+  'menu.初始化': 'Setup',
   'menu.概览': 'Overview',
   'menu.服务器': 'Server',
   'menu.项目': 'Projects',
+  'menu.项目.新建项目': 'New project',
+  'menu.项目.编辑项目': 'Edit project',
+  'menu.项目.项目详情': 'Project details',
   'menu.任务': 'Tasks',
+  'menu.任务.新建任务': 'New task',
+  'menu.任务.编辑任务': 'Edit task',
+  'menu.任务.任务详情': 'Task details',
   'menu.运行': 'Runs',
+  'menu.运行.运行详情': 'Run details',
   'menu.环境自检': 'Doctor',
   'menu.设置': 'Settings',
-  'menu.个人设置': 'Profile',
-  'menu.用户管理': 'Users',
-  'menu.凭据管理': 'Credentials',
-  'menu.系统设置': 'System Settings',
-  'menu.登录': 'Sign in',
-  'menu.初始化': 'Setup',
+  'menu.设置.个人设置': 'Profile',
+  'menu.设置.用户管理': 'Users',
+  'menu.设置.凭据管理': 'Credentials',
+  'menu.设置.系统设置': 'System Settings',
+  'menu.403': '403',
+  'menu.404': '404',
+  'menu.500': '500',
 
   // ===== Common actions =====
   '取消': 'Cancel',
