@@ -43,8 +43,3 @@ tmp/
 deploy-server/internal/web/dist/*
 !deploy-server/internal/web/dist/.gitkeep
 .umi-test/
-# i18n 迁移用的一次性脚本与报告（不入库）
-deploy-server-ui/.i18n-*.cjs
-deploy-server-ui/.i18n-*.py
-deploy-server-ui/.i18n-*.json
-deploy-server-ui/.i18n-*.txt

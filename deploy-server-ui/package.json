@@ -30,6 +30,7 @@
     "test": "jest",
     "test:coverage": "npm run jest -- --coverage",
     "test:update": "npm run jest -- -u",
+    "i18n:check": "node scripts/i18n-check.cjs",
     "tsc": "tsc --noEmit"
   },
   "browserslist": [
