@@ -18,15 +18,16 @@ import {
   message,
 } from 'antd';
 import React, { useRef, useState } from 'react';
+import { t } from '@/i18n';
 
 const ROLE_OPTIONS = [
-  { label: '管理员（admin）', value: 'admin' },
-  { label: '普通用户（user）', value: 'user' },
+  { label: t('管理员（admin）'), value: 'admin' },
+  { label: t('普通用户（user）'), value: 'user' },
 ];
 
 const STATUS_OPTIONS = [
-  { label: '正常（active）', value: 'active' },
-  { label: '禁用（disabled）', value: 'disabled' },
+  { label: t('正常（active）'), value: 'active' },
+  { label: t('禁用（disabled）'), value: 'disabled' },
 ];
 
 const Users: React.FC = () => {
@@ -43,8 +44,8 @@ const Users: React.FC = () => {
 
   if (!access.canAdmin) {
     return (
-      <PageContainer title="用户管理">
-        <Result status="403" title="403" subTitle="只有管理员可以访问用户管理。" />
+      <PageContainer title={t('用户管理')}>
+        <Result status="403" title="403" subTitle={t('只有管理员可以访问用户管理。')} />
       </PageContainer>
     );
   }
@@ -53,7 +54,7 @@ const Users: React.FC = () => {
     const values = await createForm.validateFields();
     try {
       await userApi.create(values);
-      messageApi.success('用户已创建');
+      messageApi.success(t('用户已创建'));
       setCreateOpen(false);
       createForm.resetFields();
       actionRef.current?.reload();
@@ -66,7 +67,7 @@ const Users: React.FC = () => {
     const values = await editForm.validateFields();
     try {
       await userApi.update(editing!.id, values);
-      messageApi.success('已保存');
+      messageApi.success(t('已保存'));
       setEditing(null);
       actionRef.current?.reload();
     } catch (e) {
@@ -78,7 +79,7 @@ const Users: React.FC = () => {
     const values = await resetForm.validateFields();
     try {
       await userApi.resetPassword(resetTarget!.id, values.newPassword);
-      messageApi.success('密码已重置');
+      messageApi.success(t('密码已重置'));
       setResetTarget(null);
       resetForm.resetFields();
     } catch (e) {
@@ -89,7 +90,7 @@ const Users: React.FC = () => {
   const removeUser = async (id: number) => {
     try {
       await userApi.remove(id);
-      messageApi.success('已删除');
+      messageApi.success(t('已删除'));
       actionRef.current?.reload();
     } catch (e) {
       // 统一提示
@@ -98,49 +99,49 @@ const Users: React.FC = () => {
 
   const columns: ProColumns<User>[] = [
     {
-      title: '关键词',
+      title: t('关键词'),
       dataIndex: 'keyword',
       hideInTable: true,
-      fieldProps: { placeholder: '用户名 / 昵称' },
+      fieldProps: { placeholder: t('用户名 / 昵称') },
     },
     {
-      title: '用户名',
+      title: t('用户名'),
       dataIndex: 'username',
       hideInSearch: true,
       render: (_, row) => (
         <Space size={6}>
           <span>{row.username}</span>
-          {row.id === initialState?.currentUser?.id ? <Tag color="blue">自己</Tag> : null}
+          {row.id === initialState?.currentUser?.id ? <Tag color="blue">{t('自己')}</Tag> : null}
         </Space>
       ),
     },
-    { title: '昵称', dataIndex: 'nickname', hideInSearch: true },
-    { title: '邮箱', dataIndex: 'email', hideInSearch: true, render: (_, r) => r.email || '-' },
+    { title: t('昵称'), dataIndex: 'nickname', hideInSearch: true },
+    { title: t('邮箱'), dataIndex: 'email', hideInSearch: true, render: (_, r) => r.email || '-' },
     {
-      title: '角色',
+      title: t('角色'),
       dataIndex: 'role',
       hideInSearch: true,
       width: 110,
       render: (_, row) =>
-        row.role === 'admin' ? <Tag color="gold">管理员</Tag> : <Tag>普通用户</Tag>,
+        row.role === 'admin' ? <Tag color="gold">{t('管理员')}</Tag> : <Tag>{t('普通用户')}</Tag>,
     },
     {
-      title: '状态',
+      title: t('状态'),
       dataIndex: 'status',
       hideInSearch: true,
       width: 100,
       render: (_, row) =>
-        row.status === 'active' ? <Tag color="green">正常</Tag> : <Tag color="red">禁用</Tag>,
+        row.status === 'active' ? <Tag color="green">{t('正常')}</Tag> : <Tag color="red">{t('禁用')}</Tag>,
     },
     {
-      title: '最近登录',
+      title: t('最近登录'),
       dataIndex: 'lastLoginAt',
       hideInSearch: true,
       width: 170,
       render: (_, row) => formatTime(row.lastLoginAt),
     },
     {
-      title: '操作',
+      title: t('操作'),
       valueType: 'option',
       width: 200,
       fixed: 'right',
@@ -157,8 +158,7 @@ const Users: React.FC = () => {
             });
           }}
         >
-          编辑
-        </a>,
+           {t('编辑')} </a>,
         <a
           key="reset"
           onClick={() => {
@@ -166,19 +166,18 @@ const Users: React.FC = () => {
             resetForm.resetFields();
           }}
         >
-          重置密码
-        </a>,
+           {t('重置密码')} </a>,
         row.id === initialState?.currentUser?.id ? null : (
           <Popconfirm
             key="del"
-            title="删除用户"
-            description={`确认删除 ${row.username}？`}
-            okText="删除"
+            title={t('删除用户')}
+            description={t('确认删除 {username}？', { username: row.username })}
+            okText={t('删除')}
             okButtonProps={{ danger: true }}
-            cancelText="取消"
+            cancelText={t('取消')}
             onConfirm={() => removeUser(row.id)}
           >
-            <a style={{ color: '#ff4d4f' }}>删除</a>
+            <a style={{ color: '#ff4d4f' }}>{t('删除')}</a>
           </Popconfirm>
         ),
       ],
@@ -186,7 +185,7 @@ const Users: React.FC = () => {
   ];
 
   return (
-    <PageContainer title="用户管理">
+    <PageContainer title={t('用户管理')}>
       {contextHolder}
       <ProTable<User>
         rowKey="id"
@@ -212,48 +211,47 @@ const Users: React.FC = () => {
             icon={<PlusOutlined />}
             onClick={() => setCreateOpen(true)}
           >
-            新建用户
-          </Button>,
+             {t('新建用户')} </Button>,
         ]}
       />
 
       <Modal
         open={createOpen}
-        title="新建用户"
+        title={t('新建用户')}
         onCancel={() => setCreateOpen(false)}
         onOk={createUser}
-        okText="创建"
-        cancelText="取消"
+        okText={t('创建')}
+        cancelText={t('取消')}
         destroyOnClose
       >
         <Form form={createForm} layout="vertical" preserve={false} initialValues={{ role: 'user' }}>
           <Form.Item
             name="username"
-            label="用户名"
+            label={t('用户名')}
             rules={[
-              { required: true, message: '请填写用户名' },
-              { pattern: /^[a-zA-Z0-9_.-]{2,32}$/, message: '2-32 位字母、数字、_ . -' },
+              { required: true, message: t('请填写用户名') },
+              { pattern: /^[a-zA-Z0-9_.-]{2,32}$/, message: t('2-32 位字母、数字、_ . -') },
             ]}
           >
             <Input autoComplete="off" />
           </Form.Item>
           <Form.Item
             name="password"
-            label="初始密码"
+            label={t('初始密码')}
             rules={[
-              { required: true, message: '请填写初始密码' },
-              { min: 8, message: '密码长度至少 8 位' },
+              { required: true, message: t('请填写初始密码') },
+              { min: 8, message: t('密码长度至少 8 位') },
             ]}
           >
             <Input.Password autoComplete="new-password" />
           </Form.Item>
-          <Form.Item name="nickname" label="昵称">
+          <Form.Item name="nickname" label={t('昵称')}>
             <Input />
           </Form.Item>
-          <Form.Item name="email" label="邮箱" rules={[{ type: 'email', message: '邮箱格式不正确' }]}>
+          <Form.Item name="email" label={t('邮箱')} rules={[{ type: 'email', message: t('邮箱格式不正确') }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="role" label="角色" rules={[{ required: true }]}>
+          <Form.Item name="role" label={t('角色')} rules={[{ required: true }]}>
             <Select options={ROLE_OPTIONS} />
           </Form.Item>
         </Form>
@@ -261,24 +259,24 @@ const Users: React.FC = () => {
 
       <Modal
         open={!!editing}
-        title={`编辑用户：${editing?.username || ''}`}
+        title={t('编辑用户：{p0}', { p0: editing?.username || '' })}
         onCancel={() => setEditing(null)}
         onOk={updateUser}
-        okText="保存"
-        cancelText="取消"
+        okText={t('保存')}
+        cancelText={t('取消')}
         destroyOnClose
       >
         <Form form={editForm} layout="vertical" preserve={false}>
-          <Form.Item name="nickname" label="昵称">
+          <Form.Item name="nickname" label={t('昵称')}>
             <Input />
           </Form.Item>
-          <Form.Item name="email" label="邮箱" rules={[{ type: 'email', message: '邮箱格式不正确' }]}>
+          <Form.Item name="email" label={t('邮箱')} rules={[{ type: 'email', message: t('邮箱格式不正确') }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="role" label="角色" rules={[{ required: true }]}>
+          <Form.Item name="role" label={t('角色')} rules={[{ required: true }]}>
             <Select options={ROLE_OPTIONS} />
           </Form.Item>
-          <Form.Item name="status" label="状态" rules={[{ required: true }]}>
+          <Form.Item name="status" label={t('状态')} rules={[{ required: true }]}>
             <Select options={STATUS_OPTIONS} />
           </Form.Item>
         </Form>
@@ -286,20 +284,20 @@ const Users: React.FC = () => {
 
       <Modal
         open={!!resetTarget}
-        title={`重置密码：${resetTarget?.username || ''}`}
+        title={t('重置密码：{p0}', { p0: resetTarget?.username || '' })}
         onCancel={() => setResetTarget(null)}
         onOk={resetPassword}
-        okText="重置"
-        cancelText="取消"
+        okText={t('重置')}
+        cancelText={t('取消')}
         destroyOnClose
       >
         <Form form={resetForm} layout="vertical" preserve={false}>
           <Form.Item
             name="newPassword"
-            label="新密码"
+            label={t('新密码')}
             rules={[
-              { required: true, message: '请填写新密码' },
-              { min: 8, message: '密码长度至少 8 位' },
+              { required: true, message: t('请填写新密码') },
+              { min: 8, message: t('密码长度至少 8 位') },
             ]}
           >
             <Input.Password autoComplete="new-password" />

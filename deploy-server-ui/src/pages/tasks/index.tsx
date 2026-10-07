@@ -7,6 +7,7 @@ import { PageContainer, ProTable } from '@ant-design/pro-components';
 import { history, useAccess } from '@umijs/max';
 import { Button, Popconfirm, Segmented, Space, Tag, message } from 'antd';
 import React, { useRef, useState } from 'react';
+import { t } from '@/i18n';
 
 /**
  * 任务列表。
@@ -24,7 +25,7 @@ const Tasks: React.FC = () => {
   const runTask = async (key: string) => {
     try {
       const res = await taskApi.run(key);
-      messageApi.success(`已执行任务 #${res.buildNumber}`);
+      messageApi.success(t('已执行任务 #{buildNumber}', { buildNumber: res.buildNumber }));
       history.push(`/runs/${res.runId}`);
     } catch (e) {
       // 统一错误提示
@@ -34,7 +35,7 @@ const Tasks: React.FC = () => {
   const toggleArchive = async (key: string, archived: boolean) => {
     try {
       await taskApi.archive(key, archived);
-      messageApi.success(archived ? '已归档' : '已取消归档');
+      messageApi.success(archived ? t('已归档') : t('已取消归档'));
       actionRef.current?.reload();
     } catch (e) {
       // 统一错误提示
@@ -44,7 +45,7 @@ const Tasks: React.FC = () => {
   const removeTask = async (key: string) => {
     try {
       await taskApi.remove(key);
-      messageApi.success('已删除');
+      messageApi.success(t('已删除'));
       actionRef.current?.reload();
     } catch (e) {
       // 统一错误提示
@@ -53,13 +54,13 @@ const Tasks: React.FC = () => {
 
   const columns: ProColumns<TaskBrief>[] = [
     {
-      title: '任务',
+      title: t('任务'),
       dataIndex: 'keyword',
       hideInTable: true,
-      fieldProps: { placeholder: '按 key 或名称搜索' },
+      fieldProps: { placeholder: t('按 key 或名称搜索') },
     },
     {
-      title: '名称',
+      title: t('名称'),
       dataIndex: 'name',
       hideInSearch: true,
       render: (_, row) => (
@@ -70,35 +71,35 @@ const Tasks: React.FC = () => {
       ),
     },
     {
-      title: '工作目录',
+      title: t('工作目录'),
       dataIndex: 'workdir',
       hideInSearch: true,
       ellipsis: true,
       render: (_, row) => row.workdir,
     },
     {
-      title: '步骤数',
+      title: t('步骤数'),
       dataIndex: 'stepCount',
       hideInSearch: true,
       width: 90,
-      render: (_, row) => `${row.stepCount} 步`,
+      render: (_, row) => t('{stepCount} 步', { stepCount: row.stepCount }),
     },
     {
-      title: '归属',
+      title: t('归属'),
       dataIndex: 'ownerName',
       hideInSearch: true,
       width: 110,
       render: (_, row) => row.ownerName || '-',
     },
     {
-      title: '累计运行',
+      title: t('累计运行'),
       dataIndex: 'runCount',
       hideInSearch: true,
       width: 100,
-      render: (_, row) => `${row.runCount} 次`,
+      render: (_, row) => t('{runCount} 次', { runCount: row.runCount }),
     },
     {
-      title: '上次运行',
+      title: t('上次运行'),
       dataIndex: 'lastRunAt',
       hideInSearch: true,
       width: 210,
@@ -111,19 +112,19 @@ const Tasks: React.FC = () => {
             <span style={{ fontSize: 12 }}>{formatTime(row.lastRunAt)}</span>
           </Space>
         ) : (
-          <span style={{ color: '#999' }}>从未运行</span>
+          <span style={{ color: '#999' }}>{t('从未运行')}</span>
         ),
     },
     {
-      title: '状态',
+      title: t('状态'),
       dataIndex: 'archived',
       hideInSearch: true,
       width: 90,
       render: (_, row) =>
-        row.archived ? <Tag color="default">已归档</Tag> : <Tag color="green">正常</Tag>,
+        row.archived ? <Tag color="default">{t('已归档')}</Tag> : <Tag color="green">{t('正常')}</Tag>,
     },
     {
-      title: '操作',
+      title: t('操作'),
       valueType: 'option',
       width: 200,
       fixed: 'right',
@@ -138,32 +139,29 @@ const Tasks: React.FC = () => {
             disabled={row.archived}
             onClick={() => runTask(row.key)}
           >
-            执行
-          </Button>,
+             {t('执行')} </Button>,
           <a key="detail" onClick={() => history.push(`/tasks/${row.key}`)}>
-            详情
-          </a>,
+             {t('详情')} </a>,
           canOperate ? (
             <a key="edit" onClick={() => history.push(`/tasks/${row.key}/edit`)}>
-              编辑
-            </a>
+               {t('编辑')} </a>
           ) : null,
           canOperate ? (
             <a key="archive" onClick={() => toggleArchive(row.key, !row.archived)}>
-              {row.archived ? '取消归档' : '归档'}
+              {row.archived ? t('取消归档') : t('归档')}
             </a>
           ) : null,
           canOperate ? (
             <Popconfirm
               key="delete"
-              title="删除任务"
-              description={`将连带删除运行历史与日志文件，且不可恢复。确认删除 ${row.key}？`}
-              okText="删除"
+              title={t('删除任务')}
+              description={t('将连带删除运行历史与日志文件，且不可恢复。确认删除 {key}？', { key: row.key })}
+              okText={t('删除')}
               okButtonProps={{ danger: true }}
-              cancelText="取消"
+              cancelText={t('取消')}
               onConfirm={() => removeTask(row.key)}
             >
-              <a style={{ color: '#ff4d4f' }}>删除</a>
+              <a style={{ color: '#ff4d4f' }}>{t('删除')}</a>
             </Popconfirm>
           ) : null,
         ];
@@ -172,7 +170,7 @@ const Tasks: React.FC = () => {
   ];
 
   return (
-    <PageContainer title="任务">
+    <PageContainer title={t('任务')}>
       {contextHolder}
       <ProTable<TaskBrief>
         rowKey="key"
@@ -204,9 +202,9 @@ const Tasks: React.FC = () => {
                 actionRef.current?.reload();
               }}
               options={[
-                { label: '未归档', value: 'active' },
-                { label: '已归档', value: 'archived' },
-                { label: '全部', value: 'all' },
+                { label: t('未归档'), value: 'active' },
+                { label: t('已归档'), value: 'archived' },
+                { label: t('全部'), value: 'all' },
               ]}
             />,
             <Button
@@ -217,16 +215,14 @@ const Tasks: React.FC = () => {
                 actionRef.current?.reload();
               }}
             >
-              只看我的
-            </Button>,
+               {t('只看我的')} </Button>,
             <Button
               key="create"
               type="primary"
               icon={<PlusOutlined />}
               onClick={() => history.push('/tasks/new')}
             >
-              新建任务
-            </Button>,
+               {t('新建任务')} </Button>,
           ],
         }}
       />

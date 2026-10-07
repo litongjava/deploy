@@ -17,6 +17,7 @@ import type {
   ToolchainInstallResult,
   ToolchainList,
 } from './types';
+import { t } from '@/i18n';
 
 export const systemApi = {
   doctor() {
@@ -89,7 +90,7 @@ export async function downloadToolchainScript() {
     headers: token ? { Authorization: token } : undefined,
   });
   if (!res.ok) {
-    throw new Error(`下载失败（HTTP ${res.status}）`);
+    throw new Error(t('下载失败（HTTP {status}）', { status: res.status }));
   }
   return res.blob();
 }
@@ -100,7 +101,7 @@ export async function downloadMiddlewareScript() {
   const res = await fetch(`${API_BASE}/system/middleware/script`, {
     headers: token ? { Authorization: token } : undefined,
   });
-  if (!res.ok) throw new Error(`下载失败（HTTP ${res.status}）`);
+  if (!res.ok) throw new Error(t('下载失败（HTTP {status}）', { status: res.status }));
   return res.blob();
 }
 

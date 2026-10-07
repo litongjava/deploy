@@ -60,7 +60,12 @@ export function setLang(lang: Lang): void {
   window.location.reload();
 }
 
-export type TParams = Record<string, string | number | undefined | null>;
+/**
+ * 插值参数。值类型放宽到 unknown：调用点常把 ProTable / ProDescriptions 的
+ * render 值（类型是 ReactNode）直接传进来，卡成 string|number 会到处报错，
+ * 而这里无论如何都会 String() 一次。
+ */
+export type TParams = Record<string, unknown>;
 
 /**
  * 取文案。

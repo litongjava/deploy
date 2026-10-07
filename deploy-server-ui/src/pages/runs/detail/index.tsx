@@ -30,6 +30,7 @@ import {
   message,
 } from 'antd';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { t } from '@/i18n';
 
 const POLL_MS = 5000;
 const CHUNK_LIMIT = 262144;
@@ -85,7 +86,7 @@ const RunDetail: React.FC = () => {
         guard += 1;
       }
     } catch (e: any) {
-      setLogError(e?.info?.errorMessage || e?.message || '历史日志加载失败');
+      setLogError(e?.info?.errorMessage || e?.message || t('历史日志加载失败'));
     } finally {
       setLogLoading(false);
     }
@@ -140,7 +141,7 @@ const RunDetail: React.FC = () => {
     setCanceling(true);
     try {
       await runApi.cancel(id);
-      messageApi.success('已发送取消请求');
+      messageApi.success(t('已发送取消请求'));
       loadRun(true);
     } catch (e) {
       // 统一提示
@@ -152,7 +153,7 @@ const RunDetail: React.FC = () => {
   const handleRerun = async () => {
     try {
       const res = await runApi.rerun(id);
-      messageApi.success(`已重新触发构建 #${res.buildNumber}`);
+      messageApi.success(t('已重新触发构建 #{buildNumber}', { buildNumber: res.buildNumber }));
       history.push(`/runs/${res.runId}`);
     } catch (e) {
       // 统一提示
@@ -171,18 +172,18 @@ const RunDetail: React.FC = () => {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (e: any) {
-      messageApi.error(e?.message || '下载失败');
+      messageApi.error(e?.message || t('下载失败'));
     }
   };
 
   const active = !!run && !isRunFinished(run.status);
 
   const stepColumns = [
-    { title: '阶段', dataIndex: 'phase', width: 90, render: (v: string) => (v === 'prepare' ? '准备' : '命令') },
-    { title: '顺序', dataIndex: 'sortOrder', width: 70 },
-    { title: '名称', dataIndex: 'name' },
+    { title: t('阶段'), dataIndex: 'phase', width: 90, render: (v: string) => (v === 'prepare' ? t('准备') : t('命令')) },
+    { title: t('顺序'), dataIndex: 'sortOrder', width: 70 },
+    { title: t('名称'), dataIndex: 'name' },
     {
-      title: '状态',
+      title: t('状态'),
       dataIndex: 'status',
       width: 100,
       render: (v: string) =>
@@ -195,20 +196,20 @@ const RunDetail: React.FC = () => {
         ),
     },
     {
-      title: '耗时',
+      title: t('耗时'),
       dataIndex: 'durationMs',
       width: 100,
       render: (v: number) => formatDuration(v),
     },
     {
-      title: '退出码',
+      title: t('退出码'),
       dataIndex: 'exitCode',
       width: 90,
       render: (v: number | null) =>
         v === null || v === undefined ? '-' : <Tag color={v === 0 ? 'green' : 'red'}>{v}</Tag>,
     },
     {
-      title: '开始时间',
+      title: t('开始时间'),
       dataIndex: 'startedAt',
       width: 170,
       render: (v: string) => formatTime(v),
@@ -218,13 +219,13 @@ const RunDetail: React.FC = () => {
   return (
     <PageContainer
       loading={loading && !run}
-      title={run ? `运行 #${run.buildNumber}` : `运行 ${id}`}
+      title={run ? t('运行 #{buildNumber}', { buildNumber: run.buildNumber }) : t('运行 {id}', { id: id })}
       subTitle={
         run ? (
           <Space>
             {/* 执行对象可能是项目也可能是任务，按 targetKind 决定链接与文案 */}
             <Tag color={run.targetKind === 'task' ? 'geekblue' : 'blue'}>
-              {run.targetKind === 'task' ? '任务' : '项目'}
+              {run.targetKind === 'task' ? t('任务') : t('项目')}
             </Tag>
             <a
               onClick={() =>
@@ -246,29 +247,25 @@ const RunDetail: React.FC = () => {
       onBack={() => history.push('/runs')}
       extra={[
         <Button key="refresh" icon={<ReloadOutlined />} onClick={() => loadRun()}>
-          刷新
-        </Button>,
+           {t('刷新')} </Button>,
         <Button key="download" icon={<DownloadOutlined />} onClick={handleDownload}>
-          下载日志
-        </Button>,
+           {t('下载日志')} </Button>,
         active ? (
           <Popconfirm
             key="cancel"
-            title="取消运行"
-            description="会终止整个进程树，确认取消吗？"
+            title={t('取消运行')}
+            description={t('会终止整个进程树，确认取消吗？')}
             onConfirm={handleCancel}
-            okText="取消运行"
+            okText={t('取消运行')}
             okButtonProps={{ danger: true }}
-            cancelText="再想想"
+            cancelText={t('再想想')}
           >
             <Button danger icon={<StopOutlined />} loading={canceling}>
-              取消运行
-            </Button>
+               {t('取消运行')} </Button>
           </Popconfirm>
         ) : (
           <Button key="rerun" onClick={handleRerun}>
-            重新执行
-          </Button>
+             {t('重新执行')} </Button>
         ),
       ]}
     >
@@ -279,14 +276,14 @@ const RunDetail: React.FC = () => {
           style={{ marginBottom: 16 }}
           type="error"
           showIcon
-          message="运行错误"
+          message={t('运行错误')}
           description={run.errorMsg}
         />
       ) : null}
 
       {(run?.pipeline || []).length > 0 ? (
         <Card
-          title="依赖构建流水线"
+          title={t('依赖构建流水线')}
           style={{ marginBottom: 16 }}
           extra={<span style={{ color: '#999', fontSize: 12 }}>pipelineId: {run?.pipelineId}</span>}
         >
@@ -297,20 +294,20 @@ const RunDetail: React.FC = () => {
             dataSource={run?.pipeline || []}
             columns={[
               {
-                title: '顺序',
+                title: t('顺序'),
                 dataIndex: 'pipelineOrder',
                 width: 70,
-                render: (v: number, row) => (row.pipelineRole === 'main' ? '目标' : v),
+                render: (v: number, row) => (row.pipelineRole === 'main' ? t('目标') : v),
               },
               {
-                title: '角色',
+                title: t('角色'),
                 dataIndex: 'pipelineRole',
                 width: 100,
                 render: (v: string) =>
-                  v === 'main' ? <Tag color="blue">目标项目</Tag> : <Tag color="purple">依赖构建</Tag>,
+                  v === 'main' ? <Tag color="blue">{t('目标项目')}</Tag> : <Tag color="purple">{t('依赖构建')}</Tag>,
               },
               {
-                title: '项目',
+                title: t('项目'),
                 dataIndex: 'projectName',
                 render: (_, row) => (
                   <Space size={6}>
@@ -322,13 +319,13 @@ const RunDetail: React.FC = () => {
                 ),
               },
               {
-                title: '构建',
+                title: t('构建'),
                 dataIndex: 'buildNumber',
                 width: 90,
                 render: (v: number, row) => <a onClick={() => history.push(`/runs/${row.runId}`)}>#{v}</a>,
               },
               {
-                title: '状态',
+                title: t('状态'),
                 dataIndex: 'status',
                 width: 100,
                 render: (v: Run['status']) => (
@@ -336,19 +333,19 @@ const RunDetail: React.FC = () => {
                 ),
               },
               {
-                title: '耗时',
+                title: t('耗时'),
                 dataIndex: 'durationMs',
                 width: 100,
                 render: (v: number) => formatDuration(v),
               },
               {
-                title: '操作',
+                title: t('操作'),
                 width: 100,
                 render: (_, row) =>
                   row.runId === Number(id) ? (
-                    <span style={{ color: '#999' }}>当前</span>
+                    <span style={{ color: '#999' }}>{t('当前')}</span>
                   ) : (
-                    <a onClick={() => history.push(`/runs/${row.runId}`)}>查看日志</a>
+                    <a onClick={() => history.push(`/runs/${row.runId}`)}>{t('查看日志')}</a>
                   ),
               },
             ]}
@@ -361,8 +358,8 @@ const RunDetail: React.FC = () => {
           style={{ marginBottom: 16 }}
           type="warning"
           showIcon
-          message="Git 准备阶段失败"
-          description="准备阶段失败时不会执行任何用户命令，请检查仓库地址 / 分支 / 凭据。"
+          message={t('Git 准备阶段失败')}
+          description={t('准备阶段失败时不会执行任何用户命令，请检查仓库地址 / 分支 / 凭据。')}
         />
       ) : null}
 
@@ -371,16 +368,16 @@ const RunDetail: React.FC = () => {
           column={{ xs: 1, sm: 2, md: 3 }}
           dataSource={run || undefined}
           columns={[
-            { title: '运行 ID', dataIndex: 'id' },
-            { title: '构建号', dataIndex: 'buildNumber' },
+            { title: t('运行 ID'), dataIndex: 'id' },
+            { title: t('构建号'), dataIndex: 'buildNumber' },
             {
-              title: '触发方式',
+              title: t('触发方式'),
               dataIndex: 'triggerType',
               render: (_, row) => TRIGGER_TYPE_META[row.triggerType] || row.triggerType,
             },
-            { title: '触发人', dataIndex: 'triggerUserName', render: (v) => v || '-' },
-            { title: '触发 IP', dataIndex: 'triggerIp', render: (v) => v || '-' },
-            { title: '请求分支', dataIndex: 'requestedRef', render: (v) => v || '-' },
+            { title: t('触发人'), dataIndex: 'triggerUserName', render: (v) => v || '-' },
+            { title: t('触发 IP'), dataIndex: 'triggerIp', render: (v) => v || '-' },
+            { title: t('请求分支'), dataIndex: 'requestedRef', render: (v) => v || '-' },
             {
               title: 'Git',
               dataIndex: 'gitCommitShort',
@@ -399,7 +396,7 @@ const RunDetail: React.FC = () => {
                 ),
             },
             {
-              title: '准备阶段',
+              title: t('准备阶段'),
               dataIndex: 'prepareStatus',
               render: (_, row) => (
                 <Space size={6}>
@@ -414,20 +411,20 @@ const RunDetail: React.FC = () => {
                 </Space>
               ),
             },
-            { title: '开始时间', dataIndex: 'startedAt', render: (_, row) => formatTime(row.startedAt) },
-            { title: '结束时间', dataIndex: 'finishedAt', render: (_, row) => formatTime(row.finishedAt) },
+            { title: t('开始时间'), dataIndex: 'startedAt', render: (_, row) => formatTime(row.startedAt) },
+            { title: t('结束时间'), dataIndex: 'finishedAt', render: (_, row) => formatTime(row.finishedAt) },
             {
-              title: '耗时',
+              title: t('耗时'),
               dataIndex: 'durationMs',
               render: (_, row) => formatDuration(row.durationMs),
             },
             {
-              title: '退出码',
+              title: t('退出码'),
               dataIndex: 'exitCode',
               render: (v) => (v === null || v === undefined ? '-' : v),
             },
             {
-              title: '日志大小',
+              title: t('日志大小'),
               dataIndex: 'logSize',
               render: (_, row) => formatBytes(row.logSize),
             },
@@ -441,7 +438,7 @@ const RunDetail: React.FC = () => {
             items={[
               {
                 key: 'params',
-                label: '触发参数',
+                label: t('触发参数'),
                 children: (
                   <Space wrap>
                     {Object.entries(run.params).map(([k, v]) => (
@@ -458,7 +455,7 @@ const RunDetail: React.FC = () => {
       </Card>
 
       <Card
-        title="实时日志"
+        title={t('实时日志')}
         style={{ marginBottom: 16 }}
         extra={
           <Space>
@@ -473,11 +470,9 @@ const RunDetail: React.FC = () => {
                 loadRun(true);
               }}
             >
-              重载日志
-            </Button>
+               {t('重载日志')} </Button>
             <Button size="small" onClick={() => termRef.current?.reconnect()}>
-              重连日志流
-            </Button>
+               {t('重连日志流')} </Button>
           </Space>
         }
       >
@@ -489,11 +484,11 @@ const RunDetail: React.FC = () => {
             message={logError}
             description={
               <span>
-                历史日志接口不可用，但实时流仍会尝试连接；也可以点右上角
+{t('历史日志接口不可用，但实时流仍会尝试连接；也可以点右上角')}
                 <Button type="link" size="small" onClick={handleDownload}>
-                  下载日志
+                  {t('下载日志')}
                 </Button>
-                。
+                {t('。')}
               </span>
             }
           />
@@ -508,25 +503,26 @@ const RunDetail: React.FC = () => {
           runId={id}
           active={active}
           onExit={(status) => {
-            messageApi.info(`运行结束：${RUN_STATUS_META[status as Run['status']]?.text || status}`);
+            messageApi.info(t('运行结束：{p0}', { p0: RUN_STATUS_META[status as Run['status']]?.text || status }));
             loadRun(true);
           }}
           onError={(msg) => {
-            messageApi.error(`日志流错误：${msg}`);
+            messageApi.error(t('日志流错误：{msg}', { msg: msg }));
           }}
           onDownload={handleDownload}
           height={520}
         />
         <div style={{ marginTop: 8, color: '#999', fontSize: 12 }}>
-          连接方式：WebSocket /api/v1/ws/runs/{id}?token=***&offset=N；断线会自动按 nextOffset
-          指数退避重连补齐日志。
-          {logLoading ? ' 正在补齐历史日志…' : ''}
+{t('连接方式：WebSocket /api/v1/ws/runs/{id}?token=***&offset=N；断线会自动按 nextOffset 指数退避重连补齐日志。', {
+            id,
+          })}
+          {logLoading ? t(' 正在补齐历史日志…') : ''}
         </div>
       </Card>
 
-      <Card title="步骤">
+      <Card title={t('步骤')}>
         {(run?.steps || []).length === 0 ? (
-          <Empty description="还没有步骤记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          <Empty description={t('还没有步骤记录')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
         ) : (
           <Table<RunStep>
             rowKey="id"

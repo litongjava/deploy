@@ -2,6 +2,7 @@ import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { ProFormSelect, ProFormSwitch } from '@ant-design/pro-components';
 import { Button, Card, Col, Form, Input, InputNumber, Row, Space } from 'antd';
 import React from 'react';
+import { t } from '@/i18n';
 
 /**
  * 一步 shell 的草稿形态。项目里叫「命令」，任务里叫「步骤」，
@@ -62,7 +63,7 @@ const ScriptListEditor: React.FC<ScriptListEditorProps> = ({
         <div>
           {fields.length === 0 ? (
             <Card size="small" style={{ marginBottom: 12, textAlign: 'center', color: '#999' }}>
-              还没有{itemNoun}，点击下方「新增{itemNoun}」添加第一条
+              {t('还没有{noun}，点击下方「新增{noun}」添加第一条', { noun: itemNoun })}
             </Card>
           ) : null}
 
@@ -80,7 +81,7 @@ const ScriptListEditor: React.FC<ScriptListEditorProps> = ({
                     {({ getFieldValue }) => {
                       const enabled = getFieldValue([listName, field.name, 'enabled']);
                       return enabled === false ? (
-                        <span style={{ color: '#999', fontSize: 12 }}>（已禁用，不会执行）</span>
+                        <span style={{ color: '#999', fontSize: 12 }}>{t('（已禁用，不会执行）')}</span>
                       ) : null;
                     }}
                   </Form.Item>
@@ -94,23 +95,20 @@ const ScriptListEditor: React.FC<ScriptListEditorProps> = ({
                       disabled={index === 0}
                       onClick={() => move(index, index - 1)}
                     >
-                      上移
-                    </Button>
+                       {t('上移')} </Button>
                     <Button
                       size="small"
                       disabled={index === fields.length - 1}
                       onClick={() => move(index, index + 1)}
                     >
-                      下移
-                    </Button>
+                       {t('下移')} </Button>
                     <Button
                       size="small"
                       danger
                       icon={<MinusCircleOutlined />}
                       onClick={() => remove(field.name)}
                     >
-                      删除
-                    </Button>
+                       {t('删除')} </Button>
                   </Space>
                 )
               }
@@ -124,19 +122,19 @@ const ScriptListEditor: React.FC<ScriptListEditorProps> = ({
               <Row gutter={12}>
                 <Col xs={24} md={12}>
                   <Form.Item
-                    label="名称"
+                    label={t('名称')}
                     name={[field.name, 'name']}
-                    rules={[{ required: true, message: `请填写${itemNoun}名称` }]}
+                    rules={[{ required: true, message: t('请填写{itemNoun}名称', { itemNoun: itemNoun }) }]}
                   >
-                    <Input placeholder="例如：拉取代码 / 构建 / 重启服务 / 发起压测" />
+                    <Input placeholder={t('例如：拉取代码 / 构建 / 重启服务 / 发起压测')} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={12}>
-                  <Form.Item label="失败策略" name={[field.name, 'failStrategy']}>
+                  <Form.Item label={t('失败策略')} name={[field.name, 'failStrategy']}>
                     <ProFormSelect
                       options={[
-                        { label: '失败即停（abort）', value: 'abort' },
-                        { label: '忽略错误继续（continue）', value: 'continue' },
+                        { label: t('失败即停（abort）'), value: 'abort' },
+                        { label: t('忽略错误继续（continue）'), value: 'continue' },
                       ]}
                       fieldProps={{ style: { width: '100%' } }}
                     />
@@ -145,10 +143,10 @@ const ScriptListEditor: React.FC<ScriptListEditorProps> = ({
               </Row>
 
               <Form.Item
-                label="脚本"
+                label={t('脚本')}
                 name={[field.name, 'script']}
-                rules={[{ required: true, message: '请填写脚本内容' }]}
-                extra="按 sh / bash 语法编写；平台会把内置变量以环境变量注入（${WORKDIR}、${BUILD_NUMBER} 等）"
+                rules={[{ required: true, message: t('请填写脚本内容') }]}
+                extra={t('按 sh / bash 语法编写；平台会把内置变量以环境变量注入（${WORKDIR}、${BUILD_NUMBER} 等）')}
               >
                 <Input.TextArea
                   autoSize={{ minRows: 3, maxRows: 16 }}
@@ -162,7 +160,7 @@ const ScriptListEditor: React.FC<ScriptListEditorProps> = ({
                   {/* 这里必须让 ProFormSwitch 自己拿 name：它内部就是一个完整的
                       ProFormItem，再套一层 Form.Item 会变成两层，外层拿不到值，
                       开关就永远停在「关」，点开也写不回表单（见 tests/script-editor-switch.test.tsx）。 */}
-                  <ProFormSwitch name={[field.name, 'enabled']} label="启用" />
+                  <ProFormSwitch name={[field.name, 'enabled']} label={t('启用')} />
                 </Col>
                 <Col xs={24} md={14} />
               </Row>
@@ -170,29 +168,29 @@ const ScriptListEditor: React.FC<ScriptListEditorProps> = ({
               <Row gutter={12}>
                 <Col xs={24} md={8}>
                   <Form.Item
-                    label="工作目录覆盖"
+                    label={t('工作目录覆盖')}
                     name={[field.name, 'workdirOverride']}
-                    tooltip={`留空使用${ownerNoun}工作目录`}
+                    tooltip={t('留空使用{ownerNoun}工作目录', { ownerNoun: ownerNoun })}
                   >
-                    <Input placeholder="可选" />
+                    <Input placeholder={t('可选')} />
                   </Form.Item>
                 </Col>
                 <Col xs={12} md={8}>
                   <Form.Item
-                    label="超时（秒）"
+                    label={t('超时（秒）')}
                     name={[field.name, 'timeoutSec']}
-                    tooltip={`0 表示使用${ownerNoun}默认超时`}
+                    tooltip={t('0 表示使用{ownerNoun}默认超时', { ownerNoun: ownerNoun })}
                   >
                     <InputNumber min={0} style={{ width: '100%' }} />
                   </Form.Item>
                 </Col>
                 <Col xs={12} md={8}>
                   <Form.Item
-                    label="Shell 覆盖"
+                    label={t('Shell 覆盖')}
                     name={[field.name, 'shellOverride']}
-                    tooltip={`留空使用${ownerNoun}设置`}
+                    tooltip={t('留空使用{ownerNoun}设置', { ownerNoun: ownerNoun })}
                   >
-                    <Input placeholder="可选：bash / sh / pwsh / cmd" />
+                    <Input placeholder={t('可选：bash / sh / pwsh / cmd')} />
                   </Form.Item>
                 </Col>
               </Row>
@@ -201,7 +199,7 @@ const ScriptListEditor: React.FC<ScriptListEditorProps> = ({
 
           {readonly ? null : (
             <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add(newScriptDraft())}>
-              新增{itemNoun}
+              {t('新增{noun}', { noun: itemNoun })}
             </Button>
           )}
           <Form.ErrorList errors={errors} />

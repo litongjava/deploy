@@ -12,6 +12,8 @@ import { createStyles } from 'antd-style';
 import React, { useCallback } from 'react';
 import { flushSync } from 'react-dom';
 import HeaderDropdown from '../HeaderDropdown';
+import { LanguageMenuItemLabel } from '../LanguageSwitcher';
+import { t } from '@/i18n';
 
 export type GlobalHeaderRightProps = {
   menu?: boolean;
@@ -80,6 +82,10 @@ export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({ children }) =
         // 挪进下拉菜单后也保持只做提示，不能落到下面这条默认的「个人设置」跳转上。
         return;
       }
+      if (key === 'lang') {
+        // 语言项自己处理切换（LanguageMenuItemLabel 里的 onClick），这里不再跳页
+        return;
+      }
       history.push(`/settings/profile`);
     },
     [setInitialState, loginOut],
@@ -111,18 +117,24 @@ export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({ children }) =
     {
       key: 'center',
       icon: <UserOutlined />,
-      label: '个人设置',
+      label: t('个人设置'),
     },
     {
       key: 'settings',
       icon: <SettingOutlined />,
-      label: '系统设置',
+      label: t('系统设置'),
+    },
+    {
+      // 语言切换：标签自带 onClick 直接切语言，所以这里不能再落到下面
+      // 默认的「跳个人设置」分支上（onMenuClick 里已对 lang 早退）。
+      key: 'lang',
+      label: <LanguageMenuItemLabel />,
     },
     {
       key: 'help',
       icon: <QuestionCircleOutlined />,
       // 顶栏那个「?」的 title 提示原样保留：悬停在这一项上仍能看到接口契约的位置
-      label: <span title="接口契约见 docs/API设计.md">帮助</span>,
+      label: <span title={t('接口契约见 docs/API设计.md')}>{t('帮助')}</span>,
     },
     {
       type: 'divider' as const,
@@ -130,7 +142,7 @@ export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({ children }) =
     {
       key: 'logout',
       icon: <LogoutOutlined />,
-      label: '退出登录',
+      label: t('退出登录'),
     },
   ];
 

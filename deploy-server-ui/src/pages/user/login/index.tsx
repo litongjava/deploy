@@ -9,6 +9,7 @@ import { createStyles } from 'antd-style';
 import React, { useEffect, useState } from 'react';
 import { flushSync } from 'react-dom';
 import Settings from '@/../config/defaultSettings';
+import { t } from '@/i18n';
 
 const useStyles = createStyles(({ token }) => {
   return {
@@ -71,10 +72,10 @@ const Login: React.FC = () => {
         password: values.password,
       });
       setToken(result.token);
-      messageApi.success('登录成功！');
+      messageApi.success(t('登录成功！'));
       const user = result.user || (await fetchUserInfo());
       if (user?.mustChangePassword) {
-        messageApi.warning('首次登录请先修改密码');
+        messageApi.warning(t('首次登录请先修改密码'));
         history.replace('/settings/profile');
         return;
       }
@@ -85,7 +86,7 @@ const Login: React.FC = () => {
         info?.errorMessage ||
         error?.response?.data?.errorMessage ||
         error?.message ||
-        '登录失败，请重试！';
+        t('登录失败，请重试！');
       setErrorMessage(msg);
     } finally {
       setChecking(false);
@@ -97,7 +98,7 @@ const Login: React.FC = () => {
       {messageContextHolder}
       <div className={styles.container}>
         <Helmet>
-          <title>登录 - {Settings.title}</title>
+          <title>{t('登录 - {title}', { title: Settings.title })}</title>
         </Helmet>
         <div
           style={{
@@ -117,7 +118,7 @@ const Login: React.FC = () => {
             }}
             logo={<img alt="logo" src={Settings.logo} />}
             title={Settings.title}
-            subTitle="轻量命令式 CI/CD 平台 —— 打开网页，选项目，点执行"
+            subTitle={t('轻量命令式 CI/CD 平台 —— 打开网页，选项目，点执行')}
             initialValues={{
               autoLogin: true,
             }}
@@ -140,11 +141,11 @@ const Login: React.FC = () => {
                 prefix: <UserOutlined />,
                 autoComplete: 'username',
               }}
-              placeholder="用户名"
+              placeholder={t('用户名')}
               rules={[
                 {
                   required: true,
-                  message: '请输入用户名！',
+                  message: t('请输入用户名！'),
                 },
               ]}
             />
@@ -155,11 +156,11 @@ const Login: React.FC = () => {
                 prefix: <LockOutlined />,
                 autoComplete: 'current-password',
               }}
-              placeholder="密码"
+              placeholder={t('密码')}
               rules={[
                 {
                   required: true,
-                  message: '请输入密码！',
+                  message: t('请输入密码！'),
                 },
               ]}
             />

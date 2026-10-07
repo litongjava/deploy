@@ -9,6 +9,7 @@ import type {
   ShellType,
   TriggerType,
 } from '@/services/types';
+import { t } from '@/i18n';
 
 /** 状态 → 颜色 + 中文 */
 type RunStatusMeta = { color: string; text: string };
@@ -16,13 +17,13 @@ type RunStatusMeta = { color: string; text: string };
 // 空字符串表示尚无运行状态，映射中没有对应项，保留调用处的回退显示。
 export const RUN_STATUS_META: Record<RunStatus, RunStatusMeta> &
   Partial<Record<'', RunStatusMeta>> = {
-  queued: { color: 'default', text: '排队中' },
-  running: { color: 'processing', text: '运行中' },
-  success: { color: 'success', text: '成功' },
-  failed: { color: 'error', text: '失败' },
-  canceled: { color: 'warning', text: '已取消' },
-  timeout: { color: 'volcano', text: '超时' },
-  error: { color: 'error', text: '异常' },
+  queued: { color: 'default', text: t('排队中') },
+  running: { color: 'processing', text: t('运行中') },
+  success: { color: 'success', text: t('成功') },
+  failed: { color: 'error', text: t('失败') },
+  canceled: { color: 'warning', text: t('已取消') },
+  timeout: { color: 'volcano', text: t('超时') },
+  error: { color: 'error', text: t('异常') },
 };
 
 export const RUN_STATUS_OPTIONS = (Object.keys(RUN_STATUS_META) as RunStatus[]).map((k) => ({
@@ -31,22 +32,22 @@ export const RUN_STATUS_OPTIONS = (Object.keys(RUN_STATUS_META) as RunStatus[]).
 }));
 
 export const PREPARE_STATUS_META: Record<PrepareStatus, { color: string; text: string }> = {
-  skipped: { color: 'default', text: '未启用' },
-  running: { color: 'processing', text: '进行中' },
-  success: { color: 'success', text: '成功' },
-  failed: { color: 'error', text: '失败' },
+  skipped: { color: 'default', text: t('未启用') },
+  running: { color: 'processing', text: t('进行中') },
+  success: { color: 'success', text: t('成功') },
+  failed: { color: 'error', text: t('失败') },
 };
 
 export const TRIGGER_TYPE_META: Record<TriggerType, string> = {
-  web: '网页',
+  web: t('网页'),
   api: 'API',
   cli: 'CLI',
   hook: 'Hook',
-  rerun: '重跑',
+  rerun: t('重跑'),
 };
 
 export const SHELL_OPTIONS: { label: string; value: ShellType }[] = [
-  { label: '自动（auto）', value: 'auto' },
+  { label: t('自动（auto）'), value: 'auto' },
   { label: 'bash', value: 'bash' },
   { label: 'sh', value: 'sh' },
   { label: 'pwsh', value: 'pwsh' },
@@ -54,19 +55,19 @@ export const SHELL_OPTIONS: { label: string; value: ShellType }[] = [
 ];
 
 export const CONCURRENCY_OPTIONS: { label: string; value: ConcurrencyType }[] = [
-  { label: '排队串行（queue）', value: 'queue' },
-  { label: '允许并行（allow）', value: 'allow' },
-  { label: '取消上一次（cancelPrev）', value: 'cancelPrev' },
+  { label: t('排队串行（queue）'), value: 'queue' },
+  { label: t('允许并行（allow）'), value: 'allow' },
+  { label: t('取消上一次（cancelPrev）'), value: 'cancelPrev' },
 ];
 
 export const FAIL_STRATEGY_OPTIONS: { label: string; value: FailStrategy }[] = [
-  { label: '失败即停（abort）', value: 'abort' },
-  { label: '忽略错误继续（continue）', value: 'continue' },
+  { label: t('失败即停（abort）'), value: 'abort' },
+  { label: t('忽略错误继续（continue）'), value: 'continue' },
 ];
 
 export const CREDENTIAL_TYPE_OPTIONS: { label: string; value: CredentialType }[] = [
-  { label: 'HTTPS Token / 密码', value: 'https_token' },
-  { label: 'SSH 私钥', value: 'ssh_key' },
+  { label: t('HTTPS Token / 密码'), value: 'https_token' },
+  { label: t('SSH 私钥'), value: 'ssh_key' },
 ];
 
 export const PROJECT_KEY_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
@@ -81,13 +82,13 @@ export const PROJECT_KIND_META: Record<
   ProjectKind,
   { color: string; text: string; iconColor: string }
 > = {
-  app: { color: 'blue', text: '应用项目', iconColor: '#1677ff' },
-  lib: { color: 'purple', text: '构建项目', iconColor: '#722ed1' },
+  app: { color: 'blue', text: t('应用项目'), iconColor: '#1677ff' },
+  lib: { color: 'purple', text: t('构建项目'), iconColor: '#722ed1' },
 };
 
 export const PROJECT_KIND_OPTIONS: { label: string; value: ProjectKind }[] = [
-  { label: '应用项目', value: 'app' },
-  { label: '构建项目', value: 'lib' },
+  { label: t('应用项目'), value: 'app' },
+  { label: t('构建项目'), value: 'lib' },
 ];
 
 /** Secret 环境变量的占位符（提交时若仍为该值则保持原值） */

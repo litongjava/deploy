@@ -23,6 +23,7 @@ import {
 import { history, useParams } from '@umijs/max';
 import { Button, Col, Row, Space, Spin, message } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
+import { t } from '@/i18n';
 
 /**
  * 新建 / 编辑任务。
@@ -120,7 +121,7 @@ const TasksEdit: React.FC = () => {
       const steps: TaskStepDraft[] = (values.steps || [])
         .filter((s) => s && (s.name || s.script))
         .map((s, index) => ({
-          name: s.name || `步骤 ${index + 1}`,
+          name: s.name || t('步骤 {p0}', { p0: index + 1 }),
           script: s.script || '',
           sortOrder: index + 1,
           enabled: s.enabled !== false,
@@ -158,11 +159,11 @@ const TasksEdit: React.FC = () => {
 
       if (isEdit) {
         await taskApi.update(editKey!, payload);
-        messageApi.success('保存成功');
+        messageApi.success(t('保存成功'));
         history.push(`/tasks/${editKey}`);
       } else {
         await taskApi.create(payload);
-        messageApi.success('创建成功');
+        messageApi.success(t('创建成功'));
         history.push(`/tasks/${payload.key}`);
       }
     } catch (e) {
@@ -174,7 +175,7 @@ const TasksEdit: React.FC = () => {
 
   if (loading) {
     return (
-      <PageContainer title={isEdit ? `编辑任务 ${editKey}` : '新建任务'}>
+      <PageContainer title={isEdit ? t('编辑任务 {editKey}', { editKey: editKey }) : t('新建任务')}>
         <div style={{ textAlign: 'center', padding: '60px 0' }}>
           <Spin />
         </div>
@@ -184,19 +185,18 @@ const TasksEdit: React.FC = () => {
 
   return (
     <PageContainer
-      title={isEdit ? `编辑任务：${editKey}` : '新建任务'}
+      title={isEdit ? t('编辑任务：{editKey}', { editKey: editKey }) : t('新建任务')}
       onBack={() => history.back()}
       extra={[
         <Button key="back" icon={<ArrowLeftOutlined />} onClick={() => history.back()}>
-          返回
-        </Button>,
+           {t('返回')} </Button>,
       ]}
     >
       {contextHolder}
       <ProForm<FormValues>
         form={form}
         submitter={{
-          searchConfig: { submitText: isEdit ? '保存' : '创建任务' },
+          searchConfig: { submitText: isEdit ? t('保存') : t('创建任务') },
           render: (props) => (
             <Space>
               <Button
@@ -205,9 +205,9 @@ const TasksEdit: React.FC = () => {
                 loading={saving}
                 onClick={() => props.form?.submit()}
               >
-                {isEdit ? '保存' : '创建任务'}
+                {isEdit ? t('保存') : t('创建任务')}
               </Button>
-              <Button onClick={() => history.back()}>取消</Button>
+              <Button onClick={() => history.back()}>{t('取消')}</Button>
             </Space>
           ),
         }}
@@ -231,43 +231,43 @@ const TasksEdit: React.FC = () => {
           envs: [],
         }}
       >
-        <ProCard title="基本信息" bordered headerBordered style={{ marginBottom: 16 }}>
+        <ProCard title={t('基本信息')} bordered headerBordered style={{ marginBottom: 16 }}>
           {/* 与项目表单同一套栅格：PC（≥1200px）一行三个、平板（≥768px）一行两个、手机一列一个 */}
           <Row gutter={24}>
             <Col xs={24} md={12} xl={8}>
               <ProFormText
                 name="key"
-                label="任务 Key"
+                label={t('任务 Key')}
                 disabled={isEdit}
                 rules={[
-                  { required: true, message: '请填写任务 Key' },
-                  { pattern: PROJECT_KEY_PATTERN, message: '只能包含字母、数字、- 和 _，且不以符号开头' },
+                  { required: true, message: t('请填写任务 Key') },
+                  { pattern: PROJECT_KEY_PATTERN, message: t('只能包含字母、数字、- 和 _，且不以符号开头') },
                 ]}
-                placeholder="例如 bench-tio-boot（字母数字与 - _）"
-                tooltip="任务 Key 会作为工作目录占位符 ${TASK_KEY} 的值，创建后不可修改"
+                placeholder={t('例如 bench-tio-boot（字母数字与 - _）')}
+                tooltip={t('任务 Key 会作为工作目录占位符 ${TASK_KEY} 的值，创建后不可修改')}
               />
             </Col>
             <Col xs={24} md={12} xl={8}>
               <ProFormText
                 name="name"
-                label="任务名称"
-                rules={[{ required: true, message: '请填写任务名称' }]}
-                placeholder="例如：tio-boot 压测"
+                label={t('任务名称')}
+                rules={[{ required: true, message: t('请填写任务名称') }]}
+                placeholder={t('例如：tio-boot 压测')}
               />
             </Col>
             <Col xs={24} md={24} xl={8}>
               <ProFormText
                 name="workdir"
-                label="工作目录"
-                rules={[{ required: true, message: '请填写工作目录' }]}
-                placeholder="例如 /srv/worksapce/bench-tio-boot"
-                tooltip="新建时按任务 Key 自动填成 /srv/worksapce/<key>，可手动改；支持 ${WORKSPACE_ROOT} / ${TASK_KEY} / ${TASK_NAME} 占位符，目录不存在会自动创建"
+                label={t('工作目录')}
+                rules={[{ required: true, message: t('请填写工作目录') }]}
+                placeholder={t('例如 /srv/worksapce/bench-tio-boot')}
+                tooltip={t('新建时按任务 Key 自动填成 /srv/worksapce/<key>，可手动改；支持 ${WORKSPACE_ROOT} / ${TASK_KEY} / ${TASK_NAME} 占位符，目录不存在会自动创建')}
               />
             </Col>
           </Row>
           <Row gutter={24}>
             <Col xs={24} md={12} xl={8}>
-              <ProFormSelect name="concurrency" label="并发策略" options={CONCURRENCY_OPTIONS} />
+              <ProFormSelect name="concurrency" label={t('并发策略')} options={CONCURRENCY_OPTIONS} />
             </Col>
             <Col xs={24} md={12} xl={8}>
               <ProFormSelect name="shell" label="Shell" options={SHELL_OPTIONS} />
@@ -275,9 +275,9 @@ const TasksEdit: React.FC = () => {
             <Col xs={24} md={12} xl={8}>
               <ProFormDigit
                 name="timeoutSec"
-                label="默认超时（秒）"
+                label={t('默认超时（秒）')}
                 min={0}
-                tooltip="0 表示不限制；每一步也可以单独设超时"
+                tooltip={t('0 表示不限制；每一步也可以单独设超时')}
               />
             </Col>
           </Row>
@@ -285,30 +285,30 @@ const TasksEdit: React.FC = () => {
             <Col xs={24} md={12} xl={8}>
               <ProFormTextArea
                 name="description"
-                label="描述"
-                placeholder="这个任务是干什么的、什么时候该跑"
+                label={t('描述')}
+                placeholder={t('这个任务是干什么的、什么时候该跑')}
                 fieldProps={{ rows: 2 }}
               />
             </Col>
             <Col xs={24} md={12} xl={8}>
-              <ProFormSwitch name="hookEnabled" label="启用 Hook 触发" />
+              <ProFormSwitch name="hookEnabled" label={t('启用 Hook 触发')} />
             </Col>
             <Col xs={24} md={12} xl={8}>
               <ProFormSwitch
                 name="allowEnvOverride"
-                label="允许触发时覆盖环境变量"
-                tooltip="通过 Hook 或接口触发时，请求体里的 env 是否能覆盖任务自身与环境变量"
+                label={t('允许触发时覆盖环境变量')}
+                tooltip={t('通过 Hook 或接口触发时，请求体里的 env 是否能覆盖任务自身与环境变量')}
               />
             </Col>
           </Row>
         </ProCard>
 
-        <ProCard title="环境变量" bordered headerBordered style={{ marginBottom: 16 }}>
+        <ProCard title={t('环境变量')} bordered headerBordered style={{ marginBottom: 16 }}>
           <EnvListEditor />
         </ProCard>
 
-        <ProCard title="步骤列表（按顺序执行）" bordered headerBordered>
-          <ScriptListEditor listName="steps" itemNoun="步骤" ownerNoun="任务" />
+        <ProCard title={t('步骤列表（按顺序执行）')} bordered headerBordered>
+          <ScriptListEditor listName="steps" itemNoun={t('步骤')} ownerNoun={t('任务')} />
         </ProCard>
       </ProForm>
     </PageContainer>

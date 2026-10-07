@@ -2,6 +2,7 @@ import { getData, postData } from './api';
 import { API_BASE } from './api';
 import { getToken } from './authStore';
 import type { LogChunk, PageResult, Run, RunQuery, TriggerResult } from './types';
+import { t } from '@/i18n';
 
 export const runApi = {
   list(params: RunQuery) {
@@ -35,7 +36,7 @@ export async function downloadRunLog(id: number | string) {
     headers: token ? { Authorization: token } : undefined,
   });
   if (!res.ok) {
-    throw new Error(`下载失败（HTTP ${res.status}）`);
+    throw new Error(t('下载失败（HTTP {status}）', { status: res.status }));
   }
   return res.blob();
 }

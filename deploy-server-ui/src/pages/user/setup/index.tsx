@@ -10,6 +10,7 @@ import { Helmet, history } from '@umijs/max';
 import { Alert, Button, Result } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
 import Settings from '@/../config/defaultSettings';
+import { t } from '@/i18n';
 
 /**
  * 首次启动初始化向导（FR-INIT-1）：
@@ -67,7 +68,7 @@ const Setup: React.FC = () => {
         error?.info?.errorMessage ||
         error?.response?.data?.errorMessage ||
         error?.message ||
-        '初始化失败，请重试';
+        t('初始化失败，请重试');
       setErrorMessage(msg);
       return false;
     }
@@ -76,7 +77,7 @@ const Setup: React.FC = () => {
   return (
     <>
       <Helmet>
-        <title>初始化 - {Settings.title}</title>
+        <title>{t('初始化 - {title}', { title: Settings.title })}</title>
       </Helmet>
       <div
         style={{
@@ -106,8 +107,7 @@ const Setup: React.FC = () => {
                           window.location.href = '/';
                         }}
                       >
-                        进入平台
-                      </Button>
+                         {t('进入平台')} </Button>
                     </div>
                   );
                 }
@@ -117,9 +117,9 @@ const Setup: React.FC = () => {
           >
             <StepsForm.StepForm
               name="admin"
-              title="创建管理员"
+              title={t('创建管理员')}
               onFinish={handleBootstrap}
-              stepProps={{ description: '设置超级管理员账号（密码至少 8 位）' }}
+              stepProps={{ description: t('设置超级管理员账号（密码至少 8 位）') }}
             >
               {errorMessage && (
                 <Alert
@@ -133,42 +133,42 @@ const Setup: React.FC = () => {
                 style={{ marginBottom: 16 }}
                 type="info"
                 showIcon
-                message="这是平台的第一个账号，拥有全部权限（用户管理、系统设置、所有项目）。"
+                message={t('这是平台的第一个账号，拥有全部权限（用户管理、系统设置、所有项目）。')}
               />
               <ProFormText
                 name="username"
-                label="用户名"
-                placeholder="例如 admin"
+                label={t('用户名')}
+                placeholder={t('例如 admin')}
                 fieldProps={{ prefix: <UserOutlined />, autoComplete: 'off' }}
                 rules={[
-                  { required: true, message: '请输入用户名' },
-                  { pattern: /^[a-zA-Z0-9_.-]{2,32}$/, message: '2-32 位字母、数字、_ . -' },
+                  { required: true, message: t('请输入用户名') },
+                  { pattern: /^[a-zA-Z0-9_.-]{2,32}$/, message: t('2-32 位字母、数字、_ . -') },
                 ]}
               />
               <ProFormText.Password
                 name="password"
-                label="密码"
-                placeholder="至少 8 位"
+                label={t('密码')}
+                placeholder={t('至少 8 位')}
                 fieldProps={{ prefix: <LockOutlined />, autoComplete: 'new-password' }}
                 rules={[
-                  { required: true, message: '请输入密码' },
-                  { min: 8, message: '密码长度至少 8 位' },
+                  { required: true, message: t('请输入密码') },
+                  { min: 8, message: t('密码长度至少 8 位') },
                 ]}
               />
               <ProFormText.Password
                 name="confirm"
-                label="确认密码"
-                placeholder="再次输入密码"
+                label={t('确认密码')}
+                placeholder={t('再次输入密码')}
                 dependencies={['password']}
                 fieldProps={{ prefix: <LockOutlined />, autoComplete: 'new-password' }}
                 rules={[
-                  { required: true, message: '请再次输入密码' },
+                  { required: true, message: t('请再次输入密码') },
                   ({ getFieldValue }) => ({
                     validator(_, value) {
                       if (!value || getFieldValue('password') === value) {
                         return Promise.resolve();
                       }
-                      return Promise.reject(new Error('两次输入的密码不一致'));
+                      return Promise.reject(new Error(t('两次输入的密码不一致')));
                     },
                   }),
                 ]}
@@ -177,8 +177,8 @@ const Setup: React.FC = () => {
 
             <StepsForm.StepForm
               name="doctor"
-              title="环境自检"
-              stepProps={{ description: '检查服务端工具链是否就绪' }}
+              title={t('环境自检')}
+              stepProps={{ description: t('检查服务端工具链是否就绪') }}
               onFinish={async () => true}
             >
               {getToken() ? (
@@ -186,11 +186,10 @@ const Setup: React.FC = () => {
               ) : (
                 <Result
                   status="warning"
-                  title="需要先完成管理员创建"
+                  title={t('需要先完成管理员创建')}
                   extra={
                     <Button type="primary" onClick={() => history.replace('/user/login')}>
-                      返回登录页
-                    </Button>
+                       {t('返回登录页')} </Button>
                   }
                 />
               )}
