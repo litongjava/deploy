@@ -31,6 +31,7 @@ import { history, useParams } from '@umijs/max';
 import { Alert, Button, Card, Col, Form, Row, Space, Spin, message } from 'antd';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ScriptListEditor from '@/components/ScriptListEditor';
+import { inferProjectFromGitUrl } from '@/utils/repoInfer';
 import EnvListEditor from '@/components/EnvListEditor';
 import { t } from '@/i18n';
 
@@ -83,21 +84,45 @@ const ProjectEdit: React.FC = () => {
   const originalEnvsRef = useRef<EnvVar[]>([]);
 
   /**
-   * 「工作目录 / 项目名称」是否被用户手动填过。
+   * 「工作目录 / 项目名称 / 项目 Key」是否被用户手动填过。
    *
-   * 没手动填过时它们跟着「项目 Key」自动生成（工作目录 = `/srv/worksapce/<key>`，
-   * 名称 = Key，只在新建时生效）；用户一旦自己填了内容就不再覆盖，清空后恢复自动生成。
+   * 新建时这三个字段会依次尝试自动生成：先看 Git 仓库地址能不能推出仓库名
+   * （Key = 规整后的仓库名，名称 = 仓库名，工作目录 = `/srv/worksapce/<key>`），
+   * 推不出来（还没填地址、或地址里没有仓库名）再回落到「Key 手填 → 其余跟着 Key 走」。
+   * 用户一旦自己填过某字段，之后就不再覆盖它；清空后恢复自动生成。
    */
+  const keyEditedRef = useRef(false);
   const workdirEditedRef = useRef(false);
   const nameEditedRef = useRef(false);
 
+  const gitUrlValue = Form.useWatch('gitUrl', form);
+
+  /**
+   * 自动预填（只在新建时生效，且逐字段尊重「用户是否手动改过」）：
+   *
+   * - Key：优先用仓库地址推出来的（规整成合法 Key）；推不出来就留用户自己填的。
+   * - 名称：优先用仓库名；推不出来就用 Key。**只在用户没手填过名称时**才替换。
+   * - 工作目录：始终是 `<默认根目录>/<最终 Key>`——注意用的是**最终** Key
+   *   （可能是用户手填的），否则「手填 Key + 改了仓库地址」会把目录指到另一个仓库上。
+   *
+   * 依赖 `keyValue` 会在上一次 effect 之后更新，所以这里读到的就是当前生效的 Key。
+   */
   useEffect(() => {
     if (isEdit) return;
+    const inferred = inferProjectFromGitUrl(gitUrlValue);
+    const manualKey = (keyValue ?? '').trim();
+    const finalKey = keyEditedRef.current ? manualKey : inferred?.key ?? manualKey;
+
     const patch: Partial<FormValues> = {};
-    if (!workdirEditedRef.current) patch.workdir = defaultWorkdir(keyValue);
-    if (!nameEditedRef.current) patch.name = (keyValue ?? '').trim();
+    if (!keyEditedRef.current && inferred) patch.key = inferred.key;
+    if (!nameEditedRef.current) {
+      patch.name = inferred?.name ?? finalKey;
+    }
+    if (!workdirEditedRef.current) {
+      patch.workdir = defaultWorkdir(finalKey);
+    }
     if (Object.keys(patch).length > 0) form.setFieldsValue(patch);
-  }, [form, isEdit, keyValue]);
+  }, [form, isEdit, keyValue, gitUrlValue]);
 
   const load = useCallback(async () => {
     if (!isEdit) return;
@@ -322,6 +347,9 @@ const ProjectEdit: React.FC = () => {
         }}
         onValuesChange={(changed) => {
           // 只有用户自己改过的字段才算手动值；上面的 setFieldsValue 不会触发这里。
+          if (Object.prototype.hasOwnProperty.call(changed, 'key')) {
+            keyEditedRef.current = !!String(changed.key ?? '').trim();
+          }
           if (Object.prototype.hasOwnProperty.call(changed, 'workdir')) {
             workdirEditedRef.current = !!String(changed.workdir ?? '').trim();
           }
@@ -346,6 +374,92 @@ const ProjectEdit: React.FC = () => {
           envs: [],
         }}
       >
+        <Card title={t('Git 准备阶段')} style={{ marginBottom: 16 }}>
+          <ProFormSwitch
+            name="useGit"
+            label={t('执行前拉取代码')}
+            tooltip={t('打开后，每次执行会先 clone/fetch 再跑用户命令')}
+          />
+          {useGit ? (
+            <>
+              {doctorWarning ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  style={{ marginBottom: 16 }}
+                  message={t('环境提示')}
+                  description={doctorWarning}
+                />
+              ) : null}
+              <Row gutter={24}>
+                <Col xs={24} xl={16}>
+                  <ProFormText
+                    name="gitUrl"
+                    label={t('仓库地址')}
+                    tooltip={t('填好后会按仓库名自动预填「项目 Key / 项目名称 / 工作目录」；这三项一旦手动改过就不再覆盖')}
+                    placeholder={t('https://gitee.com/xxx/yyy.git 或 git@github.com:xxx/yyy.git')}
+                    rules={[{ required: true, message: t('启用 Git 后必须填写仓库地址') }]}
+                  />
+                </Col>
+                <Col xs={24} md={12} xl={8}>
+                  <ProFormText
+                    name="gitBranch"
+                    label={t('分支 / Tag / Commit')}
+                    placeholder="main"
+                    rules={[{ required: true, message: t('请填写分支') }]}
+                  />
+                </Col>
+              </Row>
+              <Row gutter={24}>
+                <Col xs={24} md={12} xl={8}>
+                  <ProFormSelect
+                    name="gitCredentialId"
+                    label={t('Git 凭据')}
+                    allowClear
+                    options={credentialOptions}
+                    placeholder={t('公开仓库可留空')}
+                    tooltip={t('私有仓库请先在「设置 → 凭据管理」中创建凭据')}
+                  />
+                </Col>
+                <Col xs={24} md={12} xl={8}>
+                  <ProFormText
+                    name="gitSubdir"
+                    label={t('仓库子目录')}
+                    placeholder={t('monorepo 场景，例如 apps/web')}
+                  />
+                </Col>
+                <Col xs={24} md={12} xl={8}>
+                  <ProFormDigit
+                    name="gitDepth"
+                    label={t('浅克隆深度')}
+                    min={0}
+                    tooltip={t('0 表示完整克隆')}
+                  />
+                </Col>
+              </Row>
+              <Row gutter={24}>
+                <Col xs={24} md={12} xl={8}>
+                  <ProFormSwitch
+                    name="gitClean"
+                    label={t('拉取前 git clean -fdx')}
+                    tooltip={t('危险：会删除工作目录中所有未跟踪文件')}
+                  />
+                </Col>
+                <Col xs={24} md={12} xl={8}>
+                  <ProFormSwitch name="gitSubmodule" label={t('递归拉取子模块')} />
+                </Col>
+              </Row>
+            </>
+          ) : (
+            <Alert
+              type="info"
+              showIcon
+              message={t('未启用 Git 准备阶段')}
+              description={t('关闭时平台不拉代码，需要自己把 git pull 之类的命令写进「命令」里。')}
+            />
+          )}
+        </Card>
+
         <Card title={t('基本信息')} style={{ marginBottom: 16 }}>
           {/* PC（≥1200px）一行三个、平板（≥768px）一行两个、手机一列一个，互相不挤 */}
           <Row gutter={24}>
@@ -353,7 +467,7 @@ const ProjectEdit: React.FC = () => {
               <ProFormText
                 name="key"
                 label={t('项目 Key')}
-                tooltip={t('唯一标识，用于 URL / CLI / Hook 引用，创建后不建议修改')}
+                tooltip={t('唯一标识，用于 URL / CLI / Hook 引用，创建后不建议修改；新建时会按上方「仓库地址」自动推断')}
                 disabled={isEdit}
                 placeholder={t('例如 my-app（字母数字与 - _）')}
                 rules={[
@@ -484,90 +598,6 @@ const ProjectEdit: React.FC = () => {
           ) : null}
         </Card>
 
-        <Card title={t('Git 准备阶段')} style={{ marginBottom: 16 }}>
-          <ProFormSwitch
-            name="useGit"
-            label={t('执行前拉取代码')}
-            tooltip={t('打开后，每次执行会先 clone/fetch 再跑用户命令')}
-          />
-          {useGit ? (
-            <>
-              {doctorWarning ? (
-                <Alert
-                  type="warning"
-                  showIcon
-                  style={{ marginBottom: 16 }}
-                  message={t('环境提示')}
-                  description={doctorWarning}
-                />
-              ) : null}
-              <Row gutter={24}>
-                <Col xs={24} xl={16}>
-                  <ProFormText
-                    name="gitUrl"
-                    label={t('仓库地址')}
-                    placeholder={t('https://gitee.com/xxx/yyy.git 或 git@github.com:xxx/yyy.git')}
-                    rules={[{ required: true, message: t('启用 Git 后必须填写仓库地址') }]}
-                  />
-                </Col>
-                <Col xs={24} md={12} xl={8}>
-                  <ProFormText
-                    name="gitBranch"
-                    label={t('分支 / Tag / Commit')}
-                    placeholder="main"
-                    rules={[{ required: true, message: t('请填写分支') }]}
-                  />
-                </Col>
-              </Row>
-              <Row gutter={24}>
-                <Col xs={24} md={12} xl={8}>
-                  <ProFormSelect
-                    name="gitCredentialId"
-                    label={t('Git 凭据')}
-                    allowClear
-                    options={credentialOptions}
-                    placeholder={t('公开仓库可留空')}
-                    tooltip={t('私有仓库请先在「设置 → 凭据管理」中创建凭据')}
-                  />
-                </Col>
-                <Col xs={24} md={12} xl={8}>
-                  <ProFormText
-                    name="gitSubdir"
-                    label={t('仓库子目录')}
-                    placeholder={t('monorepo 场景，例如 apps/web')}
-                  />
-                </Col>
-                <Col xs={24} md={12} xl={8}>
-                  <ProFormDigit
-                    name="gitDepth"
-                    label={t('浅克隆深度')}
-                    min={0}
-                    tooltip={t('0 表示完整克隆')}
-                  />
-                </Col>
-              </Row>
-              <Row gutter={24}>
-                <Col xs={24} md={12} xl={8}>
-                  <ProFormSwitch
-                    name="gitClean"
-                    label={t('拉取前 git clean -fdx')}
-                    tooltip={t('危险：会删除工作目录中所有未跟踪文件')}
-                  />
-                </Col>
-                <Col xs={24} md={12} xl={8}>
-                  <ProFormSwitch name="gitSubmodule" label={t('递归拉取子模块')} />
-                </Col>
-              </Row>
-            </>
-          ) : (
-            <Alert
-              type="info"
-              showIcon
-              message={t('未启用 Git 准备阶段')}
-              description={t('关闭时平台不拉代码，需要自己把 git pull 之类的命令写进「命令」里。')}
-            />
-          )}
-        </Card>
 
         <Card title={t('环境变量')} style={{ marginBottom: 16 }}>
           <Alert

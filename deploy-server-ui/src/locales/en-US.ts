@@ -346,8 +346,6 @@ export default {
   '只有管理员可以访问用户管理。': 'Only administrators can access user management.',
 
   // ===== Project / task editing =====
-  '唯一标识，用于 URL / CLI / Hook 引用，创建后不建议修改':
-    'Unique identifier used in URLs / CLI / hooks; not recommended to change after creation',
   '只能包含字母、数字、- 和 _，且以字母或数字开头':
     'May contain only letters, digits, - and _, and must start with a letter or digit',
   '只能包含字母、数字、- 和 _，且不以符号开头':
@@ -870,4 +868,9 @@ export default {
   '界面语言': 'Interface language',
   '切换后页面会自动刷新，选择保存在本机浏览器中。':
     'The page reloads after switching; the choice is saved in this browser.',
+  // ===== 新建项目：Git 地址推断 =====
+  '唯一标识，用于 URL / CLI / Hook 引用，创建后不建议修改；新建时会按上方「仓库地址」自动推断':
+    'Unique identifier used in URLs / CLI / hooks; not recommended to change after creation. On creation it is inferred from the repository URL above.',
+  '填好后会按仓库名自动预填「项目 Key / 项目名称 / 工作目录」；这三项一旦手动改过就不再覆盖':
+    'Once filled, the project key / project name / working directory are pre-filled from the repository name; any of them you edit by hand is no longer overwritten',
 };
