@@ -159,9 +159,10 @@ const ScriptListEditor: React.FC<ScriptListEditorProps> = ({
 
               <Row gutter={12}>
                 <Col xs={24} md={10}>
-                  <Form.Item label="启用" name={[field.name, 'enabled']} valuePropName="checked">
-                    <ProFormSwitch />
-                  </Form.Item>
+                  {/* 这里必须让 ProFormSwitch 自己拿 name：它内部就是一个完整的
+                      ProFormItem，再套一层 Form.Item 会变成两层，外层拿不到值，
+                      开关就永远停在「关」，点开也写不回表单（见 tests/script-editor-switch.test.tsx）。 */}
+                  <ProFormSwitch name={[field.name, 'enabled']} label="启用" />
                 </Col>
                 <Col xs={24} md={14} />
               </Row>

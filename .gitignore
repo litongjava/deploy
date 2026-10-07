@@ -42,3 +42,4 @@ Thumbs.db
 tmp/
 deploy-server/internal/web/dist/*
 !deploy-server/internal/web/dist/.gitkeep
+.umi-test/
