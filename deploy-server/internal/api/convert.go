@@ -334,6 +334,10 @@ type runDTO struct {
 	GitCommit         string `json:"gitCommit"`
 	GitCommitShort    string `json:"gitCommitShort"`
 	GitBranchResolved string `json:"gitBranchResolved"`
+	// 本地更新到的那次提交的说明 / 作者（含邮箱）/ 提交时间，供详情页展示。
+	GitMessage  string `json:"gitMessage"`
+	GitAuthor   string `json:"gitAuthor"`
+	GitCommitAt string `json:"gitCommitAt"`
 
 	StartedAt  *time.Time `json:"startedAt"`
 	FinishedAt *time.Time `json:"finishedAt"`
@@ -382,6 +386,7 @@ func toRunDTO(r *store.Run) runDTO {
 		PrepareStatus: r.PrepareStatus, PrepareDurationMs: r.PrepareDurationMs,
 		GitCommit: r.GitCommit, GitCommitShort: r.GitCommitShort,
 		GitBranchResolved: r.GitBranchResolved,
+		GitMessage:        r.GitMessage, GitAuthor: r.GitAuthor, GitCommitAt: r.GitCommitAt,
 		StartedAt:         r.StartedAt, FinishedAt: r.FinishedAt, DurationMs: r.DurationMs,
 		ExitCode: r.ExitCode, ErrorMsg: r.ErrorMsg, LogSize: r.LogSize,
 		CreatedAt: r.CreatedAt,

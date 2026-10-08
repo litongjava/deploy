@@ -25,6 +25,12 @@ type gitInfo struct {
 	Author      string
 	Message     string
 	Dirty       string
+
+	// 下面三个只用于「把这次构建到底跑了哪个提交」写进日志与运行记录，
+	// 不参与内置变量（GIT_AUTHOR 仍然是 %an，没有邮箱）。
+	AuthorLine string // 形如 "litongjava <litongjava001@gmail.com>"
+	CommitDate string // git 的 ISO 日期，含时区
+	LogBlock   string // `git log -1` 的原始输出，整块打印进运行日志
 }
 
 // gitEnv 是执行 git 所需的额外环境与清理函数。
@@ -143,6 +149,13 @@ func (e *Executor) prepareGit(ctx context.Context, job *jobSpec, ref, workdir st
 	info.Tag = gitCapture(ctx, workdir, env, "describe", "--tags", "--abbrev=0")
 	info.Author = gitCapture(ctx, workdir, env, "log", "-1", "--pretty=%an")
 	info.Message = gitCapture(ctx, workdir, env, "log", "-1", "--pretty=%s")
+
+	// 详细提交信息：把「这次构建跑的到底是哪个提交」完整记下来。
+	// --decorate 让输出里带上当前 ref（HEAD -> main, origin/main），一眼能看出
+	// 拉的是远端哪条线；%ad 用 git 的 ISO 格式（带时区）而不是 %cd/%ci 之外的花样。
+	info.AuthorLine = gitCapture(ctx, workdir, env, "log", "-1", "--pretty=%an <%ae>")
+	info.CommitDate = gitCapture(ctx, workdir, env, "log", "-1", "--pretty=%ad", "--date=iso")
+	info.LogBlock = gitCapture(ctx, workdir, env, "log", "-1", "--decorate", "--date=iso")
 
 	if dirty := gitCapture(ctx, workdir, env, "status", "--porcelain"); dirty != "" {
 		info.Dirty = "true"

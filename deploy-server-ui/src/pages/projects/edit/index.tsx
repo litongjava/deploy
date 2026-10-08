@@ -47,7 +47,7 @@ interface FormValues {
   allowEnvOverride?: boolean;
   /** 项目类型：app 应用项目 | lib 构建项目 */
   kind?: ProjectKind;
-  /** 依赖的构建项目 key（含依赖执行时先构建它们） */
+  /** 依赖的项目 key（含依赖执行时先构建它们） */
   dependencies?: string[];
   useGit?: boolean;
   gitUrl?: string;
@@ -71,7 +71,7 @@ const ProjectEdit: React.FC = () => {
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [credentials, setCredentials] = useState<Credential[]>([]);
-  const [libProjects, setLibProjects] = useState<ProjectBrief[]>([]);
+  const [dependencyCandidates, setDependencyCandidates] = useState<ProjectBrief[]>([]);
   const [dependencyPlan, setDependencyPlan] = useState<{ ok: boolean; error?: string; order: string[] }>({
     ok: true,
     order: [],
@@ -184,16 +184,17 @@ const ProjectEdit: React.FC = () => {
     load();
   }, [load]);
 
-  // 凭据列表 + 可选的依赖项目（构建项目）+ 环境自检提示
+  // 凭据列表 + 可选的依赖项目 + 环境自检提示
   useEffect(() => {
     credentialApi
       .list()
       .then((list) => setCredentials(list || []))
       .catch(() => undefined);
-    // 只有「构建项目」能被选为依赖，所以这里只拉 kind=lib
+    // 任何项目都能被依赖（应用项目与构建项目都可以），所以拉全量、不做 kind 过滤；
+    // 已归档的仍在列表里但置灰，便于看出「原来依赖的那个被归档了」。
     projectApi
-      .list({ page: 1, pageSize: 200, kind: 'lib' })
-      .then((res) => setLibProjects(res?.list || []))
+      .list({ page: 1, pageSize: 200, archived: 'all' })
+      .then((res) => setDependencyCandidates(res?.list || []))
       .catch(() => undefined);
     systemApi
       .doctor()
@@ -215,17 +216,17 @@ const ProjectEdit: React.FC = () => {
     [credentials],
   );
 
-  /** 依赖下拉：只列构建项目，排除自己 */
+  /** 依赖下拉：任何项目都可以是依赖，排除自己 */
   const dependencyOptions = useMemo(
     () =>
-      (libProjects || [])
+      (dependencyCandidates || [])
         .filter((p) => !isEdit || p.key !== editKey)
         .map((p) => ({
           label: `${p.name}（${p.key}）${p.archived ? t(' · 已归档') : ''}`,
           value: p.key,
           disabled: p.archived,
         })),
-    [libProjects, isEdit, editKey],
+    [dependencyCandidates, isEdit, editKey],
   );
 
   const handleSubmit = async (values: FormValues) => {
@@ -549,19 +550,19 @@ const ProjectEdit: React.FC = () => {
                 name="kind"
                 label={t('项目类型')}
                 options={PROJECT_KIND_OPTIONS}
-                tooltip={t('应用项目=常规的构建/部署单元；构建项目=产出被依赖的产物（底层库），只有构建项目能作为别的项目的依赖')}
+                tooltip={t('应用项目=常规的构建/部署单元；构建项目=产出被依赖的产物（底层库）。类型只影响默认命令与图标，两类项目都可以声明依赖、也都可以被别的项目依赖')}
                 rules={[{ required: true, message: t('请选择项目类型') }]}
               />
             </Col>
             <Col xs={24} xl={16}>
               <ProFormSelect
                 name="dependencies"
-                label={t('依赖的构建项目')}
+                label={t('依赖的项目')}
                 mode="multiple"
                 allowClear
                 options={dependencyOptions}
-                placeholder={t('可多选；只列出「构建项目」')}
-                tooltip={t('含依赖执行时，先按依赖顺序构建这些项目，全部成功后才执行本项目。直接依赖会自动递归展开；构建项目之间也可以互相依赖（例如 tio-boot-admin 依赖 tio-boot）。')}
+                placeholder={t('可多选；列出全部项目')}
+                tooltip={t('含依赖执行时，先按依赖顺序构建这些项目，全部成功后才执行本项目。直接依赖会自动递归展开；项目之间可以互相依赖（例如上层应用依赖底层的构建项目，构建项目之间也可以互相依赖）。')}
                 fieldProps={{ optionFilterProp: 'label' }}
               />
             </Col>
@@ -573,8 +574,8 @@ const ProjectEdit: React.FC = () => {
             message={PROJECT_KIND_META[(kind as ProjectKind) || 'app'].text}
             description={
               (kind || 'app') === 'lib'
-                ? t('构建项目：被别的项目依赖时先构建它，它自己也可以依赖更底层的构建项目（多模块/父 pom 场景）。命令通常是 mvn install / go build 之类产生产物的步骤。')
-                : t('应用项目：可声明依赖的构建项目，执行时先按顺序构建它们（网页上点「执行」默认含依赖）。')
+                ? t('构建项目：产出被依赖的产物（底层库），被别的项目依赖时先构建它。它自己也可以依赖更底层的项目（多模块/父 pom 场景）。命令通常是 mvn install / go build 之类产生产物的步骤。')
+                : t('应用项目：可声明依赖的项目，执行时先按顺序构建它们（网页上点「执行」默认含依赖）。')
             }
           />
           {isEdit && dependencyPlan.order.length > 0 ? (

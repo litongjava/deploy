@@ -56,7 +56,8 @@ func EncodeDependencies(keys []string) string {
 //
 // 规则（与需求规格说明 §5.2 的依赖构建一致）：
 //   - 深度优先、依赖在前、同一个项目只出现一次（菱形依赖只构建一次）
-//   - 目标可以是构建项目（lib）；应用项目（app）不能作为依赖
+//   - 依赖可以是任何未归档的项目（应用项目与构建项目都可以）；构建项目只是
+//     「通常是产出产物的底层库」的约定，不是能不能被依赖的开关
 //   - 依赖不存在 / 已归档 / 成环都直接报错，绝不静默跳过
 func (s *Store) ResolveDependencies(p *Project) ([]Project, error) {
 	out := make([]Project, 0, 4)
@@ -69,9 +70,6 @@ func (s *Store) ResolveDependencies(p *Project) ([]Project, error) {
 			var d Project
 			if err := s.db.Where("key = ?", key).First(&d).Error; err != nil {
 				return fmt.Errorf("dependency %q of %s does not exist", key, cur.Key)
-			}
-			if d.Kind != KindLib {
-				return fmt.Errorf("dependency %s is not a build project (kind=lib), so it cannot be used as a dependency", d.Key)
 			}
 			if d.Archived {
 				return fmt.Errorf("dependency %s is archived; unarchive it or remove it from the dependency list", d.Key)

@@ -348,7 +348,7 @@ const ProjectDetail: React.FC = () => {
                 render: (_, row) => <ProjectKindIcon kind={row.kind} />,
               },
               {
-                title: t('依赖的构建项目'),
+                title: t('依赖的项目'),
                 dataIndex: 'dependencies',
                 render: (_, row) =>
                   (row.dependencies || []).length === 0 ? (

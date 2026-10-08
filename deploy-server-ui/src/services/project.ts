@@ -70,7 +70,7 @@ export const projectApi = {
     return postData<PreviewResult>(`/projects/${encodeURIComponent(key)}/preview`, body || {});
   },
 
-  /** 触发执行；withDependencies=true 时先按依赖顺序构建依赖的构建项目 */
+  /** 触发执行；withDependencies=true 时先按依赖顺序构建依赖的项目 */
   run(key: string, body?: TriggerRunInput) {
     return postData<TriggerResult>(`/projects/${encodeURIComponent(key)}/run`, body || {});
   },

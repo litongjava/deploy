@@ -381,15 +381,25 @@ const RunDetail: React.FC = () => {
             {
               title: 'Git',
               dataIndex: 'gitCommitShort',
+              // 详情页这一格要说清「这次部署的是哪一版」：短 sha @ 分支、
+              // 完整 sha、提交说明，以及作者与提交时间。没有 Git 提交的 Run
+              // （任务、或 prepare 失败的 Run）整格显示 '-'。
+              span: 3,
               render: (_, row) =>
                 row.gitCommitShort ? (
-                  <Space direction="vertical" size={0}>
+                  <Space direction="vertical" size={2}>
                     <span>
-                      {row.gitCommitShort} @ {row.gitBranchResolved || '-'}
+                      <strong>{row.gitCommitShort}</strong> @ {row.gitBranchResolved || '-'}
                     </span>
                     <span style={{ fontSize: 12, color: '#999', wordBreak: 'break-all' }}>
                       {row.gitCommit}
                     </span>
+                    {row.gitMessage ? <span>{row.gitMessage}</span> : null}
+                    {row.gitAuthor || row.gitCommitAt ? (
+                      <span style={{ fontSize: 12, color: '#999' }}>
+                        {[row.gitAuthor, formatTime(row.gitCommitAt)].filter(Boolean).join(' · ')}
+                      </span>
+                    ) : null}
                   </Space>
                 ) : (
                   '-'

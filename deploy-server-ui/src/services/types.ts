@@ -159,7 +159,7 @@ export interface ProjectBrief {
   archived: boolean;
   /** 项目类型：app 应用项目 | lib 构建项目 */
   kind: ProjectKind;
-  /** 直接依赖的构建项目 key 列表 */
+  /** 直接依赖的项目 key 列表 */
   dependencies: string[];
   useGit: boolean;
   gitUrl: string;
@@ -217,7 +217,7 @@ export interface ProjectQuery extends PageQuery {
   /** true = 只看已归档；false/不传 = 只看未归档；'all' = 全部 */
   archived?: boolean | 'all';
   mine?: boolean;
-  /** 只取某一类项目（依赖下拉用 kind=lib） */
+  /** 只取某一类项目（按类型筛选，与「能不能被依赖」无关） */
   kind?: ProjectKind;
 }
 
@@ -383,6 +383,10 @@ export interface Run {
   gitCommit: string;
   gitCommitShort: string;
   gitBranchResolved: string;
+  /** 本地更新到的那次提交的说明 / 作者（含邮箱）/ 提交时间 */
+  gitMessage: string;
+  gitAuthor: string;
+  gitCommitAt: string;
   startedAt: string | null;
   finishedAt: string | null;
   durationMs: number;
@@ -416,7 +420,7 @@ export interface TriggerRunInput {
   env?: Record<string, string>;
   commandIds?: number[];
   commandId?: number;
-  /** 先按依赖顺序构建依赖的构建项目，全部成功后再执行本项目 */
+  /** 先按依赖顺序构建依赖的项目，全部成功后再执行本项目 */
   withDependencies?: boolean;
 }
 

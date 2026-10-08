@@ -101,7 +101,7 @@ func (s *Server) listProjects(c *gin.Context) {
 		like := "%" + kw + "%"
 		q = q.Where("key LIKE ? OR name LIKE ?", like, like)
 	}
-	// 按类型筛选：新建「依赖的构建项目」下拉只需要 kind=lib 的项目。
+	// 按类型筛选列表（项目列表的「类型」筛选器用）。
 	if kind := strings.TrimSpace(c.Query("kind")); kind != "" {
 		q = q.Where("kind = ?", kind)
 	}
@@ -456,8 +456,9 @@ func defaultStr(v, def string) string {
 
 // validateDependencies 校验一份待保存的依赖列表。
 //
-// 四条规则：不是自己、项目存在、类型是构建项目（lib）、加了这条边之后不成环。
-// 已归档的依赖允许先存着（可能只是临时归档），真正触发构建时才会被拦下并说明原因。
+// 三条规则：不是自己、项目存在、加了这条边之后不成环。依赖可以是任何项目
+// （不限于构建项目）。已归档的依赖允许先存着（可能只是临时归档），
+// 真正触发构建时才会被拦下并说明原因。
 func (s *Server) validateDependencies(selfKey string, keys []string) string {
 	for _, k := range keys {
 		if k == selfKey {
@@ -466,9 +467,6 @@ func (s *Server) validateDependencies(selfKey string, keys []string) string {
 		var p store.Project
 		if err := s.st.DB().Where("key = ?", k).First(&p).Error; err != nil {
 			return "dependency does not exist: " + k
-		}
-		if p.Kind != store.KindLib {
-			return "only build projects (kind=lib) can be used as a dependency: " + k
 		}
 	}
 	graph, err := s.st.DependencyGraph()

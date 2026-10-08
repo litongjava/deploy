@@ -87,9 +87,7 @@ func TestResolveDependenciesRejects(t *testing.T) {
 		errHas string
 	}{
 		{"missing", []string{"nope"}, "does not exist"},
-		{"not a lib", []string{"app1"}, "not a build project"},
 		{"archived", []string{"old-lib"}, "archived"},
-		{"self", []string{"app1"}, "not a build project"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -104,6 +102,37 @@ func TestResolveDependenciesRejects(t *testing.T) {
 	app.Dependencies = EncodeDependencies([]string{"app1"})
 	if _, err := st.ResolveDependencies(app); err == nil {
 		t.Fatal("self dependency should fail")
+	}
+}
+
+// 应用项目同样可以被别的项目依赖：类型不是限制，只有归档 / 缺失 / 成环才拦。
+func TestResolveDependenciesAllowsAppProject(t *testing.T) {
+	st := newTestStore(t)
+	mkProject(t, st, "base-app", KindApp)
+	top := mkProject(t, st, "top", KindApp, "base-app")
+
+	got, err := st.ResolveDependencies(top)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if strings.Join(keysOf(got), ",") != "base-app" {
+		t.Fatalf("got %v, want [base-app]", keysOf(got))
+	}
+}
+
+// 应用项目也能作为依赖链的中间层：app 依赖 app，再依赖 lib。
+func TestResolveDependenciesAppInTheMiddle(t *testing.T) {
+	st := newTestStore(t)
+	mkProject(t, st, "leaf-lib", KindLib)
+	mkProject(t, st, "mid-app", KindApp, "leaf-lib")
+	top := mkProject(t, st, "top", KindApp, "mid-app")
+
+	got, err := st.ResolveDependencies(top)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if strings.Join(keysOf(got), ",") != "leaf-lib,mid-app" {
+		t.Fatalf("got %v, want [leaf-lib mid-app]", keysOf(got))
 	}
 }
 

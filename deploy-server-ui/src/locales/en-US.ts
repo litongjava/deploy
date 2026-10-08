@@ -218,7 +218,7 @@ export default {
   '应用项目': 'Application project',
   '构建项目': 'Build project',
   '依赖': 'Dependencies',
-  '依赖的构建项目': 'Dependent build projects',
+  '依赖的项目': 'Dependent projects',
   '工作目录': 'Working directory',
   '工作根目录': 'Workspace root',
   '工作目录覆盖': 'Working directory override',
@@ -368,19 +368,19 @@ export default {
   'https://gitee.com/xxx/yyy.git 或 git@github.com:xxx/yyy.git':
     'https://gitee.com/xxx/yyy.git or git@github.com:xxx/yyy.git',
   '这个任务是干什么的、什么时候该跑': 'What this task does and when it should run',
-  '可多选；只列出「构建项目」': 'Multiple selections; only "build projects" are listed',
+  '可多选；列出全部项目': 'Multiple selections; all projects are listed',
   '依赖配置当前不可用': 'Dependency configuration is currently unavailable',
   '依赖配置当前不可用，含依赖执行会被拒绝':
     'Dependency configuration is currently unavailable; running with dependencies will be rejected',
   '构建顺序（含依赖执行时）': 'Build order (when running with dependencies)',
-  '构建项目：被别的项目依赖时先构建它，它自己也可以依赖更底层的构建项目（多模块/父 pom 场景）。命令通常是 mvn install / go build 之类产生产物的步骤。':
-    'Build project: built first when other projects depend on it; it may itself depend on lower-level build projects (multi-module / parent pom setups). Its commands are usually steps that produce artifacts, such as mvn install / go build.',
-  '应用项目：可声明依赖的构建项目，执行时先按顺序构建它们（网页上点「执行」默认含依赖）。':
-    'Application project: can declare dependent build projects, which are built first in order when running ("Run" on the web page includes dependencies by default).',
-  '应用项目=常规的构建/部署单元；构建项目=产出被依赖的产物（底层库），只有构建项目能作为别的项目的依赖':
-    'Application project = an ordinary build/deploy unit; build project = produces artifacts other projects depend on (a lower-level library); only build projects can be dependencies of other projects',
-  '含依赖执行时，先按依赖顺序构建这些项目，全部成功后才执行本项目。直接依赖会自动递归展开；构建项目之间也可以互相依赖（例如 tio-boot-admin 依赖 tio-boot）。':
-    'When running with dependencies, these projects are built first in dependency order, and this project runs only after all succeed. Direct dependencies expand recursively; build projects may depend on each other (e.g. tio-boot-admin depends on tio-boot).',
+  '构建项目：产出被依赖的产物（底层库），被别的项目依赖时先构建它。它自己也可以依赖更底层的项目（多模块/父 pom 场景）。命令通常是 mvn install / go build 之类产生产物的步骤。':
+    'Build project: produces artifacts other projects depend on (a lower-level library); it is built first when other projects depend on it, and may itself depend on lower-level projects (multi-module / parent pom setups). Its commands are usually steps that produce artifacts, such as mvn install / go build.',
+  '应用项目：可声明依赖的项目，执行时先按顺序构建它们（网页上点「执行」默认含依赖）。':
+    'Application project: can declare dependent projects, which are built first in order when running ("Run" on the web page includes dependencies by default).',
+  '应用项目=常规的构建/部署单元；构建项目=产出被依赖的产物（底层库）。类型只影响默认命令与图标，两类项目都可以声明依赖、也都可以被别的项目依赖':
+    'Application project = an ordinary build/deploy unit; build project = produces artifacts other projects depend on (a lower-level library). The type only affects default commands and the icon — both kinds can declare dependencies and be depended on.',
+  '含依赖执行时，先按依赖顺序构建这些项目，全部成功后才执行本项目。直接依赖会自动递归展开；项目之间可以互相依赖（例如上层应用依赖底层的构建项目，构建项目之间也可以互相依赖）。':
+    'When running with dependencies, these projects are built first in dependency order, and this project runs only after all succeed. Direct dependencies expand recursively; projects may depend on each other (e.g. an app depends on a lower-level build project, and build projects may depend on each other).',
   '依赖构建顺序（点「执行」默认含依赖）': 'Dependency build order ("Run" includes dependencies by default)',
   '依赖构建': 'Dependency build',
   '依赖构建流水线': 'Dependency build pipeline',

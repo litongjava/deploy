@@ -723,12 +723,22 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, job 
 		dur := time.Since(prepareStart).Milliseconds()
 		fmt.Fprintf(w, "\n--- prepare done: %s (%s), took %dms ---\n",
 			info.CommitShort, info.Branch, dur)
+
+		// 把本地更新到的那次提交整块打出来：出问题时「这次到底部署的是哪一版」
+		// 是第一个要回答的问题，而 copy 出来的日志里只有 git 自己那几行 fetching/
+		// branch 输出，看不到提交说明。
+		if info.LogBlock != "" {
+			fmt.Fprintf(w, "\n=== [prepare] commit ===\n%s\n", info.LogBlock)
+		}
 		e.st.DB().Model(&store.Run{}).Where("id = ?", run.ID).Updates(map[string]any{
 			"prepare_status":      store.RunSuccess,
 			"prepare_duration_ms": dur,
 			"git_commit":          info.Commit,
 			"git_commit_short":    info.CommitShort,
 			"git_branch_resolved": info.Branch,
+			"git_message":         info.Message,
+			"git_author":          info.AuthorLine,
+			"git_commit_at":       info.CommitDate,
 		})
 	} else {
 		e.st.DB().Model(&store.Run{}).Where("id = ?", run.ID).Update("prepare_status", store.PrepareSkipped)

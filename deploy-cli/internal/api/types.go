@@ -166,6 +166,9 @@ type Run struct {
 	GitCommit         string            `json:"gitCommit"`
 	GitCommitShort    string            `json:"gitCommitShort"`
 	GitBranchResolved string            `json:"gitBranchResolved"`
+	GitMessage        string            `json:"gitMessage"`
+	GitAuthor         string            `json:"gitAuthor"`
+	GitCommitAt       string            `json:"gitCommitAt"`
 	StartedAt         string            `json:"startedAt"`
 	FinishedAt        string            `json:"finishedAt"`
 	DurationMs        int64             `json:"durationMs"`

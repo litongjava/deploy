@@ -190,8 +190,8 @@
 - `shell`: `auto` | `bash` | `sh` | `pwsh` | `cmd`
 - `concurrency`: `queue`（同项目串行，默认）| `allow`（并行）| `cancelPrev`
 - `canEdit`：服务端算好的权限标记，前端不用自己判断
-- `kind`: `app`（应用项目，默认）| `lib`（构建项目，可被别的项目依赖），见 §4.5
-- `dependencies`：直接依赖的**构建项目** key 列表（声明顺序）；详情接口另给 `dependencyPlan`（递归展开后的实际构建顺序，`ok=false` 时 `error` 说明原因）与 `dependents`（谁依赖了我）
+- `kind`: `app`（应用项目，默认）| `lib`（构建项目），见 §4.5
+- `dependencies`：直接依赖的**项目** key 列表（声明顺序）；详情接口另给 `dependencyPlan`（递归展开后的实际构建顺序，`ok=false` 时 `error` 说明原因）与 `dependents`（谁依赖了我）
 - 列表接口（`GET /projects`）**不返回** `commands` / `envs` / `dependencyPlan` / `dependents`，减少体积
 
 ### 4.2 Command 对象
@@ -216,7 +216,7 @@
 
 | 方法 | 路径 | 请求 | 说明 |
 |---|---|---|---|
-| GET | `/projects?page&pageSize&keyword&archived&mine&kind` | — | 分页；`archived` 三态：不传/`false`=未归档、`true`=已归档、`all`=全部；`kind=lib` 只取构建项目 |
+| GET | `/projects?page&pageSize&keyword&archived&mine&kind` | — | 分页；`archived` 三态：不传/`false`=未归档、`true`=已归档、`all`=全部；`kind=lib` 只取构建项目（按类型筛选，与「能不能被依赖」无关） |
 | POST | `/projects` | `ProjectInput` | 创建，key 唯一 |
 | GET | `/projects/{key}` | — | 详情（含 `dependencyPlan` / `dependents`） |
 | PUT | `/projects/{key}` | `ProjectInput` | 更新（owner/admin） |
@@ -262,12 +262,14 @@
 
 | 取值 | 含义 | 能否被选为依赖 |
 |---|---|---|
-| `app` | 应用项目：常规的构建 / 部署单元（默认） | 否 |
+| `app` | 应用项目：常规的构建 / 部署单元（默认） | 是 |
 | `lib` | 构建项目：产出被依赖的产物（`mvn install` 之类） | 是 |
+
+类型只影响默认命令与图标：**任何未归档的项目都可以被选为依赖**。
 
 **依赖规则**
 
-- 依赖只能指向 `lib` 类型且**存在**的项目；不能依赖自己。
+- 依赖可以指向任意**存在**的项目（应用项目与构建项目都可以）；不能依赖自己。
 - 保存时校验**不成环**：加入这条边后若从自己出发能绕回自己，返回 `40000`。
 - 依赖允许指向已归档的项目（便于临时归档），但**触发时会拒绝**并说明是哪个依赖归档了，绝不静默跳过。
 - 同一层内按 `dependencies` 数组顺序；整体按深度优先展开，同一个项目**只构建一次**（菱形依赖不重复构建）。

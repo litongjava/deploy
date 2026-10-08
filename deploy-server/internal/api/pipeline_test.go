@@ -230,14 +230,6 @@ func TestDependencyValidation(t *testing.T) {
 		errHas string
 	}{
 		{
-			name: "依赖必须是构建项目",
-			body: map[string]any{
-				"key": "bad-1", "name": "bad", "kind": "app", "workdir": "/tmp/bad-1",
-				"dependencies": []string{"app-only"},
-			},
-			errHas: "only build projects",
-		},
-		{
 			name: "依赖必须存在",
 			body: map[string]any{
 				"key": "bad-2", "name": "bad", "kind": "app", "workdir": "/tmp/bad-2",
@@ -267,6 +259,12 @@ func TestDependencyValidation(t *testing.T) {
 			assertBadRequest(t, out, c.errHas)
 		})
 	}
+
+	// 应用项目也能被依赖：类型不是限制，只有缺失 / 自环 / 成环才拦。
+	createProject(t, e, map[string]any{
+		"key": "top-app", "name": "上层应用", "kind": "app", "workdir": "/tmp/top-app",
+		"dependencies": []string{"app-only"},
+	})
 
 	// 保存时报环：让 lib-a 依赖 lib-b（已有 lib-b → lib-a）
 	_, out := e.call(t, "PUT", "/api/v1/projects/lib-a", e.token, map[string]any{

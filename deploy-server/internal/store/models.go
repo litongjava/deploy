@@ -358,6 +358,10 @@ type Run struct {
 	GitCommit         string `gorm:"size:64" json:"gitCommit"`
 	GitCommitShort    string `gorm:"size:16" json:"gitCommitShort"`
 	GitBranchResolved string `gorm:"size:128" json:"gitBranchResolved"`
+	// 提交说明 / 作者（含邮箱）/ 提交时间：详情页要说清「这次部署的是哪一版」。
+	GitMessage  string `gorm:"size:512" json:"gitMessage"`
+	GitAuthor   string `gorm:"size:256" json:"gitAuthor"`
+	GitCommitAt string `gorm:"size:64" json:"gitCommitAt"`
 
 	StartedAt  *time.Time `json:"startedAt"`
 	FinishedAt *time.Time `json:"finishedAt"`
