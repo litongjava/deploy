@@ -24,7 +24,7 @@
 | ↳ 一键安装 | 两套内嵌脚本 + 独立接口：**构建工具链**（`/system/toolchains`）与**中间件**（`/system/middleware`） |
 | [`deploy-cli/`](deploy-cli/) | CLI：**服务器管理**、登录、触发部署、跟随日志、中间件安装；Go 1.24 / cobra |
 | [`deploy-server-ui/`](deploy-server-ui/) | Web 界面：React 18 / Umi Max 4 / Ant Design 5，裁剪自 Ant Design Pro |
-| [`skills/deploy-cli/`](skills/deploy-cli/SKILL.md) | 给 AI 用的技能说明：怎么选服务器、部署、装中间件、读日志与退出码 |
+| [`skills/deploy-cli/`](skills/deploy-cli/SKILL.md) | 给 AI 用的技能说明：怎么选服务器、创建项目、部署、装中间件、读日志与退出码；[安装到 Codex 与 DSH](skills/README.md) |
 | [`tools/`](tools/) | 运维与冒烟脚本：`sshpoke` 做密码认证 SSH 执行/传文件；`remote-scripts` 初始化和校验服务器；`smoke` 验证进程树终止及 API 部署 |
 
 > **仓库**：<https://gitee.com/ppnt/deploy> —— 前端、后端、CLI、工具与文档都在这一个仓库里：
