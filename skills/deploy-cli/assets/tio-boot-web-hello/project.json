@@ -1,0 +1,17 @@
+{
+  "key": "tio-boot-web-hello",
+  "name": "tio-boot web hello",
+  "workdir": "/srv/deploy/workspaces/tio-boot-web-hello",
+  "useGit": true,
+  "gitUrl": "https://gitee.com/ppnt/tio-boot-web-hello.git",
+  "gitBranch": "main",
+  "env": { "APP_PORT": "10062" },
+  "commands": [
+    { "name": "1. 环境勘察（只读）",        "scriptFile": "sh/01-recon.sh" },
+    { "name": "2. Maven 构建生产包",       "scriptFile": "sh/02-build.sh" },
+    { "name": "3. 发布产物与外部配置",      "scriptFile": "sh/03-publish.sh" },
+    { "name": "4. 注册 systemd 服务并重启", "scriptFile": "sh/04-systemd.sh" },
+    { "name": "5. 健康检查",              "scriptFile": "sh/05-healthcheck.sh" },
+    { "name": "6. 运行状态与日志（运维）",  "scriptFile": "sh/06-ops.sh" }
+  ]
+}
