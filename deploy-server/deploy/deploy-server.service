@@ -9,11 +9,6 @@ Type=simple
 User=root
 WorkingDirectory=/srv/deploy
 
-# If the host's timezone is not UTC+8, logs and run timestamps are all shifted,
-# which makes it easy to misread when a deployment actually happened,
-# so it is pinned explicitly.
-Environment=TZ=Asia/Shanghai
-
 # Listening on 0.0.0.0 is intentional: CLI clients and browsers on the LAN need
 # direct access. If this machine has a public entry point, change it to 127.0.0.1
 # and put nginx in front of it with HTTPS -
