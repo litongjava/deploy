@@ -14,6 +14,11 @@
  * returns them verbatim.
  */
 export default {
+  "安装源": "Installation source",
+  "官方源（适合国外服务器）": "Official sources (for overseas servers)",
+  "国内镜像（适合国内服务器）": "China mirrors (for servers in China)",
+  "已有 Maven settings.xml 和 Cargo 配置保留，可能继续使用原镜像；自定义下载地址优先。官方模式忽略已保存的 Node/Rust 镜像参数。": "Existing Maven settings.xml and Cargo configuration are preserved and may retain previous mirrors. Custom download URLs take priority. Official mode ignores saved Node/Rust mirror overrides.",
+
   // ===== Route menu names（id 由路由层级决定，见 src/locales/zh-CN.ts 的说明） =====
 
   'menu.登录': 'Sign in',

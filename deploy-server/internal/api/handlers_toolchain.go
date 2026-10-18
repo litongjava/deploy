@@ -315,7 +315,17 @@ type toolchainInstallReq struct {
 // installToolchains 触发一次安装，返回可以直接跳过去看日志的 Run。
 func (s *Server) installToolchains(c *gin.Context) {
 	var req toolchainInstallReq
-	_ = c.ShouldBindJSON(&req)
+	if err := c.ShouldBindJSON(&req); err != nil {
+		BadRequest(c, "invalid install request")
+		return
+	}
+	if req.Mirror == "" {
+		req.Mirror = "cn"
+	}
+	if req.Mirror != "cn" && req.Mirror != "off" {
+		BadRequest(c, "mirror must be cn or off")
+		return
+	}
 
 	keys := make([]string, 0, len(req.Components))
 	seen := map[string]bool{}
@@ -365,9 +375,7 @@ func (s *Server) installToolchains(c *gin.Context) {
 	if req.Force {
 		args = append(args, "--force")
 	}
-	if req.Mirror == "off" {
-		args = append(args, "--mirror", "off")
-	}
+	args = append(args, "--mirror", req.Mirror)
 	command := strings.Join(args, " ")
 
 	p, cmdID, err := s.ensureToolchainProject(c)
@@ -384,6 +392,7 @@ func (s *Server) installToolchains(c *gin.Context) {
 	// 组件参数（版本/下载地址/安装目录）作为运行参数注入：脚本按环境变量读，
 	// 运行详情页也会把它们列出来 —— 这就是「这次到底按什么参数装的」的记录。
 	params := s.installParams(keys)
+	params["MIRROR"] = req.Mirror
 
 	u := CurrentUser(c)
 	run, err := s.exec.Submit(runner.SubmitRequest{

@@ -96,6 +96,34 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# Resolve the source once; apply after login startup files for Node commands.
+case "$MIRROR" in
+  cn)
+    NODE_SOURCE="${NVM_NODEJS_ORG_MIRROR:-$NODE_MIRROR_CN}"
+    NPM_SOURCE="https://registry.npmmirror.com"
+    RUST_SOURCE="${RUSTUP_DIST_SERVER:-https://rsproxy.cn}"
+    RUST_INIT="https://rsproxy.cn/rustup-init.sh"
+    RUST_UPDATE="https://rsproxy.cn/rustup"
+    GO_PROXY="https://goproxy.cn,direct"; GO_SUM="sum.golang.google.cn" ;;
+  off)
+    NODE_SOURCE="https://nodejs.org/dist"
+    NPM_SOURCE="https://registry.npmjs.org"
+    RUST_SOURCE="https://static.rust-lang.org"
+    RUST_INIT="https://sh.rustup.rs"
+    RUST_UPDATE="https://static.rust-lang.org/rustup"
+    GO_PROXY="https://proxy.golang.org,direct"; GO_SUM="sum.golang.org" ;;
+  *) err "--mirror must be cn or off"; exit 2 ;;
+esac
+export TOOLCHAIN_NODE_SOURCE="$NODE_SOURCE" TOOLCHAIN_NPM_SOURCE="$NPM_SOURCE"
+node_shell() {
+  bash -lc 'export NVM_NODEJS_ORG_MIRROR="$TOOLCHAIN_NODE_SOURCE" npm_config_registry="$TOOLCHAIN_NPM_SOURCE" COREPACK_NPM_REGISTRY="$TOOLCHAIN_NPM_SOURCE"; eval "$1"' _ "$1"
+}
+configure_npm() {
+  if [ "$DRY_RUN" = "1" ]; then info "[dry-run] npm config set registry $NPM_SOURCE"; return 0; fi
+  node_shell 'npm config set registry "$TOOLCHAIN_NPM_SOURCE"' || return 1
+  ok "npm registry: $NPM_SOURCE"
+}
+
 # ---------- 平台识别 ----------
 if [ "$(id -u)" != "0" ]; then
   if have sudo; then exec sudo -E bash "$0" "$@"; fi
@@ -151,7 +179,7 @@ ensure_prereqs() {
 
 profile_write() { # profile_write <文件名> <内容>
   local f="/etc/profile.d/$1"
-  if [ "$DRY_RUN" = "1" ]; then info "[dry-run] 写 $f"; return 0; fi
+  if [ "$DRY_RUN" = "1" ]; then info "[dry-run] 写 $f"; printf '%s\n' "$2"; return 0; fi
   printf '%s\n' "$2" > "$f"
   chmod 0644 "$f"
 }
@@ -290,10 +318,15 @@ install_maven() {
       *)       return 1 ;;
     esac
     require_installed detect_maven "mvn" || return 1
-    dry_run_note "$(command -v mvn 2>/dev/null || echo /usr/bin/mvn)" && return 0
-    ok "$(mvn -v | head -1) → $(command -v mvn)"
+    if [ "$DRY_RUN" = "1" ]; then
+      dry_run_note /usr/bin/mvn
+    else
+      ok "$(mvn -v | head -1) → $(command -v mvn)"
+    fi
   fi
 
+  [ "$MIRROR" != "off" ] || info "Maven 官方模式：不新增 settings.xml 镜像配置"
+  [ ! -f "$HOME/.m2/settings.xml" ] || warn "保留已有 $HOME/.m2/settings.xml，可能继续使用原镜像"
   # 国内镜像：只在没有 settings.xml 时写入，绝不覆盖用户已有配置。
   if [ "$MIRROR" = "cn" ]; then
     local m2="$HOME/.m2"
@@ -344,8 +377,8 @@ install_nvm() {
   local body="# nvm（由平台「工具链一键安装」写入）
 export NVM_DIR=$NVM_DIR
 [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\""
-  [ "$MIRROR" = "cn" ] && body="$body
-export NVM_NODEJS_ORG_MIRROR=$NODE_MIRROR_CN"
+  body="$body
+export NVM_NODEJS_ORG_MIRROR=$NODE_SOURCE"
   profile_write "nvm.sh" "$body"
   ok "nvm $NVM_VERSION → $NVM_DIR（已加入 /etc/profile.d/nvm.sh）"
 }
@@ -359,11 +392,12 @@ install_node() {
     return 0
   fi
   if [ "$DRY_RUN" = "1" ]; then
-    info "[dry-run] bash -lc 'nvm install $NODE_VERSION && nvm alias default <该版本>'"
+    info "[dry-run] Node source: $NODE_SOURCE; nvm install $NODE_VERSION"
+    configure_npm
     return 0
   fi
   local ver
-  ver="$(bash -lc "nvm install '$NODE_VERSION' >/dev/null 2>&1 && nvm current && nvm alias default \"\$(nvm current)\" >/dev/null && echo ok" 2>/dev/null | head -1)"
+  ver="$(node_shell "nvm install '$NODE_VERSION' >/dev/null 2>&1 && nvm current && nvm alias default \"\$(nvm current)\" >/dev/null && echo ok" 2>/dev/null | head -1)"
   if [ -z "$ver" ] || [ "$ver" = "none" ] || [ "$ver" = "system" ]; then
     err "nvm install $NODE_VERSION 失败（可设 NVM_NODEJS_ORG_MIRROR 后重试）"
     return 1
@@ -373,9 +407,10 @@ install_node() {
 export NVM_DIR=$NVM_DIR
 [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"
 nvm use default --silent >/dev/null 2>&1 || true"
-  [ "$MIRROR" = "cn" ] && shim="$shim
-export NVM_NODEJS_ORG_MIRROR=$NODE_MIRROR_CN"
+  shim="$shim
+export NVM_NODEJS_ORG_MIRROR=$NODE_SOURCE"
   profile_write "nvm.sh" "$shim"
+  configure_npm || return 1
   ok "node $ver（nvm default，nvm --version $(bash -lc 'nvm --version' 2>/dev/null)）"
   warn "nvm 装的 node 只在 login shell（平台默认的 bash -lc）可见；项目 Shell 选 sh 时请改用 bash"
 }
@@ -389,20 +424,20 @@ install_pnpm() {
   fi
   detect_node || install_node || return 1
   if [ "$DRY_RUN" = "1" ]; then
+    info "[dry-run] npm/corepack registry: $NPM_SOURCE"
     info "[dry-run] corepack enable --install-directory /usr/local/bin && corepack prepare pnpm@$PNPM_VERSION --activate"
+    configure_npm
+    info "[dry-run] pnpm config set registry $NPM_SOURCE"
     return 0
   fi
   # corepack enable 会在 /usr/local/bin 生成 shim，所以任何 shell 都能找到 pnpm
-  bash -lc "corepack enable --install-directory /usr/local/bin >/dev/null 2>&1 || true"
-  if ! bash -lc "corepack prepare pnpm@$PNPM_VERSION --activate" >/dev/null 2>&1; then
+  node_shell "corepack enable --install-directory /usr/local/bin >/dev/null 2>&1 || true"
+  if ! node_shell "corepack prepare pnpm@$PNPM_VERSION --activate" >/dev/null 2>&1; then
     warn "corepack 准备 pnpm 失败，退回 npm i -g pnpm"
-    bash -lc "npm i -g pnpm@$PNPM_VERSION" >/dev/null 2>&1 || { err "pnpm 安装失败"; return 1; }
+    node_shell "npm i -g pnpm@$PNPM_VERSION" >/dev/null 2>&1 || { err "pnpm 安装失败"; return 1; }
   fi
-  if [ "$MIRROR" = "cn" ]; then
-    bash -lc "pnpm config set registry https://registry.npmmirror.com >/dev/null 2>&1 || true"
-    bash -lc "npm config set registry https://registry.npmmirror.com >/dev/null 2>&1 || true"
-    ok "已把 npm/pnpm registry 设为 registry.npmmirror.com"
-  fi
+  configure_npm || return 1
+  node_shell 'pnpm config set registry "$TOOLCHAIN_NPM_SOURCE"' || return 1
   ok "pnpm $(bash -lc 'pnpm -v' 2>/dev/null || echo '?')（shim 在 /usr/local/bin/pnpm）"
 }
 
@@ -442,11 +477,9 @@ install_go() {
   fi
   local body="# Go（由平台「工具链一键安装」写入）
 export PATH=$GO_DIR/bin:\$PATH"
-  if [ "$MIRROR" = "cn" ]; then
-    body="$body
-export GOPROXY=https://goproxy.cn,direct
-export GOSUMDB=sum.golang.google.cn"
-  fi
+  body="$body
+export GOPROXY=$GO_PROXY
+export GOSUMDB=$GO_SUM"
   profile_write "go.sh" "$body"
   ok "go $("$GO_DIR/bin/go" version 2>/dev/null | awk '{print $3}') → $GO_DIR（软链在 /usr/local/bin/go）"
 }
@@ -459,19 +492,26 @@ install_rust() {
     return 0
   fi
   ensure_prereqs || return 1
+  [ ! -f "$CARGO_HOME/config.toml" ] || warn "保留已有 $CARGO_HOME/config.toml，可能继续使用原镜像"
+  [ ! -f "$CARGO_HOME/config" ] || warn "保留已有 $CARGO_HOME/config，可能继续使用原镜像"
   if [ "$DRY_RUN" = "1" ]; then
-    info "[dry-run] curl https://sh.rustup.rs | RUSTUP_HOME=$RUSTUP_HOME CARGO_HOME=$CARGO_HOME sh -s -- -y --no-modify-path --profile minimal --default-toolchain $RUST_TOOLCHAIN"
+    info "[dry-run] rustup dist: $RUST_SOURCE; update: $RUST_UPDATE"
+    if [ "$MIRROR" = "cn" ] && [ ! -f "$CARGO_HOME/config.toml" ] && [ ! -f "$CARGO_HOME/config" ]; then
+      info "[dry-run] 写 $CARGO_HOME/config.toml（rsproxy）"
+    else
+      info "[dry-run] 保留 Cargo 配置（无配置时使用 crates.io）"
+    fi
+    info "[dry-run] 写 /etc/profile.d/rust.sh（rustup dist: $RUST_SOURCE; update: $RUST_UPDATE）"
+    info "[dry-run] curl $RUST_INIT | RUSTUP_HOME=$RUSTUP_HOME CARGO_HOME=$CARGO_HOME sh -s -- -y --no-modify-path --profile minimal --default-toolchain $RUST_TOOLCHAIN"
     return 0
   fi
   local init="/tmp/rustup-init.sh"
-  if ! curl -fL --connect-timeout 15 --retry 2 -o "$init" https://sh.rustup.rs; then
+  if ! curl -fL --connect-timeout 15 --retry 2 -o "$init" "$RUST_INIT"; then
     err "下载 rustup 安装脚本失败"
     return 1
   fi
   local -a rtenv=(env "RUSTUP_HOME=$RUSTUP_HOME" "CARGO_HOME=$CARGO_HOME")
-  if [ "$MIRROR" = "cn" ]; then
-    rtenv+=("RUSTUP_DIST_SERVER=https://rsproxy.cn" "RUSTUP_UPDATE_ROOT=https://rsproxy.cn/rustup")
-  fi
+  rtenv+=("RUSTUP_DIST_SERVER=$RUST_SOURCE" "RUSTUP_UPDATE_ROOT=$RUST_UPDATE")
   if ! "${rtenv[@]}" sh "$init" -y --no-modify-path --profile minimal --default-toolchain "$RUST_TOOLCHAIN" >/dev/null 2>&1; then
     err "rustup 安装失败"; rm -f "$init"; return 1
   fi
@@ -482,10 +522,12 @@ install_rust() {
   profile_write "rust.sh" "# Rust（由平台「工具链一键安装」写入）
 export RUSTUP_HOME=$RUSTUP_HOME
 export CARGO_HOME=$CARGO_HOME
+export RUSTUP_DIST_SERVER=$RUST_SOURCE
+export RUSTUP_UPDATE_ROOT=$RUST_UPDATE
 export PATH=$CARGO_HOME/bin:\$PATH"
 
   if [ "$MIRROR" = "cn" ]; then
-    if [ -f "$CARGO_HOME/config.toml" ]; then
+    if [ -f "$CARGO_HOME/config.toml" ] || [ -f "$CARGO_HOME/config" ]; then
       warn "已有 $CARGO_HOME/config.toml，跳过 crates 镜像配置"
     else
       cat > "$CARGO_HOME/config.toml" <<'TOML'

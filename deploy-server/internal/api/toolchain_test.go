@@ -311,3 +311,31 @@ func scriptAllComponents(t *testing.T, body string) []string {
 	t.Fatal("内嵌安装脚本里没有 ALL_COMPONENTS")
 	return nil
 }
+
+func TestToolchainMirrorSelection(t *testing.T) {
+	e := newTestEnv(t)
+	e.mustBootstrap(t)
+	for _, tc := range []struct{ input, want string }{{"", "cn"}, {"cn", "cn"}, {"off", "off"}} {
+		_, out := e.call(t, "POST", "/api/v1/system/toolchains/install", e.token, map[string]any{
+			"components": []string{"go"}, "dryRun": true, "force": true, "mirror": tc.input,
+		})
+		if out["success"] != true {
+			t.Fatalf("install: %v", out)
+		}
+		data := dataMap(t, out)
+		if !strings.Contains(data["command"].(string), "--mirror "+tc.want) {
+			t.Fatalf("command: %v", data)
+		}
+		id := int(data["runId"].(float64))
+		e.waitRun(t, id, 60*time.Second)
+		_, out = e.call(t, "GET", fmt.Sprintf("/api/v1/runs/%d", id), e.token, nil)
+		params := dataMap(t, out)["params"].(map[string]any)
+		if params["MIRROR"] != tc.want {
+			t.Fatalf("params: %v", params)
+		}
+	}
+	_, out := e.call(t, "POST", "/api/v1/system/toolchains/install", e.token, map[string]any{
+		"components": []string{"go"}, "dryRun": true, "mirror": "invalid",
+	})
+	assertBadRequest(t, out, "mirror must be cn or off")
+}

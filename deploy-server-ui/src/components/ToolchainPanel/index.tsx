@@ -19,6 +19,7 @@ import {
   Form,
   Input,
   Modal,
+  Radio,
   Space,
   Table,
   Tag,
@@ -100,10 +101,10 @@ const ToolchainPanel: React.FC = () => {
     return changed.map((f) => `${f.key}=${f.value}`).join('  ');
   };
 
-  const runInstall = async (keys: string[], dryRun: boolean) => {
+  const runInstall = async (keys: string[], dryRun: boolean, mirror: 'cn' | 'off') => {
     setBusy(true);
     try {
-      const res = await systemApi.installToolchains({ components: keys, dryRun, force: !dryRun });
+      const res = await systemApi.installToolchains({ components: keys, dryRun, force: !dryRun, mirror });
       if (res?.nothingToDo) {
         messageApi.info(t('所选组件都已安装；要换版本请点该行的「编辑」改参数后「重装」'));
         load();
@@ -116,19 +117,28 @@ const ToolchainPanel: React.FC = () => {
       );
       history.push(`/runs/${res.runId}`);
     } catch (e) {
-      // 统一错误提示
+      throw e; // 保留弹窗，允许重试
     } finally {
       setBusy(false);
     }
   };
 
   const confirm = (keys: string[], dryRun: boolean, label: string) => {
+    let mirror: 'off' | 'cn' = 'off';
     const picked = (data?.components || []).filter((c) => keys.includes(c.key));
     Modal.confirm({
       title: dryRun ? t('预演：{label}', { label: label }) : t('确认安装：{label}', { label: label }),
       width: 640,
       content: (
         <Space direction="vertical" size={6} style={{ width: '100%' }}>
+          <Text strong>{t('安装源')}</Text>
+          <Radio.Group defaultValue="off" onChange={(e) => { mirror = e.target.value; }}>
+            <Space direction="vertical">
+              <Radio value="off">{t('官方源（适合国外服务器）')}</Radio>
+              <Radio value="cn">{t('国内镜像（适合国内服务器）')}</Radio>
+            </Space>
+          </Radio.Group>
+          <Alert type="info" showIcon message={t('已有 Maven settings.xml 和 Cargo 配置保留，可能继续使用原镜像；自定义下载地址优先。官方模式忽略已保存的 Node/Rust 镜像参数。')} />
           <div>
             {picked.map((c) => (
               <div key={c.key} style={{ marginBottom: 4 }}>
@@ -151,7 +161,7 @@ const ToolchainPanel: React.FC = () => {
       ),
       okText: dryRun ? t('开始预演') : t('开始安装'),
       cancelText: t('取消'),
-      onOk: () => runInstall(keys, dryRun),
+      onOk: () => runInstall(keys, dryRun, mirror),
     });
   };
 

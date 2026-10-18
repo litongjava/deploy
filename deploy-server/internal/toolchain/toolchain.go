@@ -113,7 +113,7 @@ var Components = []Component{
 	},
 	{
 		Key: "maven", Name: "Maven",
-		Note:     "mvn 构建；顺带写一份阿里云镜像 settings.xml（已有配置则不覆盖）",
+		Note:     "mvn 构建；可选择官方源或阿里云镜像 settings.xml（已有配置不覆盖）",
 		Estimate: "约 30 MB",
 		Probes:   []Probe{{Name: "mvn", Args: []string{"-v"}}},
 		Fields: []Field{
@@ -151,13 +151,13 @@ var Components = []Component{
 		Fields: []Field{
 			{Key: "NODE_VERSION", Label: "Node 版本", Default: "--lts", Placeholder: "--lts / 20 / v20.11.1",
 				Help: "交给 nvm install，写成 --lts 就是最新 LTS。"},
-			{Key: "NVM_NODEJS_ORG_MIRROR", Label: "Node 下载镜像", Default: "https://npmmirror.com/mirrors/node",
-				Placeholder: "https://npmmirror.com/mirrors/node", Help: "nvm 下载 node 二进制的镜像。"},
+			{Key: "NVM_NODEJS_ORG_MIRROR", Label: "Node 下载镜像", Default: "",
+				Placeholder: "https://npmmirror.com/mirrors/node", Help: "国内模式使用此自定义镜像；官方模式忽略此参数。"},
 		},
 	},
 	{
 		Key: "pnpm", Name: "pnpm",
-		Note:     "经 corepack 装到 /usr/local/bin，任何 shell 都可用；registry 指向 npmmirror",
+		Note:     "经 corepack 装到 /usr/local/bin，任何 shell 都可用；registry 随安装源选择",
 		Estimate: "约 10 MB",
 		Probes:   []Probe{{Name: "pnpm", Args: []string{"--version"}}},
 		Fields: []Field{
@@ -167,28 +167,28 @@ var Components = []Component{
 	},
 	{
 		Key: "go", Name: "Go",
-		Note:     "装到 /usr/local/go 并软链到 /usr/local/bin；GOPROXY 指向 goproxy.cn",
+		Note:     "装到 /usr/local/go 并软链到 /usr/local/bin；GOPROXY 随安装源选择",
 		Estimate: "约 120 MB",
 		Probes:   []Probe{{Name: "go", Args: []string{"version"}}},
 		Fields: []Field{
 			{Key: "GO_VERSION", Label: "Go 版本", Default: "1.24.2", Placeholder: "1.24.2"},
 			{Key: "GO_URL", Label: "Go 压缩包地址（可选）", Default: "",
 				Placeholder: "https://.../go1.24.2.linux-amd64.tar.gz",
-				Help:        "留空则依次尝试阿里云镜像、golang.google.cn、官方源。"},
+				Help:        "留空按本次安装源选择下载；自定义地址优先。"},
 			{Key: "GO_DIR", Label: "Go 安装目录", Default: "/usr/local/go", Placeholder: "/usr/local/go"},
 		},
 	},
 	{
 		Key: "rust", Name: "Rust（rustup）",
-		Note:     "系统级 rustup（/usr/local/cargo），crates 走 rsproxy 镜像",
+		Note:     "系统级 rustup（/usr/local/cargo），可选官方源或 rsproxy 镜像",
 		Estimate: "约 250 MB",
 		Probes:   []Probe{{Name: "rustc", Args: []string{"--version"}}},
 		Fields: []Field{
 			{Key: "RUST_TOOLCHAIN", Label: "toolchain", Default: "stable", Placeholder: "stable / 1.83.0"},
 			{Key: "RUSTUP_HOME", Label: "RUSTUP_HOME", Default: "/usr/local/rustup", Placeholder: "/usr/local/rustup"},
 			{Key: "CARGO_HOME", Label: "CARGO_HOME", Default: "/usr/local/cargo", Placeholder: "/usr/local/cargo"},
-			{Key: "RUSTUP_DIST_SERVER", Label: "rustup 镜像", Default: "https://rsproxy.cn",
-				Placeholder: "https://rsproxy.cn", Help: "国内加速；留空走官方。"},
+			{Key: "RUSTUP_DIST_SERVER", Label: "rustup 镜像", Default: "",
+				Placeholder: "https://rsproxy.cn", Help: "国内模式的自定义镜像；留空使用 rsproxy，官方模式忽略此参数。"},
 		},
 	},
 	{

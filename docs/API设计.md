@@ -572,14 +572,17 @@ GET /api/v1/ws/runs/{id}?token=<jwt>&offset=<n>
 { "components": ["go","pnpm"],   // 省略/空数组 = 所有缺失的组件
   "dryRun": false,               // true = 预演：只打印将执行的动作，不做任何修改
   "force": false,                // true = 已安装的也重装
-  "mirror": "cn" }               // "off" = 不用国内镜像
+  "mirror": "off" }              // 网页默认官方源；"cn" 使用国内镜像；旧调用省略时仍默认 cn
+
 ```
+安装 / 重装 / 预演弹窗统一选择本次安装源。服务端校验 cn/off，并在运行参数 MIRROR 中记录选择。官方源用于 Go、Rust、Node/npm/pnpm 下载与依赖配置；国内模式配置国内镜像及 Maven 阿里云镜像。已有 Maven settings.xml 和 Cargo 配置保留并提示，可能仍使用原镜像。自定义下载地址优先；官方模式忽略已保存的 Node/Rust 镜像参数。
+
 ```json
 // 响应
 { "runId": 42, "buildNumber": 1, "status": "queued",
   "projectKey": "system-toolchain",
   "components": ["go","pnpm"], "dryRun": false,
-  "command": "bash '/srv/deploy/data/toolchain/install.sh' --only go,pnpm",
+  "command": "bash '/srv/deploy/data/toolchain/install.sh' --only go,pnpm --mirror off",
   "logUrl": "/api/v1/runs/42/log" }
 ```
 说明：
