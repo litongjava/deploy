@@ -1,0 +1,25 @@
+{
+  "key": "tio-websockify",
+  "name": "tio-websockify",
+  "workdir": "/srv/worksapce/tio-websockify",
+  "useGit": true,
+  "gitUrl": "git@github.com:litongjava/tio-websockify.git",
+  "gitBranch": "main",
+  "shell": "auto",
+  "concurrency": "queue",
+  "hookEnabled": true,
+  "env": {
+    "APP_PORT": "10063",
+    "VNC_SERVER": "127.0.0.1:5901",
+    "VNC_PASSWORD": "tio12345"
+  },
+  "commands": [
+    { "name": "1. 环境勘察（只读）", "scriptFile": "sh/01-recon.sh", "timeoutSec": 300 },
+    { "name": "2. Maven 构建生产包", "scriptFile": "sh/02-build.sh", "timeoutSec": 1800 },
+    { "name": "3. 安装并启动本地 VNC 桌面", "scriptFile": "sh/03-vnc-desktop.sh", "timeoutSec": 1800 },
+    { "name": "4. 发布产物与外部配置", "scriptFile": "sh/04-publish.sh", "timeoutSec": 300 },
+    { "name": "5. 注册 systemd 服务并重启", "scriptFile": "sh/05-systemd.sh", "timeoutSec": 300 },
+    { "name": "6. 健康检查", "scriptFile": "sh/06-healthcheck.sh", "timeoutSec": 600 },
+    { "name": "7. 运行状态与日志（运维）", "scriptFile": "sh/07-ops.sh", "timeoutSec": 300 }
+  ]
+}
