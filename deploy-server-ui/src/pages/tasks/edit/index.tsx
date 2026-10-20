@@ -64,7 +64,7 @@ const TasksEdit: React.FC = () => {
   /**
    * 「工作目录 / 项目名称」是否被用户手动填过。
    *
-   * 没手动填过时它们跟着「任务 Key」自动生成（工作目录 = `/srv/worksapce/<key>`，
+   * 没手动填过时它们跟着「任务 Key」自动生成（工作目录 = `/srv/workspaces/<key>`，
    * 名称 = Key，只在新建时生效）；用户一旦自己填了内容就不再覆盖，清空后恢复自动生成。
    */
   const workdirEditedRef = useRef(false);
@@ -260,8 +260,8 @@ const TasksEdit: React.FC = () => {
                 name="workdir"
                 label={t('工作目录')}
                 rules={[{ required: true, message: t('请填写工作目录') }]}
-                placeholder={t('例如 /srv/worksapce/bench-tio-boot')}
-                tooltip={t('新建时按任务 Key 自动填成 /srv/worksapce/<key>，可手动改；支持 ${WORKSPACE_ROOT} / ${TASK_KEY} / ${TASK_NAME} 占位符，目录不存在会自动创建')}
+                placeholder={t('例如 /srv/workspaces/bench-tio-boot')}
+                tooltip={t('新建时按任务 Key 自动填成 /srv/workspaces/<key>，可手动改；支持 ${WORKSPACE_ROOT} / ${TASK_KEY} / ${TASK_NAME} 占位符，目录不存在会自动创建')}
               />
             </Col>
           </Row>

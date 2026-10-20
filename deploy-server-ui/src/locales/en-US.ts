@@ -367,8 +367,8 @@ export default {
   '例如 gitee-deploy': 'e.g. gitee-deploy',
   '例如 gitee-push': 'e.g. gitee-push',
   '例如 ghp_xxxx': 'e.g. ghp_xxxx',
-  '例如 /srv/worksapce/tio-boot': 'e.g. /srv/worksapce/tio-boot',
-  '例如 /srv/worksapce/bench-tio-boot': 'e.g. /srv/worksapce/bench-tio-boot',
+  '例如 /srv/workspaces/tio-boot': 'e.g. /srv/workspaces/tio-boot',
+  '例如 /srv/workspaces/bench-tio-boot': 'e.g. /srv/workspaces/bench-tio-boot',
   'monorepo 场景，例如 apps/web': 'For monorepos, e.g. apps/web',
   'https://gitee.com/xxx/yyy.git 或 git@github.com:xxx/yyy.git':
     'https://gitee.com/xxx/yyy.git or git@github.com:xxx/yyy.git',
@@ -407,10 +407,10 @@ export default {
   'Git 准备阶段失败': 'Git preparation failed',
   '准备阶段失败时不会执行任何用户命令，请检查仓库地址 / 分支 / 凭据。':
     'When the preparation stage fails, no user commands run; check the repository URL / branch / credential.',
-  '绝对路径。新建时按项目 Key 自动填成 /srv/worksapce/<key>，可手动改；支持 ${WORKSPACE_ROOT} 之类的变量由 shell 展开':
-    'Absolute path. On creation it is auto-filled as /srv/worksapce/<key> from the project key and can be edited; variables such as ${WORKSPACE_ROOT} are expanded by the shell',
-  '新建时按任务 Key 自动填成 /srv/worksapce/<key>，可手动改；支持 ${WORKSPACE_ROOT} / ${TASK_KEY} / ${TASK_NAME} 占位符，目录不存在会自动创建':
-    'On creation it is auto-filled as /srv/worksapce/<key> from the task key and can be edited; ${WORKSPACE_ROOT} / ${TASK_KEY} / ${TASK_NAME} placeholders are supported and the directory is created if missing',
+  '绝对路径。新建时按项目 Key 自动填成 /srv/workspaces/<key>，可手动改；支持 ${WORKSPACE_ROOT} 之类的变量由 shell 展开':
+    'Absolute path. On creation it is auto-filled as /srv/workspaces/<key> from the project key and can be edited; variables such as ${WORKSPACE_ROOT} are expanded by the shell',
+  '新建时按任务 Key 自动填成 /srv/workspaces/<key>，可手动改；支持 ${WORKSPACE_ROOT} / ${TASK_KEY} / ${TASK_NAME} 占位符，目录不存在会自动创建':
+    'On creation it is auto-filled as /srv/workspaces/<key> from the task key and can be edited; ${WORKSPACE_ROOT} / ${TASK_KEY} / ${TASK_NAME} placeholders are supported and the directory is created if missing',
   '任务 Key 会作为工作目录占位符 ${TASK_KEY} 的值，创建后不可修改':
     'The task key is used as the value of the ${TASK_KEY} working-directory placeholder and cannot be changed after creation',
   '关闭后该项目的 Hook 地址不可用': 'When off, this project hook URL is unavailable',

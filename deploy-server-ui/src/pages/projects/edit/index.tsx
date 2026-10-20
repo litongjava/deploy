@@ -87,7 +87,7 @@ const ProjectEdit: React.FC = () => {
    * 「工作目录 / 项目名称 / 项目 Key」是否被用户手动填过。
    *
    * 新建时这三个字段会依次尝试自动生成：先看 Git 仓库地址能不能推出仓库名
-   * （Key = 规整后的仓库名，名称 = 仓库名，工作目录 = `/srv/worksapce/<key>`），
+   * （Key = 规整后的仓库名，名称 = 仓库名，工作目录 = `/srv/workspaces/<key>`），
    * 推不出来（还没填地址、或地址里没有仓库名）再回落到「Key 手填 → 其余跟着 Key 走」。
    * 用户一旦自己填过某字段，之后就不再覆盖它；清空后恢复自动生成。
    */
@@ -491,8 +491,8 @@ const ProjectEdit: React.FC = () => {
               <ProFormText
                 name="workdir"
                 label={t('工作目录')}
-                placeholder={t('例如 /srv/worksapce/tio-boot')}
-                tooltip={t('绝对路径。新建时按项目 Key 自动填成 /srv/worksapce/<key>，可手动改；支持 ${WORKSPACE_ROOT} 之类的变量由 shell 展开')}
+                placeholder={t('例如 /srv/workspaces/tio-boot')}
+                tooltip={t('绝对路径。新建时按项目 Key 自动填成 /srv/workspaces/<key>，可手动改；支持 ${WORKSPACE_ROOT} 之类的变量由 shell 展开')}
                 rules={[{ required: true, message: t('请填写工作目录') }]}
               />
             </Col>
