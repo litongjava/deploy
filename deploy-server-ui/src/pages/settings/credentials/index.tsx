@@ -1,12 +1,14 @@
-import { credentialApi } from '@/services/system';
-import type { Credential, CredentialType } from '@/services/types';
+import { credentialApi, systemApi } from '@/services/system';
+import type { Credential, CredentialType, SshKeyInfo } from '@/services/types';
 import { CREDENTIAL_TYPE_OPTIONS, formatTime } from '@/utils/constants';
 import { PlusOutlined } from '@ant-design/icons';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
+import { useAccess } from '@umijs/max';
 import {
   Alert,
   Button,
+  Card,
   Form,
   Input,
   Modal,
@@ -17,10 +19,10 @@ import {
   Typography,
   message,
 } from 'antd';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { t } from '@/i18n';
 
-const { Text } = Typography;
+const { Text, Paragraph } = Typography;
 
 const Credentials: React.FC = () => {
   const actionRef = useRef<ActionType>();
@@ -34,6 +36,58 @@ const Credentials: React.FC = () => {
   const [testBranch, setTestBranch] = useState('');
   const [testing, setTesting] = useState(false);
   const type: CredentialType = Form.useWatch('type', form) || 'https_token';
+  const access = useAccess();
+  // 服务器自身 ~/.ssh 下的公钥（与数据库里的 git 凭据是两回事）。
+  const [sshKey, setSshKey] = useState<SshKeyInfo | null>(null);
+  const [sshKeyType, setSshKeyType] = useState<'ed25519' | 'rsa'>('ed25519');
+  const [genLoading, setGenLoading] = useState(false);
+  const sshKeyExists = (sshKey?.keys || []).some((k) => k.type === sshKeyType);
+
+  const loadSshKey = async () => {
+    try {
+      setSshKey(await systemApi.sshKey());
+    } catch (e) {
+      // 统一提示（接口不可用时不影响凭据列表）
+    }
+  };
+
+  useEffect(() => {
+    loadSshKey();
+  }, []);
+
+  const generateSshKey = async () => {
+    setGenLoading(true);
+    try {
+      const data = await systemApi.generateSshKey({ type: sshKeyType });
+      setSshKey(data);
+      messageApi.success(t('已生成 SSH 公钥'));
+    } catch (e) {
+      // 统一提示（同类型密钥已存在时后端返回 40900）
+    } finally {
+      setGenLoading(false);
+    }
+  };
+
+  const copy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      messageApi.success(t('已复制'));
+      return;
+    } catch (e) {
+      // 降级方案：clipboard API 在非 HTTPS 下不可用
+      const el = document.createElement('textarea');
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      try {
+        document.execCommand('copy');
+        messageApi.success(t('已复制'));
+      } catch (err) {
+        messageApi.error(t('复制失败，请手动选择文本'));
+      }
+      document.body.removeChild(el);
+    }
+  };
 
   const openCreate = () => {
     setEditing(null);
@@ -174,6 +228,75 @@ const Credentials: React.FC = () => {
         message={t('用于 Git 私有仓库拉取')}
         description={t('凭据内容在服务端加密存储，接口永不返回 secret；项目通过「Git 凭据」下拉引用，不在项目里明文存密码。')}
       />
+      <Card
+        size="small"
+        style={{ marginBottom: 16 }}
+        title={t('服务器 SSH 公钥')}
+        extra={
+          <Space>
+            <Select
+              size="small"
+              value={sshKeyType}
+              onChange={(v) => setSshKeyType(v)}
+              style={{ width: 150 }}
+              options={[
+                { label: 'ed25519', value: 'ed25519' },
+                { label: 'rsa (4096)', value: 'rsa' },
+              ]}
+            />
+            <Popconfirm
+              title={t('生成 SSH Key')}
+              description={t('将在服务器的 ~/.ssh 目录写入新密钥；同类型密钥已存在时不会覆盖。')}
+              okText={t('生成')}
+              cancelText={t('取消')}
+              disabled={!access.canAdmin || sshKeyExists}
+              onConfirm={generateSshKey}
+            >
+              <Button
+                type="primary"
+                loading={genLoading}
+                disabled={!access.canAdmin || sshKeyExists}
+              >
+                {t('生成 SSH Key')}
+              </Button>
+            </Popconfirm>
+          </Space>
+        }
+      >
+        <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+          {t('这是部署进程所属用户的 SSH 公钥，用于在服务器上手工 git clone（如 gitee / github）。把公钥添加到对应平台的 SSH Key 后即可免密拉取；只读公钥，私钥不会返回。')}
+        </Paragraph>
+        {sshKey?.keys?.length ? (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            {sshKey.keys.map((k) => (
+              <div key={k.type}>
+                <Space wrap size="small">
+                  <Tag color="purple">{k.type}</Tag>
+                  <Text type="secondary">{k.keyPath}</Text>
+                  {k.fingerprint ? (
+                    <Text type="secondary">
+                      {t('指纹')}: {k.fingerprint}
+                    </Text>
+                  ) : null}
+                  <a onClick={() => copy(k.publicKey)}>{t('复制')}</a>
+                </Space>
+                <Paragraph
+                  style={{
+                    fontFamily: 'Menlo, Consolas, monospace',
+                    wordBreak: 'break-all',
+                    marginTop: 4,
+                    marginBottom: 0,
+                  }}
+                >
+                  {k.publicKey}
+                </Paragraph>
+              </div>
+            ))}
+          </Space>
+        ) : (
+          <Text type="secondary">{t('未找到 SSH 公钥')}</Text>
+        )}
+      </Card>
       <ProTable<Credential>
         rowKey="id"
         actionRef={actionRef}

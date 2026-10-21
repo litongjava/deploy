@@ -151,6 +151,8 @@ func (s *Server) Router() *gin.Engine {
 		// 与工具链刻意分开：那边是无状态构建工具，这边是有状态服务（端口/密码/数据卷，
 		// 且「重装」有丢数据的风险），混在一个面板里容易误操作。见 handlers_middleware.go。
 		a.GET("/system/middleware", s.listMiddleware)
+		// 部署进程所属用户的 ~/.ssh 公钥：登录可见，生成仅 admin（见 handlers_sshkey.go）。
+		a.GET("/system/ssh-key", s.getSshKey)
 
 		admin := a.Group("", RequireAdmin())
 		{
@@ -167,6 +169,7 @@ func (s *Server) Router() *gin.Engine {
 			admin.POST("/system/middleware/install", s.installMiddleware)
 			admin.PUT("/system/middleware/:key", s.updateMiddlewareFields)
 			admin.GET("/system/middleware/script", s.downloadMiddlewareScript)
+			admin.POST("/system/ssh-key", s.generateSshKey)
 		}
 	}
 

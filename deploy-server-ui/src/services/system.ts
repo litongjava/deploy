@@ -11,6 +11,7 @@ import type {
   MiddlewareInstallResult,
   MiddlewareList,
   ServerInfo,
+  SshKeyInfo,
   SystemSettings,
   ToolchainField,
   ToolchainInstallInput,
@@ -77,6 +78,16 @@ export const systemApi = {
       `/system/middleware/${encodeURIComponent(key)}`,
       body,
     );
+  },
+
+  /** 部署进程所属用户的 ~/.ssh 公钥（登录可见） */
+  sshKey() {
+    return getData<SshKeyInfo>('/system/ssh-key');
+  },
+
+  /** 生成 SSH 密钥（仅 admin）；type 为 ed25519 或 rsa */
+  generateSshKey(body: { type: string }) {
+    return postData<SshKeyInfo>('/system/ssh-key', body);
   },
 };
 

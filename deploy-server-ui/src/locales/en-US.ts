@@ -878,4 +878,16 @@ export default {
     'Unique identifier used in URLs / CLI / hooks; not recommended to change after creation. On creation it is inferred from the repository URL above.',
   '填好后会按仓库名自动预填「项目 Key / 项目名称 / 工作目录」；这三项一旦手动改过就不再覆盖':
     'Once filled, the project key / project name / working directory are pre-filled from the repository name; any of them you edit by hand is no longer overwritten',
+  // ===== 凭据管理：服务器 SSH 公钥 =====
+  '服务器 SSH 公钥': 'Server SSH public key',
+  '生成 SSH Key': 'Generate SSH key',
+  '生成': 'Generate',
+  '密钥类型': 'Key type',
+  '未找到 SSH 公钥': 'No SSH public key found',
+  '已生成 SSH 公钥': 'SSH public key generated',
+  '指纹': 'Fingerprint',
+  '将在服务器的 ~/.ssh 目录写入新密钥；同类型密钥已存在时不会覆盖。':
+    'A new key will be written to ~/.ssh on the server; an existing key of the same type is never overwritten.',
+  '这是部署进程所属用户的 SSH 公钥，用于在服务器上手工 git clone（如 gitee / github）。把公钥添加到对应平台的 SSH Key 后即可免密拉取；只读公钥，私钥不会返回。':
+    'This is the SSH public key of the user running the deploy server, used for manual git clone on the server (e.g. Gitee / GitHub). Add it to the platform as an SSH key to pull without a password. Only the public key is read; the private key is never returned.',
 };

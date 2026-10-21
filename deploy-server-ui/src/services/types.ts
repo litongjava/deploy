@@ -87,6 +87,19 @@ export interface GitTestResult {
   sampleRefs?: string[];
 }
 
+/** 部署进程所属用户的 ~/.ssh 公钥（只读，私钥永不返回） */
+export interface SshKeyItem {
+  type: string; // ed25519 | rsa | ecdsa
+  keyPath: string;
+  publicKey: string;
+  fingerprint: string;
+}
+
+export interface SshKeyInfo {
+  home: string;
+  keys: SshKeyItem[];
+}
+
 /* ------------------------------ 项目 ------------------------------- */
 
 export type ShellType = 'auto' | 'bash' | 'sh' | 'pwsh' | 'cmd';
