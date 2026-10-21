@@ -350,6 +350,42 @@ func TestCancelRunningRun(t *testing.T) {
 	}
 }
 
+// 排队中的 Run 也必须能取消：以前没有进程句柄就直接返回 false，
+// 结果是前一条卡死的运行会把后面所有运行永远堵在 queued。
+func TestCancelQueuedRun(t *testing.T) {
+	e := newTestEnv(t)
+	e.mustBootstrap(t)
+
+	e.call(t, "POST", "/api/v1/projects", e.token, map[string]any{
+		"key": "serial", "name": "串行", "workdir": "${WORKSPACE_ROOT}/serial",
+		"concurrency": store.ConcurrencyQueue,
+		"commands": []map[string]any{
+			{"name": "睡很久", "script": sleepScript(60)},
+		},
+	})
+
+	_, out := e.call(t, "POST", "/api/v1/projects/serial/run", e.token, nil)
+	firstID := int(dataMap(t, out)["runId"].(float64))
+	e.waitStatus(t, firstID, store.RunRunning, 20*time.Second)
+
+	_, out = e.call(t, "POST", "/api/v1/projects/serial/run", e.token, nil)
+	secondID := int(dataMap(t, out)["runId"].(float64))
+	e.waitStatus(t, secondID, store.RunQueued, 5*time.Second)
+
+	if code, out := e.call(t, "POST", fmt.Sprintf("/api/v1/runs/%d/cancel", secondID), e.token, nil); code != 200 || out["success"] != true {
+		t.Fatalf("取消排队中的运行失败: %d %v", code, out)
+	}
+	if run := e.waitFinal(t, secondID, 10*time.Second); run["status"] != store.RunCanceled {
+		t.Fatalf("排队中的运行应变成 canceled，实际 %v", run["status"])
+	}
+
+	// 第一条还在跑，取消掉，别让测试等满 60 秒。
+	e.call(t, "POST", fmt.Sprintf("/api/v1/runs/%d/cancel", firstID), e.token, nil)
+	if run := e.waitFinal(t, firstID, 30*time.Second); run["status"] != store.RunCanceled {
+		t.Fatalf("第一条运行取消失败: %v", run["status"])
+	}
+}
+
 // ---------- Secret 打码 ----------
 
 func TestSecretIsMaskedInLog(t *testing.T) {

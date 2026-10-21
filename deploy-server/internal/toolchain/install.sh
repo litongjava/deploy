@@ -24,6 +24,9 @@ set -uo pipefail
 SCRIPT_VERSION="1.0.2"
 ALL_COMPONENTS="cc java maven nvm node pnpm go rust certbot"
 NODE_MIRROR_CN="https://npmmirror.com/mirrors/node"
+# 国内克隆 github 经常卡住；nvm 仓库在 gitee 有官方镜像。
+NVM_GIT_MIRROR_CN="https://gitee.com/mirrors/nvm.git"
+NVM_DEFAULT_DIR="/usr/local/nvm"
 
 # ---------- 默认参数（同名环境变量可覆盖） ----------
 JAVA_VERSION="${JAVA_VERSION:-17}"
@@ -35,7 +38,9 @@ RUST_TOOLCHAIN="${RUST_TOOLCHAIN:-stable}"
 CERTBOT_NGINX_PLUGIN="${CERTBOT_NGINX_PLUGIN:-1}"
 MIRROR="${MIRROR:-cn}"
 GO_DIR="${GO_DIR:-/usr/local/go}"
-NVM_DIR="${NVM_DIR:-/usr/local/nvm}"
+# 留空表示「还没决定」：resolve_nvm_dir 会先找机器上已有的 nvm（官方脚本装在
+# $HOME/.nvm 的那一份），实在没有才用平台默认目录。
+NVM_DIR="${NVM_DIR:-}"
 RUSTUP_HOME="${RUSTUP_HOME:-/usr/local/rustup}"
 CARGO_HOME="${CARGO_HOME:-/usr/local/cargo}"
 
@@ -115,8 +120,17 @@ case "$MIRROR" in
   *) err "--mirror must be cn or off"; exit 2 ;;
 esac
 export TOOLCHAIN_NODE_SOURCE="$NODE_SOURCE" TOOLCHAIN_NPM_SOURCE="$NPM_SOURCE"
+# node_shell 里的命令都要联网（nvm install / corepack prepare）。镜像再慢也不能
+# 无限挂着：平台里这是一次 Run，卡住会一直占着同一个项目的串行锁，后面的安装
+# 全部排队。给个上限，超时就按失败处理，至少能结束并释放队列。
+NODE_SHELL_TIMEOUT="${NODE_SHELL_TIMEOUT:-900}"
 node_shell() {
-  bash -lc 'export NVM_NODEJS_ORG_MIRROR="$TOOLCHAIN_NODE_SOURCE" npm_config_registry="$TOOLCHAIN_NPM_SOURCE" COREPACK_NPM_REGISTRY="$TOOLCHAIN_NPM_SOURCE"; eval "$1"' _ "$1"
+  local runner=(bash -lc 'export NVM_NODEJS_ORG_MIRROR="$TOOLCHAIN_NODE_SOURCE" npm_config_registry="$TOOLCHAIN_NPM_SOURCE" COREPACK_NPM_REGISTRY="$TOOLCHAIN_NPM_SOURCE"; eval "$1"' _ "$1")
+  if have timeout; then
+    timeout "$NODE_SHELL_TIMEOUT" "${runner[@]}"
+  else
+    "${runner[@]}"
+  fi
 }
 configure_npm() {
   if [ "$DRY_RUN" = "1" ]; then info "[dry-run] npm config set registry $NPM_SOURCE"; return 0; fi
@@ -357,22 +371,71 @@ XML
 }
 
 # ---------- nvm ----------
+# find_nvm 找机器上**已经存在**的 nvm。
+#
+# 官方安装脚本默认装在 $HOME/.nvm，而且把加载语句追加在 ~/.bashrc 末尾 ——
+# 非交互 shell 读到文件开头的 "不是交互式就 return" 就走了，NVM_DIR 根本不会出现。
+# 平台脚本从 systemd 里以 `bash -lc` 启动，看不到它；如果这时只认 /usr/local/nvm，
+# 就会以为 nvm 没装，转而去 github 重新 clone —— 国内网络下这一步可以无限期挂住。
+find_nvm() {
+  if [ -n "${NVM_DIR:-}" ] && [ -s "$NVM_DIR/nvm.sh" ]; then printf '%s' "$NVM_DIR"; return 0; fi
+  if [ -s "$NVM_DEFAULT_DIR/nvm.sh" ]; then printf '%s' "$NVM_DEFAULT_DIR"; return 0; fi
+  local home="${HOME:-}"
+  [ -n "$home" ] || home="$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6)"
+  [ -n "$home" ] || home="$(bash -lc 'printf %s "${HOME:-}"' 2>/dev/null)"
+  if [ -n "$home" ] && [ -s "$home/.nvm/nvm.sh" ]; then printf '%s' "$home/.nvm"; return 0; fi
+  local d
+  d="$(bash -lc 'printf %s "${NVM_DIR:-}"' 2>/dev/null)"
+  if [ -n "$d" ] && [ -s "$d/nvm.sh" ]; then printf '%s' "$d"; return 0; fi
+  return 1
+}
+
+# resolve_nvm_dir 决定这次安装用哪个目录：显式指定的优先，其次已有安装，
+# 最后才是平台默认目录（只有确实一个都没有时才会去 clone）。
+resolve_nvm_dir() {
+  if [ -n "${NVM_DIR:-}" ]; then return 0; fi
+  if d="$(find_nvm)"; then NVM_DIR="$d"; else NVM_DIR="$NVM_DEFAULT_DIR"; fi
+}
+
 detect_nvm() { [ -s "$NVM_DIR/nvm.sh" ]; }
+clone_nvm() { # clone_nvm <url> <dir>
+  local url="$1" dir="$2"
+  if have timeout; then
+    GIT_TERMINAL_PROMPT=0 timeout 300 git clone --depth 1 --branch "$NVM_VERSION" "$url" "$dir" >/dev/null 2>&1
+  else
+    GIT_TERMINAL_PROMPT=0 git clone --depth 1 --branch "$NVM_VERSION" "$url" "$dir" >/dev/null 2>&1
+  fi
+}
 install_nvm() {
   if detect_nvm && [ "$FORCE" != "1" ]; then
     ok "已安装：$NVM_DIR（nvm $(bash -c ". '$NVM_DIR/nvm.sh' && nvm --version" 2>/dev/null)）"
     return 0
   fi
   ensure_prereqs || return 1
-  local url="${NVM_GIT_URL:-https://github.com/nvm-sh/nvm.git}"
-  if [ "$DRY_RUN" = "1" ]; then
-    info "[dry-run] git clone --depth 1 --branch $NVM_VERSION $url $NVM_DIR"
-  else
-    rm -rf "$NVM_DIR"
-    if ! git clone --depth 1 --branch "$NVM_VERSION" "$url" "$NVM_DIR" >/dev/null 2>&1; then
-      err "克隆 nvm 失败（$url）；可设 NVM_GIT_URL 指向可达镜像后重试"
-      return 1
+  # 显式给的地址优先；cn 模式先试 gitee 镜像，最后才回 github。
+  local urls=()
+  [ -n "${NVM_GIT_URL:-}" ] && urls+=("$NVM_GIT_URL")
+  if [ "$MIRROR" = "cn" ] && [ "${NVM_GIT_URL:-}" != "$NVM_GIT_MIRROR_CN" ]; then
+    urls+=("$NVM_GIT_MIRROR_CN")
+  fi
+  urls+=("https://github.com/nvm-sh/nvm.git")
+
+  local cloned=0 u
+  for u in "${urls[@]}"; do
+    if [ "$DRY_RUN" = "1" ]; then
+      info "[dry-run] git clone --depth 1 --branch $NVM_VERSION $u $NVM_DIR"
+      cloned=1
+      break
     fi
+    rm -rf "$NVM_DIR"
+    info "克隆 nvm：$u"
+    if clone_nvm "$u" "$NVM_DIR"; then cloned=1; break; fi
+    warn "克隆失败，换下一个源"
+  done
+  if [ "$cloned" != "1" ]; then
+    rm -rf "$NVM_DIR"
+    err "克隆 nvm 失败（$NVM_VERSION）；可设 NVM_GIT_URL 指向可达镜像后重试"
+    return 1
   fi
   local body="# nvm（由平台「工具链一键安装」写入）
 export NVM_DIR=$NVM_DIR
@@ -384,10 +447,52 @@ export NVM_NODEJS_ORG_MIRROR=$NODE_SOURCE"
 }
 
 # ---------- Node（经 nvm） ----------
-detect_node() { have_login node; }
+# 同时认「当前 shell 能直接跑」和「login shell 能跑」：平台自检与项目脚本
+# 未必是 login shell，只看 login shell 会把已经软链好的 node 误判成缺失。
+detect_node() { have node || have_login node; }
+
+# write_nvm_profile 写 login shell 的 nvm 加载语句。
+# 里面显式 `nvm use default`：nvm.sh 自己只负责定义命令，不会把默认版本的
+# bin 放进 PATH；少了这一句，`bash -lc` 里依然找不到 node。
+write_nvm_profile() {
+  local body="# nvm（由平台「工具链一键安装」写入）
+export NVM_DIR=$NVM_DIR
+[ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"
+nvm use default --silent >/dev/null 2>&1 || true"
+  body="$body
+export NVM_NODEJS_ORG_MIRROR=$NODE_SOURCE"
+  profile_write "nvm.sh" "$body"
+}
+
+# link_node_bins 把 nvm 默认版本的入口软链到 /usr/local/bin。
+#
+# nvm 的加载语句对「非交互 shell」不可靠（~/.bashrc 里那段会被开头的
+# 非交互判断直接 return 掉），平台自检用 sh 时也读不到 profile.d。
+# /usr/local/bin 本来就在系统 PATH 里，软链之后任何 shell
+# （bash -lc / sh -c / systemd 服务环境）都能找到 node。
+link_node_bins() {
+  local nbin ndir b
+  nbin="$(node_shell 'command -v node' 2>/dev/null | tail -n 1)"
+  if [ -z "$nbin" ] || [ ! -x "$nbin" ]; then
+    warn "没能定位 nvm 默认版本的 node；非 login shell 可能仍看不到它"
+    return 1
+  fi
+  ndir="$(dirname "$nbin")"
+  for b in node npm npx corepack; do
+    [ -e "$ndir/$b" ] && ln -sf "$ndir/$b" "/usr/local/bin/$b"
+  done
+  ok "已软链 node/npm/npx/corepack → /usr/local/bin（任何 shell 可见）"
+}
+
 install_node() {
   detect_nvm || install_nvm || return 1
   if detect_node && [ "$FORCE" != "1" ]; then
+    # 已经装过也要补齐「login shell 可见」与「任何 shell 可见」这两件事：
+    # 早先版本可能只把 node 留在 nvm 的目录里。
+    if [ "$DRY_RUN" != "1" ]; then
+      write_nvm_profile
+      link_node_bins
+    fi
     ok "已安装：node $(bash -lc 'node -v' 2>/dev/null)（nvm 默认版本）"
     return 0
   fi
@@ -402,17 +507,11 @@ install_node() {
     err "nvm install $NODE_VERSION 失败（可设 NVM_NODEJS_ORG_MIRROR 后重试）"
     return 1
   fi
-  # profile.d 里显式 nvm use default：否则 login shell 里未必有 node
-  local shim="# nvm（由平台「工具链一键安装」写入）
-export NVM_DIR=$NVM_DIR
-[ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"
-nvm use default --silent >/dev/null 2>&1 || true"
-  shim="$shim
-export NVM_NODEJS_ORG_MIRROR=$NODE_SOURCE"
-  profile_write "nvm.sh" "$shim"
+  write_nvm_profile
   configure_npm || return 1
+  link_node_bins
+
   ok "node $ver（nvm default，nvm --version $(bash -lc 'nvm --version' 2>/dev/null)）"
-  warn "nvm 装的 node 只在 login shell（平台默认的 bash -lc）可见；项目 Shell 选 sh 时请改用 bash"
 }
 
 # ---------- pnpm ----------
@@ -618,8 +717,8 @@ component_version() {
     java)  have java && java -version 2>&1 | head -1 ;;
     maven) have mvn && mvn -v 2>/dev/null | head -1 ;;
     nvm)   detect_nvm && bash -c ". '$NVM_DIR/nvm.sh' && nvm --version" ;;
-    node)  bash -lc 'command -v node >/dev/null 2>&1 && node -v' ;;
-    pnpm)  bash -lc 'command -v pnpm >/dev/null 2>&1 && pnpm -v' ;;
+    node)  { have node && node -v; } 2>/dev/null || bash -lc 'command -v node >/dev/null 2>&1 && node -v' ;;
+    pnpm)  { have pnpm && pnpm -v; } 2>/dev/null || bash -lc 'command -v pnpm >/dev/null 2>&1 && pnpm -v' ;;
     go)    { have go && go version; } 2>/dev/null || { [ -x "$GO_DIR/bin/go" ] && "$GO_DIR/bin/go" version; } 2>/dev/null ;;
     rust)  { have rustc && rustc --version; } 2>/dev/null || { [ -x "$CARGO_HOME/bin/rustc" ] && "$CARGO_HOME/bin/rustc" --version; } 2>/dev/null ;;
     certbot) have certbot && certbot --version 2>&1 | head -1 ;;
@@ -631,8 +730,8 @@ component_path() { # 这个组件装到哪 / 在哪能找到（写进报告，�
     java)  if [ -n "${JDK_URL:-}" ]; then echo "${JAVA_DIR:-/usr/local/jdk}"; else command -v java 2>/dev/null; fi ;;
     maven) if [ -n "${MAVEN_URL:-}" ]; then echo "${MAVEN_DIR:-/usr/local/maven}"; else command -v mvn 2>/dev/null; fi ;;
     nvm)   echo "$NVM_DIR" ;;
-    node)  bash -lc 'command -v node' 2>/dev/null ;;
-    pnpm)  bash -lc 'command -v pnpm' 2>/dev/null ;;
+    node)  command -v node 2>/dev/null || bash -lc 'command -v node' 2>/dev/null ;;
+    pnpm)  command -v pnpm 2>/dev/null || bash -lc 'command -v pnpm' 2>/dev/null ;;
     go)    echo "$GO_DIR" ;;
     rust)  echo "$CARGO_HOME" ;;
     certbot) command -v certbot 2>/dev/null ;;
@@ -653,6 +752,9 @@ component_install() {
 in_list() { # in_list <needle> <space separated list>
   case " $2 " in *" $1 "*) return 0 ;; *) return 1 ;; esac
 }
+
+# 组件检测/安装都要用 NVM_DIR，所以先把它定下来（见 find_nvm）。
+resolve_nvm_dir
 
 SELECTED=""
 if [ -n "$ONLY" ]; then

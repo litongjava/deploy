@@ -802,11 +802,11 @@ export default {
   'toolchain.hint.maven.off':
     'Maven 由 apt/dnf 安装；官方模式不写 settings.xml，已有 Maven 配置保持原样。填了 Maven 压缩包地址时改为直接下载解压。',
   'toolchain.hint.node.cn':
-    'Node 由 nvm 安装；国内模式从 npmmirror 下载，若编辑过「Node 下载镜像」则用自定义地址；npm registry 同时切到 npmmirror。',
+    'Node 由 nvm 安装；国内模式从 npmmirror 下载，若编辑过「Node 下载镜像」则用自定义地址；npm registry 同时切到 npmmirror。node/npm 会软链到 /usr/local/bin，任何 shell 都能用。',
   'toolchain.hint.node.off':
     'Node 由 nvm 安装；官方模式忽略已保存的 Node 下载镜像，从 nodejs.org 下载；npm registry 使用官方源。',
   'toolchain.hint.nvm.cn':
-    'nvm 通过 git clone 安装，默认从 GitHub 克隆；NVM_GIT_URL 自定义仓库地址优先。国内模式会把 Node 的 npmmirror 下载镜像写进 /etc/profile.d/nvm.sh。',
+    '已安装的 nvm（含 ~/.nvm）会被直接沿用；确实需要安装时国内模式先试 gitee 镜像，再回落 GitHub（NVM_GIT_URL 优先），克隆带超时。Node 的 npmmirror 下载镜像会写进 /etc/profile.d/nvm.sh。',
   'toolchain.hint.nvm.off':
     'nvm 通过 git clone 安装，默认从 GitHub 克隆；NVM_GIT_URL 自定义仓库地址优先。官方模式会把 nodejs.org 的下载地址写进 /etc/profile.d/nvm.sh。',
   'toolchain.hint.pnpm.cn':

@@ -850,11 +850,11 @@ export default {
   'toolchain.hint.maven.off':
     'Maven is installed by apt/dnf. Official mode does not write settings.xml; existing Maven configuration is left untouched. If a Maven tarball URL is set, it is downloaded and extracted directly.',
   'toolchain.hint.node.cn':
-    'Node is installed by nvm. China mirror mode downloads from npmmirror (or the custom "Node download mirror" if one is set); the npm registry is switched to npmmirror as well.',
+    'Node is installed by nvm. China mirror mode downloads from npmmirror (or the custom "Node download mirror" if one is set); the npm registry is switched to npmmirror as well. node/npm are symlinked into /usr/local/bin so every shell can use them.',
   'toolchain.hint.node.off':
     'Node is installed by nvm. Official mode ignores any saved Node download mirror, downloads from nodejs.org, and uses the official npm registry.',
   'toolchain.hint.nvm.cn':
-    'nvm is installed with git clone, from GitHub by default; a custom NVM_GIT_URL repository takes priority. China mirror mode writes the npmmirror Node download mirror into /etc/profile.d/nvm.sh.',
+    'An existing nvm (including ~/.nvm) is reused. If one must be installed, China mirror mode tries the Gitee mirror first, then GitHub (a custom NVM_GIT_URL wins), with a clone timeout. The npmmirror Node download mirror is written into /etc/profile.d/nvm.sh.',
   'toolchain.hint.nvm.off':
     'nvm is installed with git clone, from GitHub by default; a custom NVM_GIT_URL repository takes priority. Official mode writes the nodejs.org download URL into /etc/profile.d/nvm.sh.',
   'toolchain.hint.pnpm.cn':

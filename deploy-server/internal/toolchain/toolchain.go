@@ -126,7 +126,7 @@ var Components = []Component{
 	},
 	{
 		Key: "nvm", Name: "nvm（Node 版本管理）",
-		Note:     "装到 /usr/local/nvm，并写 /etc/profile.d/nvm.sh",
+		Note:     "优先沿用已安装的 nvm（含 ~/.nvm）；没有才装到 /usr/local/nvm，并写 /etc/profile.d/nvm.sh",
 		Estimate: "约 5 MB",
 		// nvm 没有可执行文件，只能按 nvm.sh 的存在判断；除本平台的默认目录外，
 		// 还要认「用户自己按官方脚本装的 ~/.nvm」——否则会出现 node 明明在用、
@@ -139,13 +139,14 @@ var Components = []Component{
 		Fields: []Field{
 			{Key: "NVM_VERSION", Label: "nvm 版本（git tag）", Default: "v0.40.1", Placeholder: "v0.40.1"},
 			{Key: "NVM_GIT_URL", Label: "nvm 仓库地址", Default: "https://github.com/nvm-sh/nvm.git",
-				Placeholder: "https://gitee.com/.../nvm.git", Help: "克隆不动 github 时换成可达镜像。"},
-			{Key: "NVM_DIR", Label: "nvm 安装目录", Default: "/usr/local/nvm", Placeholder: "/usr/local/nvm"},
+				Placeholder: "https://gitee.com/.../nvm.git", Help: "克隆不动 github 时换成可达镜像；国内模式下会先试 gitee 镜像，再回落到这里/官方源。"},
+			{Key: "NVM_DIR", Label: "nvm 安装目录", Default: "",
+				Placeholder: "/usr/local/nvm", Help: "留空表示自动沿用已有安装（含官方脚本装在 ~/.nvm 的那一份），一个都没有时才装到 /usr/local/nvm。"},
 		},
 	},
 	{
 		Key: "node", Name: "Node.js（经 nvm）",
-		Note:     "默认装 LTS；用 nvm 管理，仅 login shell（bash -lc）可见",
+		Note:     "默认装 LTS；用 nvm 管理，node/npm 软链到 /usr/local/bin，任何 shell 可见",
 		Estimate: "约 60 MB",
 		Probes:   []Probe{{Name: "node", Args: []string{"--version"}}},
 		Fields: []Field{

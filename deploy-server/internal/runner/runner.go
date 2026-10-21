@@ -500,16 +500,29 @@ func (e *Executor) Cancel(runID uint) bool {
 	return e.cancelOne(runID)
 }
 
-// cancelOne 只取消这一个 Run 的进程，不碰流水线里的其它 Run。
+// cancelOne 只取消这一个 Run，不碰流水线里的其它 Run。
+//
+// 排队中的 Run 还没有进程句柄（它可能卡在全局并发闸门或同一个项目的串行锁上），
+// 以前这里直接返回 false，于是「排队中」的运行永远取消不掉 —— 前面一条卡死的
+// 安装会把后面所有安装都堵在队列里。现在把 queued 直接落库成 canceled，
+// execute 排到时看到状态已变就跳过。
 func (e *Executor) cancelOne(runID uint) bool {
 	e.mu.Lock()
 	h := e.running[runID]
 	e.mu.Unlock()
-	if h == nil {
-		return false
+	if h != nil {
+		h.kill()
+		return true
 	}
-	h.kill()
-	return true
+	now := time.Now()
+	res := e.st.DB().Model(&store.Run{}).
+		Where("id = ? AND status = ?", runID, store.RunQueued).
+		Updates(map[string]any{
+			"status":      store.RunCanceled,
+			"finished_at": now,
+			"error_msg":   "cancelled by the user",
+		})
+	return res.Error == nil && res.RowsAffected > 0
 }
 
 // CancelProject 取消某个项目下所有正在执行的 Run。
@@ -584,8 +597,12 @@ func (e *Executor) execute(runID uint, req SubmitRequest) {
 	e.sem.acquire()
 	defer e.sem.release()
 
+	// 排队期间用户可能已经取消（Cancel 直接把 queued 落库成 canceled）。
 	var run store.Run
 	if err := e.st.DB().First(&run, runID).Error; err != nil {
+		return
+	}
+	if run.Status != store.RunQueued {
 		return
 	}
 	job, err := e.loadJobByRun(&run)
@@ -600,6 +617,14 @@ func (e *Executor) execute(runID uint, req SubmitRequest) {
 		l := e.jobLock(job.Kind, job.ID)
 		l.Lock()
 		defer l.Unlock()
+		// 等锁期间也可能被取消，拿到锁后再确认一次。
+		var cur store.Run
+		if err := e.st.DB().Select("id", "status").First(&cur, runID).Error; err != nil {
+			return
+		}
+		if cur.Status != store.RunQueued {
+			return
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -647,11 +672,17 @@ func (e *Executor) runPhases(ctx context.Context, h *handle, run store.Run, job 
 	outcome.errMsg = ""
 	started := time.Now()
 
-	// 标记 running
-	e.st.DB().Model(&store.Run{}).Where("id = ?", run.ID).Updates(map[string]any{
-		"status":     store.RunRunning,
-		"started_at": started,
-	})
+	// 标记 running。带 status 条件：如果刚好在「拿到锁」与这里之间被取消，
+	// 不能把它又改回 running（否则取消操作等于没生效）。
+	res := e.st.DB().Model(&store.Run{}).
+		Where("id = ? AND status = ?", run.ID, store.RunQueued).
+		Updates(map[string]any{
+			"status":     store.RunRunning,
+			"started_at": started,
+		})
+	if res.Error != nil || res.RowsAffected == 0 {
+		return execOutcome{status: store.RunCanceled, errMsg: "cancelled by the user"}
+	}
 
 	workdir := ExpandWorkdir(job.Workdir, e.cfg.WebRoot, job.Key, job.Name)
 	actualWorkdir := workdir
