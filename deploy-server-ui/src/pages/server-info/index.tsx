@@ -1,3 +1,4 @@
+import { t } from '@/i18n';
 import { systemApi } from '@/services/system';
 import type { ServerCoreUsage, ServerDisk, ServerInfo } from '@/services/types';
 import { formatBytes } from '@/utils/constants';
@@ -26,7 +27,6 @@ import {
   Typography,
 } from 'antd';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { t } from '@/i18n';
 
 const { Text } = Typography;
 
@@ -42,9 +42,9 @@ function formatUptime(sec?: number | null): string {
   const days = Math.floor(sec / 86400);
   const hours = Math.floor((sec % 86400) / 3600);
   const mins = Math.floor((sec % 3600) / 60);
-  if (days > 0) return t('{days} 天 {hours} 小时', { days: days, hours: hours });
-  if (hours > 0) return t('{hours} 小时 {mins} 分', { hours: hours, mins: mins });
-  return t('{mins} 分', { mins: mins });
+  if (days > 0) return t('server.durationDaysHours', { days: days, hours: hours });
+  if (hours > 0) return t('server.durationHoursMins', { hours: hours, mins: mins });
+  return t('server.durationMins', { mins: mins });
 }
 
 /** 使用率 → 进度条状态。绿→橙→红，阈值与后端告警口径统一。 */
@@ -77,15 +77,13 @@ const CoreUsageGrid: React.FC<{ cores?: ServerCoreUsage[]; available: boolean }>
   if (list.length === 0) {
     return (
       <Text type="secondary" style={{ fontSize: 12 }}>
-        {available ? t('当前平台未提供逐核使用率') : t('正在采样…')}
+        {available ? t('server.perCoreUsageIsNot') : t('server.samplingNow')}
       </Text>
     );
   }
 
   // 按使用率降序取最忙的几个；序号相同的稳定顺序，避免每 5 秒重排导致画面抖动。
-  const sorted = [...list].sort(
-    (a, b) => b.usagePercent - a.usagePercent || a.index - b.index,
-  );
+  const sorted = [...list].sort((a, b) => b.usagePercent - a.usagePercent || a.index - b.index);
   const shown = sorted.slice(0, MAX_CORE_CELLS);
   const hidden = list.length - shown.length;
   const busiest = sorted[0];
@@ -94,9 +92,13 @@ const CoreUsageGrid: React.FC<{ cores?: ServerCoreUsage[]; available: boolean }>
     <Space direction="vertical" size={6} style={{ width: '100%' }}>
       <Space size={6} wrap>
         <Text strong style={{ fontSize: 12 }}>
-           {t('各核心使用率')} </Text>
+          {t('server.perCoreUsage')}{' '}
+        </Text>
         <Text type="secondary" style={{ fontSize: 12 }}>
-          {t('按当前占用排序')}{hidden > 0 ? t('，只显示最忙的 {length} 个（共 {p1} 核）', { length: shown.length, p1: list.length }) : ''}
+          {t('server.sortedByCurrentUsage')}
+          {hidden > 0
+            ? t('server.showingOnlyTheBusiestOf', { length: shown.length, p1: list.length })
+            : ''}
         </Text>
       </Space>
       <div
@@ -109,7 +111,11 @@ const CoreUsageGrid: React.FC<{ cores?: ServerCoreUsage[]; available: boolean }>
         {shown.map((c) => (
           <Tooltip
             key={c.index}
-            title={t('{indexLabel}：本窗口忙 {p1}s / 共 {p2}s', { indexLabel: c.indexLabel, p1: c.busySec.toFixed(2), p2: c.totalSec.toFixed(2) })}
+            title={t('server.windowBusy', {
+              indexLabel: c.indexLabel,
+              p1: c.busySec.toFixed(2),
+              p2: c.totalSec.toFixed(2),
+            })}
           >
             <div style={{ minWidth: 0 }}>
               <div
@@ -137,7 +143,10 @@ const CoreUsageGrid: React.FC<{ cores?: ServerCoreUsage[]; available: boolean }>
       </div>
       {busiest && busiest.usagePercent >= DANGER_PERCENT ? (
         <Text type="danger" style={{ fontSize: 12 }}>
-          {t('{label} 当前占用 {percent}%，已接近满载', { label: busiest.indexLabel, percent: busiest.usagePercent })}
+          {t('server.nearlySaturated', {
+            label: busiest.indexLabel,
+            percent: busiest.usagePercent,
+          })}
         </Text>
       ) : null}
     </Space>
@@ -182,18 +191,22 @@ const ServerInfoPage: React.FC = () => {
     <Space key="actions" size="middle">
       <Space size={4}>
         <Text type="secondary" style={{ fontSize: 12 }}>
-           {t('自动刷新')} </Text>
+          {t('server.autoRefresh')}{' '}
+        </Text>
         <Switch size="small" checked={autoRefresh} onChange={setAutoRefresh} />
       </Space>
       <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
-         {t('刷新')} </Button>
+        {t('common.refresh')}{' '}
+      </Button>
     </Space>
   );
 
   return (
     <PageContainer
-      title={t('服务器')}
-      subTitle={info ? `${info.hostname || '-'} · ${info.osName || `${info.os}/${info.arch}`}` : undefined}
+      title={t('server.server')}
+      subTitle={
+        info ? `${info.hostname || '-'} · ${info.osName || `${info.os}/${info.arch}`}` : undefined
+      }
       extra={refreshButton}
     >
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -201,7 +214,7 @@ const ServerInfoPage: React.FC = () => {
           <Alert
             type="warning"
             showIcon
-            message={t('部分信息采集失败')}
+            message={t('server.someInformationCouldNotBe')}
             description={
               <ul style={{ margin: 0, paddingLeft: 18, listStyle: 'disc' }}>
                 {(info?.warnings || []).map((w) => (
@@ -217,21 +230,23 @@ const ServerInfoPage: React.FC = () => {
           title={
             <Space size={6}>
               <CloudServerOutlined />
-              {t('主机信息')}
+              {t('server.hostInformation')}
             </Space>
           }
           loading={loading && !info}
           extra={
             info?.time ? (
               <Text type="secondary" style={{ fontSize: 12 }}>
-                {t('数据时间 {time}', { time: new Date(info.time).toLocaleTimeString() })}
+                {t('server.dataTime', { time: new Date(info.time).toLocaleTimeString() })}
               </Text>
             ) : null
           }
         >
           <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} bordered>
-            <Descriptions.Item label={t('主机名')}>{info?.hostname || '-'}</Descriptions.Item>
-            <Descriptions.Item label={t('操作系统')}>
+            <Descriptions.Item label={t('common.hostname')}>
+              {info?.hostname || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('common.operatingSystem')}>
               {info?.osName || '-'}
               {info?.os ? (
                 <Text type="secondary" style={{ marginLeft: 6, fontSize: 12 }}>
@@ -239,24 +254,32 @@ const ServerInfoPage: React.FC = () => {
                 </Text>
               ) : null}
             </Descriptions.Item>
-            <Descriptions.Item label={t('内核版本')}>{info?.kernel || '-'}</Descriptions.Item>
-            <Descriptions.Item label={t('运行时长')}>
-              <Tooltip title={t('服务器操作系统的连续运行时间（不是本服务的运行时间）')}>
+            <Descriptions.Item label={t('server.kernelVersion')}>
+              {info?.kernel || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('server.duration')}>
+              <Tooltip title={t('server.continuousUptimeOfTheServer')}>
                 <span>{formatUptime(info?.uptimeSec)}</span>
               </Tooltip>
             </Descriptions.Item>
-            <Descriptions.Item label={t('平均负载')}>
+            <Descriptions.Item label={t('server.loadAverage')}>
               {info?.load?.available ? (
                 <Space size={10}>
-                  <span>{t('1 分钟')} {info.load.avg1.toFixed(2)}</span>
-                  <span>{t('5 分钟')} {info.load.avg5.toFixed(2)}</span>
-                  <span>{t('15 分钟')} {info.load.avg15.toFixed(2)}</span>
+                  <span>
+                    {t('server.loadAvg1m')} {info.load.avg1.toFixed(2)}
+                  </span>
+                  <span>
+                    {t('server.loadAvg5m')} {info.load.avg5.toFixed(2)}
+                  </span>
+                  <span>
+                    {t('server.loadAvg15m')} {info.load.avg15.toFixed(2)}
+                  </span>
                 </Space>
               ) : (
-                <Text type="secondary">{t('当前系统不提供（Windows 无此概念）')}</Text>
+                <Text type="secondary">{t('server.notProvidedByThisSystem')}</Text>
               )}
             </Descriptions.Item>
-            <Descriptions.Item label={t('处理器')}>
+            <Descriptions.Item label={t('server.cpu')}>
               {cpu?.model || '-'}
               {cpu?.mhz ? (
                 <Text type="secondary" style={{ marginLeft: 6, fontSize: 12 }}>
@@ -290,11 +313,18 @@ const ServerInfoPage: React.FC = () => {
                       format={(p) => `${p}%`}
                     />
                   ) : (
-                    <Progress type="dashboard" percent={0} size={124} status="normal" format={() => t('采样中')} />
+                    <Progress
+                      type="dashboard"
+                      percent={0}
+                      size={124}
+                      status="normal"
+                      format={() => t('server.sampling')}
+                    />
                   )}
                   <div>
                     <Text type="secondary" style={{ fontSize: 12 }}>
-                       {t('整机使用率')} </Text>
+                      {t('server.overallUsage')}{' '}
+                    </Text>
                   </div>
                 </Col>
                 <Col flex="auto" style={{ minWidth: 0 }}>
@@ -304,28 +334,32 @@ const ServerInfoPage: React.FC = () => {
               <Row gutter={16} style={{ marginTop: 12 }} align="bottom">
                 <Col flex="none">
                   <Statistic
-                    title={t('逻辑核心')}
+                    title={t('server.logicalCores')}
                     value={cpu?.cores || 0}
                     suffix={
-                      cpu?.physicalCores ? t('（物理 {physicalCores} 核）', { physicalCores: cpu.physicalCores }) : undefined
+                      cpu?.physicalCores
+                        ? t('server.physicalCores', { physicalCores: cpu.physicalCores })
+                        : undefined
                     }
                   />
                 </Col>
                 <Col flex="auto" style={{ minWidth: 0 }}>
                   <Space direction="vertical" size={4} style={{ width: '100%' }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>
-{t('使用率按最近 {sec} 秒的采样窗口计算，不是开机至今的平均值；服务刚启动时会短暂显示「采样中」。', {
+                      {t('server.usageWindowHint', {
                         sec: cpu?.sampleWindowSec || 0,
                       })}
                     </Text>
                     {cpu?.available ? (
                       <Text type="secondary" style={{ fontSize: 12 }}>
-{t('窗口内各状态累计（所有核心求和）：用户 {user}s · 系统 {system}s · 空闲 {idle}s', {
+                        {t('server.cpuTimeTotals', {
                           user: cpu.userSec.toFixed(1),
                           system: cpu.systemSec.toFixed(1),
                           idle: cpu.idleSec.toFixed(1),
                         })}
-                        {cpu.iowaitSec > 0 ? t(' · IO 等待 {p0}s', { p0: cpu.iowaitSec.toFixed(1) }) : ''}
+                        {cpu.iowaitSec > 0
+                          ? t('server.ioWait', { p0: cpu.iowaitSec.toFixed(1) })
+                          : ''}
                       </Text>
                     ) : null}
                   </Space>
@@ -339,7 +373,7 @@ const ServerInfoPage: React.FC = () => {
               title={
                 <Space size={6}>
                   <DatabaseOutlined />
-                  {t('内存')}
+                  {t('server.memory')}
                 </Space>
               }
               loading={loading && !info}
@@ -351,27 +385,30 @@ const ServerInfoPage: React.FC = () => {
               />
               <Row gutter={16} style={{ marginTop: 16 }}>
                 <Col span={8}>
-                  <Statistic title={t('总量')} value={formatBytes(mem?.totalBytes)} />
+                  <Statistic title={t('server.total')} value={formatBytes(mem?.totalBytes)} />
                 </Col>
                 <Col span={8}>
                   <Statistic
-                    title={t('已用')}
+                    title={t('server.used')}
                     value={formatBytes(mem?.usedBytes)}
                     valueStyle={{ color: usageStroke(mem?.usagePercent || 0) }}
                   />
                 </Col>
                 <Col span={8}>
-                  <Statistic title={t('可用')} value={formatBytes(mem?.availableBytes)} />
+                  <Statistic
+                    title={t('common.available')}
+                    value={formatBytes(mem?.availableBytes)}
+                  />
                 </Col>
               </Row>
               <Descriptions size="small" column={1} style={{ marginTop: 12 }}>
-                <Descriptions.Item label={t('空闲（不含缓存）')}>
+                <Descriptions.Item label={t('server.freeExcludingCache')}>
                   {formatBytes(mem?.freeBytes)}
                 </Descriptions.Item>
-                <Descriptions.Item label={mem?.swapLabel || t('交换分区')}>
+                <Descriptions.Item label={mem?.swapLabel || t('server.swap')}>
                   {mem?.swapTotalBytes
                     ? `${formatBytes(mem.swapUsedBytes)} / ${formatBytes(mem.swapTotalBytes)}`
-                    : t('未启用')}
+                    : t('common.disabled')}
                 </Descriptions.Item>
               </Descriptions>
             </Card>
@@ -383,14 +420,14 @@ const ServerInfoPage: React.FC = () => {
           title={
             <Space size={6}>
               <HddOutlined />
-              {t('磁盘')}
+              {t('server.disk')}
             </Space>
           }
           loading={loading && !info}
           extra={
             info?.disks?.length ? (
               <Text type="secondary" style={{ fontSize: 12 }}>
-                {t('共 {count} 个文件系统', { count: info.disks.length })}
+                {t('server.filesystems', { count: info.disks.length })}
               </Text>
             ) : null
           }
@@ -401,11 +438,11 @@ const ServerInfoPage: React.FC = () => {
             pagination={false}
             dataSource={info?.disks || []}
             locale={{
-              emptyText: <Empty description={t('没有识别到磁盘（容器环境可能看不到宿主机文件系统）')} />,
+              emptyText: <Empty description={t('server.noDisksDetectedContainersMay')} />,
             }}
             columns={[
               {
-                title: t('挂载点 / 卷'),
+                title: t('server.mountPointVolume'),
                 dataIndex: 'path',
                 width: 180,
                 render: (v: string, row) => (
@@ -421,7 +458,7 @@ const ServerInfoPage: React.FC = () => {
                 ),
               },
               {
-                title: t('使用率'),
+                title: t('server.usage'),
                 dataIndex: 'usagePercent',
                 width: 260,
                 render: (v: number, row) => (
@@ -433,12 +470,14 @@ const ServerInfoPage: React.FC = () => {
                       strokeColor={usageStroke(v)}
                       status={usageStatus(v)}
                     />
-                    {row.status === 'warn' ? <Tag color="warning">{t('空间不足')}</Tag> : null}
+                    {row.status === 'warn' ? (
+                      <Tag color="warning">{t('server.notEnoughSpace')}</Tag>
+                    ) : null}
                   </Space>
                 ),
               },
               {
-                title: t('已用 / 总量'),
+                title: t('server.usedTotal'),
                 dataIndex: 'usedBytes',
                 width: 200,
                 render: (_: number, row) => (
@@ -448,7 +487,7 @@ const ServerInfoPage: React.FC = () => {
                 ),
               },
               {
-                title: t('可用'),
+                title: t('common.available'),
                 dataIndex: 'freeBytes',
                 width: 120,
                 render: (v: number) => formatBytes(v),

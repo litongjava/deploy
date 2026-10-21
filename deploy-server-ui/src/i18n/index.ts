@@ -1,5 +1,5 @@
-import zhCN from '../locales/zh-CN';
 import enUS from '../locales/en-US';
+import zhCN from '../locales/zh-CN';
 
 /**
  * 极简的界面文案国际化。
@@ -9,8 +9,10 @@ import enUS from '../locales/en-US';
  * 当成插值参数解析、在缺参时抛错。这里改成「查字典 + 无参时原样返回」的朴素实现，
  * 对这类文案天然安全，也省掉了为转义 ICU 语法而生的样板。
  *
- * **词条 key 就是中文原文**（模板串里直接写 `{参数名}` 占位）。中文侧因此几乎不用维护：
- * 查不到就用 key 本身，天然就是中文。真正要写的是 `en-US.ts`。
+ * **词条 key 是语义化的点分层 id**（如 `common.cancel`、`toolchain.hint.nvm.cn`），
+ * 中文在 `zh-CN.ts`、英文在 `en-US.ts` 各维护一份。两个文件都必须包含全部 key，
+ * 否则查找失败会直接显示 key 本身。模板串里用 `{参数名}` 占位；`${WORKDIR}` 这类
+ * shell 变量不受影响（这里只匹配单层花括号）。
  *
  * 切换语言后**整页刷新**（和 umi locale 插件默认行为一致）：这样连模块级常量、
  * antd 的 ConfigProvider、路由菜单名都会一起切过去，不会出现半中半英。
@@ -20,11 +22,6 @@ export type Lang = 'zh-CN' | 'en-US';
 
 /** 与 umi locale 插件共用同一个 localStorage key，两套系统读的是同一份选择 */
 const STORAGE_KEY = 'umi_locale';
-
-export const LANG_OPTIONS: { label: string; value: Lang }[] = [
-  { label: '简体中文', value: 'zh-CN' },
-  { label: 'English', value: 'en-US' },
-];
 
 const DICTS: Record<Lang, Record<string, string>> = {
   'zh-CN': zhCN as Record<string, string>,
@@ -70,7 +67,7 @@ export type TParams = Record<string, unknown>;
 /**
  * 取文案。
  *
- * @param key 中文原文（可含 `{参数名}` 占位）
+ * @param key 语义化词条 key（如 `common.cancel`，可含 `{参数名}` 占位）
  * @param params 插值参数；**不传就不做任何替换**，因此 `${WORKDIR}` 这类字面量会原样保留
  */
 export function t(key: string, params?: TParams): string {
@@ -81,6 +78,17 @@ export function t(key: string, params?: TParams): string {
     return v === undefined || v === null ? match : String(v);
   });
 }
+
+/**
+ * 语言切换下拉的选项。
+ *
+ * 语言名用自身语言显示（autonym）：英文界面里的中文选项仍是「简体中文」。
+ * 放在 `t` 之后定义，避免模块初始化时访问尚未初始化的 DICTS / currentLang。
+ */
+export const LANG_OPTIONS: { label: string; value: Lang }[] = [
+  { label: t('locale.zhCN'), value: 'zh-CN' },
+  { label: t('locale.enUS'), value: 'en-US' },
+];
 
 /** 组件里取 t；同时拿到当前语言与切换函数 */
 export function useI18n() {

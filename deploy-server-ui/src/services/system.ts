@@ -1,5 +1,5 @@
-import { delData, getData, postData, putData } from './api';
-import { API_BASE } from './api';
+import { t } from '@/i18n';
+import { API_BASE, delData, getData, postData, putData } from './api';
 import { getToken } from './authStore';
 import type {
   Credential,
@@ -18,7 +18,6 @@ import type {
   ToolchainInstallResult,
   ToolchainList,
 } from './types';
-import { t } from '@/i18n';
 
 export const systemApi = {
   doctor() {
@@ -101,7 +100,7 @@ export async function downloadToolchainScript() {
     headers: token ? { Authorization: token } : undefined,
   });
   if (!res.ok) {
-    throw new Error(t('下载失败（HTTP {status}）', { status: res.status }));
+    throw new Error(t('common.downloadFailedHttp', { status: res.status }));
   }
   return res.blob();
 }
@@ -112,7 +111,7 @@ export async function downloadMiddlewareScript() {
   const res = await fetch(`${API_BASE}/system/middleware/script`, {
     headers: token ? { Authorization: token } : undefined,
   });
-  if (!res.ok) throw new Error(t('下载失败（HTTP {status}）', { status: res.status }));
+  if (!res.ok) throw new Error(t('common.downloadFailedHttp', { status: res.status }));
   return res.blob();
 }
 

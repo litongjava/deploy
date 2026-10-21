@@ -1,3 +1,4 @@
+import { t } from '@/i18n';
 import { taskApi } from '@/services/task';
 import type { TaskBrief } from '@/services/types';
 import { RUN_STATUS_META, formatTime } from '@/utils/constants';
@@ -7,7 +8,6 @@ import { PageContainer, ProTable } from '@ant-design/pro-components';
 import { history, useAccess } from '@umijs/max';
 import { Button, Popconfirm, Segmented, Space, Tag, message } from 'antd';
 import React, { useRef, useState } from 'react';
-import { t } from '@/i18n';
 
 /**
  * 任务列表。
@@ -25,7 +25,7 @@ const Tasks: React.FC = () => {
   const runTask = async (key: string) => {
     try {
       const res = await taskApi.run(key);
-      messageApi.success(t('已执行任务 #{buildNumber}', { buildNumber: res.buildNumber }));
+      messageApi.success(t('task.taskExecuted', { buildNumber: res.buildNumber }));
       history.push(`/runs/${res.runId}`);
     } catch (e) {
       // 统一错误提示
@@ -35,7 +35,7 @@ const Tasks: React.FC = () => {
   const toggleArchive = async (key: string, archived: boolean) => {
     try {
       await taskApi.archive(key, archived);
-      messageApi.success(archived ? t('已归档') : t('已取消归档'));
+      messageApi.success(archived ? t('common.archived') : t('common.unarchivedSuccess'));
       actionRef.current?.reload();
     } catch (e) {
       // 统一错误提示
@@ -45,7 +45,7 @@ const Tasks: React.FC = () => {
   const removeTask = async (key: string) => {
     try {
       await taskApi.remove(key);
-      messageApi.success(t('已删除'));
+      messageApi.success(t('common.deleted'));
       actionRef.current?.reload();
     } catch (e) {
       // 统一错误提示
@@ -54,13 +54,13 @@ const Tasks: React.FC = () => {
 
   const columns: ProColumns<TaskBrief>[] = [
     {
-      title: t('任务'),
+      title: t('common.task'),
       dataIndex: 'keyword',
       hideInTable: true,
-      fieldProps: { placeholder: t('按 key 或名称搜索') },
+      fieldProps: { placeholder: t('common.searchByKeyOrName') },
     },
     {
-      title: t('名称'),
+      title: t('common.name'),
       dataIndex: 'name',
       hideInSearch: true,
       render: (_, row) => (
@@ -71,35 +71,35 @@ const Tasks: React.FC = () => {
       ),
     },
     {
-      title: t('工作目录'),
+      title: t('common.workingDirectory'),
       dataIndex: 'workdir',
       hideInSearch: true,
       ellipsis: true,
       render: (_, row) => row.workdir,
     },
     {
-      title: t('步骤数'),
+      title: t('task.stepCountColumn'),
       dataIndex: 'stepCount',
       hideInSearch: true,
       width: 90,
-      render: (_, row) => t('{stepCount} 步', { stepCount: row.stepCount }),
+      render: (_, row) => t('task.stepCount', { stepCount: row.stepCount }),
     },
     {
-      title: t('归属'),
+      title: t('common.owner'),
       dataIndex: 'ownerName',
       hideInSearch: true,
       width: 110,
       render: (_, row) => row.ownerName || '-',
     },
     {
-      title: t('累计运行'),
+      title: t('common.totalRuns'),
       dataIndex: 'runCount',
       hideInSearch: true,
       width: 100,
-      render: (_, row) => t('{runCount} 次', { runCount: row.runCount }),
+      render: (_, row) => t('task.runCount', { runCount: row.runCount }),
     },
     {
-      title: t('上次运行'),
+      title: t('common.lastRun'),
       dataIndex: 'lastRunAt',
       hideInSearch: true,
       width: 210,
@@ -112,19 +112,23 @@ const Tasks: React.FC = () => {
             <span style={{ fontSize: 12 }}>{formatTime(row.lastRunAt)}</span>
           </Space>
         ) : (
-          <span style={{ color: '#999' }}>{t('从未运行')}</span>
+          <span style={{ color: '#999' }}>{t('common.neverRun')}</span>
         ),
     },
     {
-      title: t('状态'),
+      title: t('common.status'),
       dataIndex: 'archived',
       hideInSearch: true,
       width: 90,
       render: (_, row) =>
-        row.archived ? <Tag color="default">{t('已归档')}</Tag> : <Tag color="green">{t('正常')}</Tag>,
+        row.archived ? (
+          <Tag color="default">{t('common.archived')}</Tag>
+        ) : (
+          <Tag color="green">{t('common.active')}</Tag>
+        ),
     },
     {
-      title: t('操作'),
+      title: t('common.actions'),
       valueType: 'option',
       width: 200,
       fixed: 'right',
@@ -139,29 +143,32 @@ const Tasks: React.FC = () => {
             disabled={row.archived}
             onClick={() => runTask(row.key)}
           >
-             {t('执行')} </Button>,
+            {t('common.execute')}{' '}
+          </Button>,
           <a key="detail" onClick={() => history.push(`/tasks/${row.key}`)}>
-             {t('详情')} </a>,
+            {t('common.details')}{' '}
+          </a>,
           canOperate ? (
             <a key="edit" onClick={() => history.push(`/tasks/${row.key}/edit`)}>
-               {t('编辑')} </a>
+              {t('common.edit')}{' '}
+            </a>
           ) : null,
           canOperate ? (
             <a key="archive" onClick={() => toggleArchive(row.key, !row.archived)}>
-              {row.archived ? t('取消归档') : t('归档')}
+              {row.archived ? t('common.unarchive') : t('common.archive')}
             </a>
           ) : null,
           canOperate ? (
             <Popconfirm
               key="delete"
-              title={t('删除任务')}
-              description={t('将连带删除运行历史与日志文件，且不可恢复。确认删除 {key}？', { key: row.key })}
-              okText={t('删除')}
+              title={t('task.deleteTask')}
+              description={t('common.deleteProjectConfirm', { key: row.key })}
+              okText={t('common.delete')}
               okButtonProps={{ danger: true }}
-              cancelText={t('取消')}
+              cancelText={t('common.cancel')}
               onConfirm={() => removeTask(row.key)}
             >
-              <a style={{ color: '#ff4d4f' }}>{t('删除')}</a>
+              <a style={{ color: '#ff4d4f' }}>{t('common.delete')}</a>
             </Popconfirm>
           ) : null,
         ];
@@ -170,7 +177,7 @@ const Tasks: React.FC = () => {
   ];
 
   return (
-    <PageContainer title={t('任务')}>
+    <PageContainer title={t('common.task')}>
       {contextHolder}
       <ProTable<TaskBrief>
         rowKey="key"
@@ -202,9 +209,9 @@ const Tasks: React.FC = () => {
                 actionRef.current?.reload();
               }}
               options={[
-                { label: t('未归档'), value: 'active' },
-                { label: t('已归档'), value: 'archived' },
-                { label: t('全部'), value: 'all' },
+                { label: t('common.unarchived'), value: 'active' },
+                { label: t('common.archived'), value: 'archived' },
+                { label: t('common.all'), value: 'all' },
               ]}
             />,
             <Button
@@ -215,14 +222,16 @@ const Tasks: React.FC = () => {
                 actionRef.current?.reload();
               }}
             >
-               {t('只看我的')} </Button>,
+              {t('common.mineOnly')}{' '}
+            </Button>,
             <Button
               key="create"
               type="primary"
               icon={<PlusOutlined />}
               onClick={() => history.push('/tasks/new')}
             >
-               {t('新建任务')} </Button>,
+              {t('task.newTask')}{' '}
+            </Button>,
           ],
         }}
       />

@@ -1,13 +1,11 @@
+import LanguageSwitcher from '@/components/LanguageSwitcher';
+import { t } from '@/i18n';
 import { authApi } from '@/services/auth';
 import { tokenApi } from '@/services/token';
 import type { ApiToken, ApiTokenCreated } from '@/services/types';
 import { formatTime } from '@/utils/constants';
 import { CopyOutlined, PlusOutlined } from '@ant-design/icons';
-import {
-  PageContainer,
-  ProForm,
-  ProFormText,
-} from '@ant-design/pro-components';
+import { PageContainer, ProForm, ProFormText } from '@ant-design/pro-components';
 import { useModel } from '@umijs/max';
 import {
   Alert,
@@ -27,8 +25,6 @@ import {
   message,
 } from 'antd';
 import React, { useCallback, useEffect, useState } from 'react';
-import { t } from '@/i18n';
-import LanguageSwitcher from '@/components/LanguageSwitcher';
 
 const { Text } = Typography;
 
@@ -61,12 +57,12 @@ const Profile: React.FC = () => {
     loadTokens();
   }, [loadTokens]);
 
-  const copy = async (text: string, tip = t('已复制')) => {
+  const copy = async (text: string, tip = t('common.copied')) => {
     try {
       await navigator.clipboard.writeText(text);
       messageApi.success(tip);
     } catch (e) {
-      messageApi.error(t('复制失败，请手动选择文本'));
+      messageApi.error(t('common.copyFailed'));
     }
   };
 
@@ -77,7 +73,7 @@ const Profile: React.FC = () => {
         oldPassword: values.oldPassword,
         newPassword: values.newPassword,
       });
-      messageApi.success(t('密码修改成功'));
+      messageApi.success(t('settings.profile.passwordChanged'));
       pwdForm.resetFields();
       // 强制改密标记已在服务端清掉，刷新一下当前用户
       const me = await initialState?.fetchUserInfo?.();
@@ -110,7 +106,7 @@ const Profile: React.FC = () => {
   const removeToken = async (id: number) => {
     try {
       await tokenApi.remove(id);
-      messageApi.success(t('已删除'));
+      messageApi.success(t('common.deleted'));
       loadTokens();
     } catch (e) {
       // 统一提示
@@ -118,7 +114,7 @@ const Profile: React.FC = () => {
   };
 
   return (
-    <PageContainer title={t('个人设置')}>
+    <PageContainer title={t('common.profile')}>
       {contextHolder}
 
       {currentUser?.mustChangePassword ? (
@@ -126,43 +122,53 @@ const Profile: React.FC = () => {
           style={{ marginBottom: 16 }}
           type="warning"
           showIcon
-          message={t('请先修改初始密码')}
-          description={t('管理员要求首次登录后修改密码，修改完成前部分功能会被限制。')}
+          message={t('settings.profile.pleaseChangeTheInitialPassword')}
+          description={t('settings.profile.mustChangePassword')}
         />
       ) : null}
 
-      <Card title={t('账号信息')} style={{ marginBottom: 16 }}>
+      <Card title={t('settings.profile.accountInformation')} style={{ marginBottom: 16 }}>
         <Descriptions column={{ xs: 1, sm: 2 }} size="small" bordered>
-          <Descriptions.Item label={t('用户名')}>{currentUser?.username || '-'}</Descriptions.Item>
-          <Descriptions.Item label={t('昵称')}>{currentUser?.nickname || '-'}</Descriptions.Item>
-          <Descriptions.Item label={t('角色')}>
-            {currentUser?.role === 'admin' ? <Tag color="gold">{t('管理员')}</Tag> : <Tag>{t('普通用户')}</Tag>}
+          <Descriptions.Item label={t('common.username')}>
+            {currentUser?.username || '-'}
           </Descriptions.Item>
-          <Descriptions.Item label={t('邮箱')}>{currentUser?.email || '-'}</Descriptions.Item>
-          <Descriptions.Item label={t('最近登录')}>
+          <Descriptions.Item label={t('common.nickname')}>
+            {currentUser?.nickname || '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label={t('common.role')}>
+            {currentUser?.role === 'admin' ? (
+              <Tag color="gold">{t('common.administrator')}</Tag>
+            ) : (
+              <Tag>{t('common.user')}</Tag>
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item label={t('common.email')}>
+            {currentUser?.email || '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label={t('common.lastSignIn')}>
             {formatTime(currentUser?.lastLoginAt)}
           </Descriptions.Item>
-          <Descriptions.Item label={t('创建时间')}>
+          <Descriptions.Item label={t('common.createdAt')}>
             {formatTime(currentUser?.createdAt)}
           </Descriptions.Item>
         </Descriptions>
       </Card>
 
-      <Card title={t('界面语言')} style={{ marginBottom: 16 }}>
+      <Card title={t('settings.profile.interfaceLanguage')} style={{ marginBottom: 16 }}>
         <Space direction="vertical" size={8}>
           <LanguageSwitcher />
           <Text type="secondary" style={{ fontSize: 12 }}>
-            {t('切换后页面会自动刷新，选择保存在本机浏览器中。')}
+            {t('settings.profile.pageReloadsAfterSwitchingThe')}
           </Text>
         </Space>
       </Card>
 
-      <Card title={t('修改密码')} style={{ marginBottom: 16 }}>
+      <Card title={t('settings.profile.changePassword')} style={{ marginBottom: 16 }}>
         <ProForm
           form={pwdForm}
           style={{ maxWidth: 420 }}
           submitter={{
-            searchConfig: { submitText: t('修改密码') },
+            searchConfig: { submitText: t('settings.profile.changePassword') },
             resetButtonProps: { style: { display: 'none' } },
             submitButtonProps: { loading: saving },
           }}
@@ -173,30 +179,30 @@ const Profile: React.FC = () => {
         >
           <ProFormText.Password
             name="oldPassword"
-            label={t('当前密码')}
-            rules={[{ required: true, message: t('请输入当前密码') }]}
+            label={t('settings.profile.currentPassword')}
+            rules={[{ required: true, message: t('settings.profile.enterTheCurrentPassword') }]}
           />
           <ProFormText.Password
             name="newPassword"
-            label={t('新密码')}
-            tooltip={t('长度至少 8 位')}
+            label={t('common.newPassword')}
+            tooltip={t('settings.profile.least8Characters')}
             rules={[
-              { required: true, message: t('请输入新密码') },
-              { min: 8, message: t('新密码长度至少 8 位') },
+              { required: true, message: t('settings.profile.enterTheNewPassword') },
+              { min: 8, message: t('settings.profile.newPasswordMustBeAt') },
             ]}
           />
           <ProFormText.Password
             name="confirmPassword"
-            label={t('确认新密码')}
+            label={t('settings.profile.confirmNewPassword')}
             dependencies={['newPassword']}
             rules={[
-              { required: true, message: t('请再次输入新密码') },
+              { required: true, message: t('settings.profile.enterTheNewPasswordAgain') },
               ({ getFieldValue }) => ({
                 validator(_, value) {
                   if (!value || getFieldValue('newPassword') === value) {
                     return Promise.resolve();
                   }
-                  return Promise.reject(new Error(t('两次输入的密码不一致')));
+                  return Promise.reject(new Error(t('common.twoPasswordsDoNotMatch')));
                 },
               }),
             ]}
@@ -208,18 +214,19 @@ const Profile: React.FC = () => {
         title="API Token"
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-             {t('新建 Token')} </Button>
+            {t('settings.profile.newToken')}{' '}
+          </Button>
         }
       >
         <Alert
           style={{ marginBottom: 12 }}
           type="info"
           showIcon
-          message={t('用于 CLI / 第三方调用 REST API')}
+          message={t('settings.profile.tokenUsageHint')}
           description={
             <span>
-              {t('请求头携带')} <Text code>Authorization: dk_xxx</Text>
-              {t('，与登录 JWT 等价；服务端只保存哈希，明文仅在创建时显示一次。')}
+              {t('settings.profile.sendInTheRequestHeader')} <Text code>Authorization: dk_xxx</Text>
+              {t('settings.profile.equivalentToTheLoginJWT')}
             </span>
           }
         />
@@ -229,33 +236,38 @@ const Profile: React.FC = () => {
           loading={loading}
           pagination={false}
           dataSource={tokens}
-          locale={{ emptyText: <Empty description={t('还没有 API Token')} /> }}
+          locale={{ emptyText: <Empty description={t('settings.profile.noAPITokenYet')} /> }}
           columns={[
-            { title: t('名称'), dataIndex: 'name' },
-            { title: t('前缀'), dataIndex: 'prefix', render: (v) => <Text code>{v}…</Text> },
+            { title: t('common.name'), dataIndex: 'name' },
             {
-              title: t('过期时间'),
+              title: t('common.prefix'),
+              dataIndex: 'prefix',
+              render: (v) => <Text code>{v}…</Text>,
+            },
+            {
+              title: t('common.expiresAt'),
               dataIndex: 'expiresAt',
-              render: (v) => (v ? formatTime(v) : t('永不过期')),
+              render: (v) => (v ? formatTime(v) : t('common.neverExpires')),
             },
             {
-              title: t('最后使用'),
+              title: t('common.lastUsed'),
               dataIndex: 'lastUsedAt',
-              render: (v) => (v ? formatTime(v) : <Text type="secondary">{t('从未使用')}</Text>),
+              render: (v) =>
+                v ? formatTime(v) : <Text type="secondary">{t('common.neverUsed')}</Text>,
             },
-            { title: t('创建时间'), dataIndex: 'createdAt', render: (v) => formatTime(v) },
+            { title: t('common.createdAt'), dataIndex: 'createdAt', render: (v) => formatTime(v) },
             {
-              title: t('操作'),
+              title: t('common.actions'),
               width: 90,
               render: (_, row) => (
                 <Popconfirm
-                  title={t('删除后使用该 Token 的调用方会立即失效')}
+                  title={t('settings.profile.callersUsingThisTokenFail')}
                   onConfirm={() => removeToken(row.id)}
-                  okText={t('删除')}
+                  okText={t('common.delete')}
                   okButtonProps={{ danger: true }}
-                  cancelText={t('取消')}
+                  cancelText={t('common.cancel')}
                 >
-                  <a style={{ color: '#ff4d4f' }}>{t('删除')}</a>
+                  <a style={{ color: '#ff4d4f' }}>{t('common.delete')}</a>
                 </Popconfirm>
               ),
             },
@@ -265,11 +277,12 @@ const Profile: React.FC = () => {
 
       <Modal
         open={!!plain}
-        title={t('API Token 已创建（明文仅显示这一次）')}
+        title={t('settings.profile.APITokenCreatedPlaintextShown')}
         onCancel={() => setPlain(null)}
         footer={[
           <Button key="ok" type="primary" onClick={() => setPlain(null)}>
-             {t('我已保存')} </Button>,
+            {t('common.iHaveSavedIt')}{' '}
+          </Button>,
         ]}
         width={620}
       >
@@ -277,13 +290,13 @@ const Profile: React.FC = () => {
           style={{ marginBottom: 12 }}
           type="warning"
           showIcon
-          message={t('请立即复制保存')}
-          description={t('关闭后无法再次查看明文，只能删除后重新创建。')}
+          message={t('common.copyAndSaveItNow')}
+          description={t('settings.profile.plaintextCannotBeViewedAgain')}
         />
         {plain ? (
           <Descriptions column={1} size="small" bordered>
-            <Descriptions.Item label={t('名称')}>{plain.name}</Descriptions.Item>
-            <Descriptions.Item label={t('明文 Token')}>
+            <Descriptions.Item label={t('common.name')}>{plain.name}</Descriptions.Item>
+            <Descriptions.Item label={t('common.plaintextToken')}>
               <Space>
                 <Text code copyable style={{ wordBreak: 'break-all' }}>
                   {plain.token}
@@ -291,9 +304,10 @@ const Profile: React.FC = () => {
                 <Button
                   size="small"
                   icon={<CopyOutlined />}
-                  onClick={() => copy(plain.token, t('Token 已复制'))}
+                  onClick={() => copy(plain.token, t('common.tokenCopied'))}
                 >
-                   {t('复制')} </Button>
+                  {t('common.copy')}{' '}
+                </Button>
               </Space>
             </Descriptions.Item>
           </Descriptions>
@@ -302,23 +316,27 @@ const Profile: React.FC = () => {
 
       <Modal
         open={createOpen}
-        title={t('新建 API Token')}
+        title={t('settings.profile.newAPIToken')}
         onCancel={() => setCreateOpen(false)}
         onOk={createToken}
-        okText={t('创建')}
-        cancelText={t('取消')}
+        okText={t('common.create')}
+        cancelText={t('common.cancel')}
         destroyOnClose
       >
         <Form form={tokenForm} layout="vertical" preserve={false}>
           <Form.Item
             name="name"
-            label={t('名称')}
-            rules={[{ required: true, message: t('请填写名称') }]}
+            label={t('common.name')}
+            rules={[{ required: true, message: t('common.enterAName') }]}
           >
-            <Input placeholder={t('例如：本地 CLI / GitHub Actions')} />
+            <Input placeholder={t('settings.profile.eGLocalCLIGithub')} />
           </Form.Item>
-          <Form.Item name="expiresInDays" label={t('有效天数')} tooltip={t('留空表示永不过期')}>
-            <InputNumber min={1} style={{ width: '100%' }} placeholder={t('例如 90')} />
+          <Form.Item
+            name="expiresInDays"
+            label={t('common.validForDays')}
+            tooltip={t('common.leaveEmptyForNoExpiry')}
+          >
+            <InputNumber min={1} style={{ width: '100%' }} placeholder={t('common.example90')} />
           </Form.Item>
         </Form>
       </Modal>

@@ -1,10 +1,8 @@
+import { t } from '@/i18n';
+import { API_BASE } from '@/services/api';
 import { getToken } from '@/services/authStore';
 import type { WsFrame } from '@/services/types';
-import { API_BASE } from '@/services/api';
 import { isRunFinished } from '@/utils/constants';
-import { SearchAddon } from '@xterm/addon-search';
-import { FitAddon } from '@xterm/addon-fit';
-import { Terminal } from '@xterm/xterm';
 import {
   ClearOutlined,
   DownloadOutlined,
@@ -15,10 +13,12 @@ import {
   SearchOutlined,
   VerticalAlignBottomOutlined,
 } from '@ant-design/icons';
+import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon } from '@xterm/addon-search';
+import { Terminal } from '@xterm/xterm';
+import '@xterm/xterm/css/xterm.css';
 import { Badge, Button, Input, Space, Tooltip } from 'antd';
 import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import '@xterm/xterm/css/xterm.css';
-import { t } from '@/i18n';
 
 export interface LogTerminalHandle {
   clear: () => void;
@@ -171,8 +171,7 @@ const LogTerminal = React.forwardRef<LogTerminalHandle, LogTerminalProps>(
           case 'history':
           case 'log': {
             const data = frame.data || '';
-            const nextOffset =
-              typeof frame.nextOffset === 'number' ? frame.nextOffset : undefined;
+            const nextOffset = typeof frame.nextOffset === 'number' ? frame.nextOffset : undefined;
             if (data) {
               // 按 offset 去重：WebSocket 会从 offset 续传，但「HTTP 补历史」可能已经
               // 先写入了同样的内容，这里统一走 writeAt 裁掉重复部分。
@@ -216,7 +215,7 @@ const LogTerminal = React.forwardRef<LogTerminalHandle, LogTerminalProps>(
             break;
           }
           case 'error':
-            onError?.(frame.message || t('未知错误'));
+            onError?.(frame.message || t('terminal.unknownError'));
             break;
           default:
             break;
@@ -252,7 +251,7 @@ const LogTerminal = React.forwardRef<LogTerminalHandle, LogTerminalProps>(
         try {
           ws = new WebSocket(url);
         } catch (e: any) {
-          onError?.(t('建立 WebSocket 失败：{p0}', { p0: e?.message || e }));
+          onError?.(t('terminal.failedToOpenWebsocket', { p0: e?.message || e }));
           scheduleReconnectRef.current();
           return;
         }
@@ -467,9 +466,7 @@ const LogTerminal = React.forwardRef<LogTerminalHandle, LogTerminalProps>(
       };
       window.addEventListener('resize', onResize);
       const ro =
-        typeof ResizeObserver !== 'undefined'
-          ? new ResizeObserver(() => onResize())
-          : null;
+        typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => onResize()) : null;
       ro?.observe(container);
 
       connect();
@@ -531,10 +528,13 @@ const LogTerminal = React.forwardRef<LogTerminalHandle, LogTerminalProps>(
     }, [active]);
 
     const stateMeta: Record<ConnectionState, { color: string; text: string }> = {
-      connecting: { color: 'processing', text: t('连接中') },
-      open: { color: 'success', text: t('已连接') },
-      reconnecting: { color: 'warning', text: t('断线重连中') },
-      closed: { color: 'default', text: active ? t('已断开') : t('已结束') },
+      connecting: { color: 'processing', text: t('terminal.connecting') },
+      open: { color: 'success', text: t('terminal.connected') },
+      reconnecting: { color: 'warning', text: t('terminal.reconnecting') },
+      closed: {
+        color: 'default',
+        text: active ? t('terminal.disconnected') : t('terminal.finished'),
+      },
     };
 
     return (
@@ -552,14 +552,14 @@ const LogTerminal = React.forwardRef<LogTerminalHandle, LogTerminalProps>(
           <Space wrap>
             <Badge
               status={stateMeta[state].color as any}
-              text={t('日志流：{text}', { text: stateMeta[state].text })}
+              text={t('terminal.logStream', { text: stateMeta[state].text })}
             />
             {!autoScroll ? (
-              <Tooltip title={t('你手动向上滚动了，新日志不会自动跟随')}>
-                <span style={{ color: '#faad14' }}>{t('已暂停自动滚动')}</span>
+              <Tooltip title={t('terminal.scrolledUpManuallyNewLogs')}>
+                <span style={{ color: '#faad14' }}>{t('terminal.autoScrollPaused')}</span>
               </Tooltip>
             ) : (
-              <span style={{ color: '#999' }}>{t('自动滚动中')}</span>
+              <span style={{ color: '#999' }}>{t('terminal.autoScrolling')}</span>
             )}
           </Space>
           <Space wrap>
@@ -573,7 +573,7 @@ const LogTerminal = React.forwardRef<LogTerminalHandle, LogTerminalProps>(
                 if (next) termRef.current?.scrollToBottom();
               }}
             >
-              {autoScroll ? t('暂停滚动') : t('恢复滚动')}
+              {autoScroll ? t('terminal.pauseScrolling') : t('terminal.resumeScrolling')}
             </Button>
             <Button
               size="small"
@@ -584,35 +584,33 @@ const LogTerminal = React.forwardRef<LogTerminalHandle, LogTerminalProps>(
                 termRef.current?.scrollToBottom();
               }}
             >
-               {t('滚到底部')} </Button>
+              {t('terminal.scrollToBottom')}{' '}
+            </Button>
             <Button size="small" icon={<ClearOutlined />} onClick={clear}>
-               {t('清屏')} </Button>
+              {t('terminal.clearScreen')}{' '}
+            </Button>
             <Button
               size="small"
               icon={<LinkOutlined />}
               onClick={reconnect}
-              title={t('不等退避，立刻重新连接日志流')}
+              title={t('terminal.reconnectHint')}
             >
-               {t('重连')} </Button>
+              {t('terminal.reconnect')}{' '}
+            </Button>
             <Button
               size="small"
               icon={<ReloadOutlined />}
               onClick={reload}
-              title={t('清空终端并从第 0 字节重新拉取日志（终端空白或内容错乱时用）')}
+              title={t('terminal.clearTheTerminalAndRefetch')}
             >
-               {t('重载日志')} </Button>
-            <Button
-              size="small"
-              icon={<SearchOutlined />}
-              onClick={() => setSearchOpen((v) => !v)}
-            >
-               {t('搜索')} </Button>
-            <Button
-              size="small"
-              icon={<DownloadOutlined />}
-              onClick={() => onDownload?.()}
-            >
-               {t('下载日志')} </Button>
+              {t('common.reloadLogs')}{' '}
+            </Button>
+            <Button size="small" icon={<SearchOutlined />} onClick={() => setSearchOpen((v) => !v)}>
+              {t('terminal.search')}{' '}
+            </Button>
+            <Button size="small" icon={<DownloadOutlined />} onClick={() => onDownload?.()}>
+              {t('common.downloadLogs')}{' '}
+            </Button>
           </Space>
         </div>
 
@@ -621,16 +619,18 @@ const LogTerminal = React.forwardRef<LogTerminalHandle, LogTerminalProps>(
             <Input
               size="small"
               allowClear
-              placeholder={t('搜索日志内容，回车下一个')}
+              placeholder={t('terminal.searchLogContentPressEnter')}
               value={searchTerm}
               style={{ width: 280 }}
               onChange={(e) => setSearchTerm(e.target.value)}
               onPressEnter={() => searchRef.current?.findNext(searchTerm)}
             />
             <Button size="small" onClick={() => searchRef.current?.findNext(searchTerm)}>
-               {t('下一个')} </Button>
+              {t('terminal.next')}{' '}
+            </Button>
             <Button size="small" onClick={() => searchRef.current?.findPrevious(searchTerm)}>
-               {t('上一个')} </Button>
+              {t('terminal.previous')}{' '}
+            </Button>
             <Button
               size="small"
               onClick={() => {
@@ -638,7 +638,8 @@ const LogTerminal = React.forwardRef<LogTerminalHandle, LogTerminalProps>(
                 setSearchTerm('');
               }}
             >
-               {t('清除')} </Button>
+              {t('terminal.clear')}{' '}
+            </Button>
           </Space>
         ) : null}
 

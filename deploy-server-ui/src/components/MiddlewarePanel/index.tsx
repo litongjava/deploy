@@ -1,3 +1,4 @@
+import { t } from '@/i18n';
 import { downloadMiddlewareScript, systemApi } from '@/services/system';
 import type { MiddlewareComponent, MiddlewareList } from '@/services/types';
 import {
@@ -29,7 +30,6 @@ import {
   message,
 } from 'antd';
 import React, { useCallback, useEffect, useState } from 'react';
-import { t } from '@/i18n';
 
 const { Text, Paragraph } = Typography;
 
@@ -56,8 +56,8 @@ function collectModes(list: MiddlewareComponent[]): string[] {
 
 /** 方式的说法统一放这里：界面上到处在用，散着写迟早会出现「docker / Docker 容器」两种口径 */
 const MODE_LABEL: Record<string, string> = {
-  docker: t('Docker 容器'),
-  native: t('本机安装（native）'),
+  docker: t('middleware.dockerContainer'),
+  native: t('middleware.nativeInstallNative'),
 };
 
 /**
@@ -68,20 +68,20 @@ const MODE_LABEL: Record<string, string> = {
  */
 const ACTION_META: Record<string, { label: string; hint: string; danger?: boolean }> = {
   start: {
-    label: t('启动'),
-    hint: t('按当前方式启动这些中间件；已经在运行的会按后端的判断跳过。'),
+    label: t('middleware.start'),
+    hint: t('middleware.startThisMiddlewareUsingThe'),
   },
   stop: {
-    label: t('停止'),
-    hint: t('停止进程或容器。数据卷 / 数据目录都会被保留，之后可以再次启动。'),
+    label: t('middleware.stop'),
+    hint: t('middleware.stopTheProcessOrContainer'),
   },
   restart: {
-    label: t('重启'),
-    hint: t('先停再起，用于改完参数后生效。数据卷 / 数据目录都会被保留。'),
+    label: t('middleware.restart'),
+    hint: t('middleware.stopThenStartToApply'),
   },
   remove: {
-    label: t('移除'),
-    hint: t('移除容器或卸载软件包，并删除配置。注意：数据卷与数据目录【不会被删除】，数据仍然留在磁盘上，需要彻底清理请登录服务器手动处理。'),
+    label: t('middleware.remove'),
+    hint: t('middleware.removeTheContainerOrUninstall'),
     danger: true,
   },
 };
@@ -153,18 +153,18 @@ const MiddlewarePanel: React.FC = () => {
         mode: action === 'install' ? mode : undefined,
       });
       if (res?.nothingToDo) {
-        messageApi.info(res.message || t('所选中间件没有需要执行的动作'));
+        messageApi.info(res.message || t('middleware.selectedMiddlewareHasNoAction'));
         load();
         return;
       }
-      const verb = ACTION_META[action]?.label || t('操作');
+      const verb = ACTION_META[action]?.label || t('common.actions');
       messageApi.success(
         action === 'install'
-          ? t('{action}（{count} 项），正在跳转日志…', {
-              action: dryRun ? t('已开始预演') : t('已开始安装'),
+          ? t('middleware.itemsJumpingToLogs', {
+              action: dryRun ? t('middleware.dryRunStarted') : t('middleware.installStarted'),
               count: keys.length,
             })
-          : t('已开始{verb}（{length} 项），正在跳转日志…', { verb: verb, length: keys.length }),
+          : t('middleware.startedItemsJumpingToLogs', { verb: verb, length: keys.length }),
       );
       setInstallOpen(false);
       history.push(`/runs/${res.runId}`);
@@ -180,15 +180,15 @@ const MiddlewarePanel: React.FC = () => {
     const meta = ACTION_META[action] || { label: action, hint: '' };
     const picked = components.filter((c) => keys.includes(c.key));
     Modal.confirm({
-      title: t('确认{label}：{p1}', { label: meta.label, p1: pickedNames(keys) }),
+      title: t('middleware.confirm', { label: meta.label, p1: pickedNames(keys) }),
       width: 640,
-      okText: t('执行{label}', { label: meta.label }),
-      cancelText: t('取消'),
+      okText: t('middleware.run', { label: meta.label }),
+      cancelText: t('common.cancel'),
       okButtonProps: meta.danger ? { danger: true } : undefined,
       content: (
         <Space direction="vertical" size={6} style={{ width: '100%' }}>
           <div>
-            {t('将对这些中间件执行{label}：', { label: meta.label })}
+            {t('middleware.willRunOnThisMiddleware', { label: meta.label })}
             {picked.map((c) => c.name).join(', ')}
           </div>
           <div>
@@ -236,7 +236,7 @@ const MiddlewarePanel: React.FC = () => {
     setSaving(true);
     try {
       await systemApi.updateMiddleware(editing.key, { fields: values });
-      messageApi.success(t('{name} 的参数已保存，下次安装 / 启动生效', { name: editing.name }));
+      messageApi.success(t('middleware.parametersForSavedTheyTake', { name: editing.name }));
       setEditing(null);
       load();
     } catch (e) {
@@ -257,9 +257,9 @@ const MiddlewarePanel: React.FC = () => {
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
-      messageApi.success(t('脚本已下载，可手动在服务器上执行'));
+      messageApi.success(t('common.scriptDownloaded'));
     } catch (e: any) {
-      messageApi.error(e?.message || t('下载失败'));
+      messageApi.error(e?.message || t('common.downloadFailed'));
     }
   };
 
@@ -268,7 +268,7 @@ const MiddlewarePanel: React.FC = () => {
 
   const columns = [
     {
-      title: t('名称'),
+      title: t('common.name'),
       dataIndex: 'name',
       width: 200,
       render: (name: string, row: MiddlewareComponent) => (
@@ -281,9 +281,9 @@ const MiddlewarePanel: React.FC = () => {
         </Space>
       ),
     },
-    { title: t('说明'), dataIndex: 'note' },
+    { title: t('common.note'), dataIndex: 'note' },
     {
-      title: t('方式'),
+      title: t('middleware.method'),
       dataIndex: 'mode',
       width: 150,
       render: (_: unknown, row: MiddlewareComponent) => {
@@ -298,7 +298,7 @@ const MiddlewarePanel: React.FC = () => {
             )}
             {effective && effective !== mode ? (
               <Text type="secondary" style={{ fontSize: 12 }}>
-                {t('当前生效：{mode}', { mode: MODE_LABEL[effective] || effective })}
+                {t('middleware.currentlyEffective', { mode: MODE_LABEL[effective] || effective })}
               </Text>
             ) : null}
           </Space>
@@ -306,29 +306,32 @@ const MiddlewarePanel: React.FC = () => {
       },
     },
     {
-      title: t('状态'),
+      title: t('common.status'),
       dataIndex: 'installed',
       width: 150,
       render: (_: unknown, row: MiddlewareComponent) => (
         <Space direction="vertical" size={2}>
           {row.installed ? (
             <Tag icon={<CheckCircleFilled />} color="success">
-               {t('已安装')} </Tag>
+              {t('common.installed')}{' '}
+            </Tag>
           ) : (
             <Tag icon={<CloseCircleFilled />} color="error">
-               {t('未安装')} </Tag>
+              {t('middleware.notInstalled')}{' '}
+            </Tag>
           )}
           {row.running ? (
             <Tag icon={<PlayCircleOutlined />} color="processing">
-               {t('运行中')} </Tag>
+              {t('common.running')}{' '}
+            </Tag>
           ) : (
-            <Tag>{t('未运行')}</Tag>
+            <Tag>{t('middleware.notRun')}</Tag>
           )}
         </Space>
       ),
     },
     {
-      title: t('版本'),
+      title: t('middleware.version'),
       dataIndex: 'version',
       width: 140,
       render: (v: string, row: MiddlewareComponent) => (
@@ -343,7 +346,7 @@ const MiddlewarePanel: React.FC = () => {
       ),
     },
     {
-      title: t('位置'),
+      title: t('middleware.location'),
       dataIndex: 'path',
       width: 220,
       render: (v: string) => (
@@ -353,31 +356,44 @@ const MiddlewarePanel: React.FC = () => {
       ),
     },
     {
-      title: t('操作'),
+      title: t('common.actions'),
       valueType: 'option',
       width: 150,
       render: (_: unknown, row: MiddlewareComponent) => [
-        <Tooltip key="edit" title={canAdmin ? t('改端口 / 密码 / 数据目录 / 版本') : t('仅管理员可改')}>
+        <Tooltip
+          key="edit"
+          title={
+            canAdmin ? t('middleware.changePortPasswordDataDirectory') : t('common.adminOnlyEdit')
+          }
+        >
           <a
             onClick={() =>
-              canAdmin ? openEdit(row) : messageApi.warning(t('只有管理员可以修改中间件参数'))
+              canAdmin
+                ? openEdit(row)
+                : messageApi.warning(t('middleware.onlyAdministratorsCanChangeMiddleware'))
             }
           >
-            <EditOutlined /> {t('编辑')}
+            <EditOutlined /> {t('common.edit')}
           </a>
         </Tooltip>,
         <Tooltip
           key="install"
-          title={canAdmin ? (row.installed ? t('按当前参数重装') : t('按当前参数安装')) : t('仅管理员可安装')}
+          title={
+            canAdmin
+              ? row.installed
+                ? t('common.reinstallWithCurrentParameters')
+                : t('common.installWithCurrentParameters')
+              : t('common.adminOnlyInstall')
+          }
         >
           <a
             onClick={() =>
               canAdmin
                 ? openInstall([row.key], false)
-                : messageApi.warning(t('只有管理员可以安装中间件'))
+                : messageApi.warning(t('middleware.adminOnlyInstall'))
             }
           >
-            <ThunderboltOutlined /> {row.installed ? t('重装') : t('安装')}
+            <ThunderboltOutlined /> {row.installed ? t('common.reinstall') : t('common.install')}
           </a>
         </Tooltip>,
       ],
@@ -386,32 +402,36 @@ const MiddlewarePanel: React.FC = () => {
 
   return (
     <Card
-      title={t('中间件')}
+      title={t('middleware.middleware')}
       style={{ marginTop: 16 }}
       extra={
         <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
-           {t('重新检测')} </Button>
+          {t('common.recheck')}{' '}
+        </Button>
       }
     >
       {contextHolder}
 
       <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 12 }}>
-        {t('在这里安装和启停常用的中间件（数据库 / 缓存 / 搜索）。安装方式分两种：Docker 容器（')}
+        {t('middleware.introBeforeDocker')}
         <Text code>docker</Text>
-        {t('，环境干净、卸载不留痕）与装在本机（')}
+        {t('middleware.introBetween')}
         <Text code>native</Text>
-        {t('，适合不想引入 Docker 的机器）。每次操作都是一次普通运行，可看实时日志、随时取消。')}
+        {t('middleware.introAfterNative')}
       </Paragraph>
 
       <Space size={6} wrap style={{ marginBottom: 12 }}>
         <Text type="secondary" style={{ fontSize: 12 }}>
-           {t('平台')} </Text>
+          {t('middleware.platform')}{' '}
+        </Text>
         <Tag>{data?.platform || '-'}</Tag>
         <Text type="secondary" style={{ fontSize: 12 }}>
           Docker
         </Text>
         <Tag color={data?.dockerAvailable ? 'success' : 'warning'}>
-          {data?.dockerAvailable ? data?.dockerVersion || t('可用') : t('不可用')}
+          {data?.dockerAvailable
+            ? data?.dockerVersion || t('common.available')
+            : t('middleware.unavailable')}
         </Tag>
       </Space>
 
@@ -420,8 +440,8 @@ const MiddlewarePanel: React.FC = () => {
           style={{ marginBottom: 12 }}
           type="info"
           showIcon
-          message={t('只有管理员可以安装、启停或修改中间件参数')}
-          description={t('你可以查看各中间件是否安装 / 运行、版本与位置，以及各自的参数。')}
+          message={t('middleware.onlyAdministratorsCanInstallStart')}
+          description={t('middleware.canSeeWhetherEachMiddleware')}
         />
       ) : null}
 
@@ -431,8 +451,8 @@ const MiddlewarePanel: React.FC = () => {
           style={{ marginBottom: 12 }}
           type="warning"
           showIcon
-          message={t('这台机器上没有检测到可用的 Docker')}
-          description={t('可以改用 native 方式安装（部分中间件支持），或者先在上面的工具链面板 / 服务器上装好 Docker 再回来。以 docker 方式提交但没有 Docker 时，运行会直接失败。')}
+          message={t('middleware.noUsableDockerWasDetected')}
+          description={t('middleware.canInstallWithTheNative')}
         />
       ) : null}
 
@@ -441,8 +461,8 @@ const MiddlewarePanel: React.FC = () => {
           style={{ marginBottom: 12 }}
           type="warning"
           showIcon
-          message={t('当前服务端是 {platform}，一键安装只支持 Linux', { platform: data?.platform })}
-          description={t('这里仍可以点「预演」看看它打算做什么，或下载脚本到 Linux 机器上手动执行。')}
+          message={t('common.linuxOnlyInstall', { platform: data?.platform })}
+          description={t('middleware.canStillClickDryRun')}
         />
       ) : null}
 
@@ -452,8 +472,13 @@ const MiddlewarePanel: React.FC = () => {
           style={{ marginBottom: 12 }}
           type="warning"
           showIcon
-          message={t('{length} 个中间件未安装：{p1}（已就绪 {installedCount}/{p3}）', { length: missing.length, p1: missing.join('、'), installedCount: installedCount, p3: components.length })}
-          description={t('点「一键安装缺失」即可在服务端自动安装；也可以点某一行的「编辑」改端口 / 密码 / 数据目录 / 版本，再点「安装」。')}
+          message={t('middleware.middlewareNotInstalledReady', {
+            length: missing.length,
+            p1: missing.join('、'),
+            installedCount: installedCount,
+            p3: components.length,
+          })}
+          description={t('middleware.clickInstallMissingToInstall')}
         />
       ) : null}
       {components.length > 0 && missing.length === 0 ? (
@@ -461,15 +486,16 @@ const MiddlewarePanel: React.FC = () => {
           style={{ marginBottom: 12 }}
           type="success"
           showIcon
-          message={t('全部中间件都已安装')}
-          description={t('要换版本或改端口就点对应行的「编辑」改参数，然后点「重装」。')}
+          message={t('middleware.allMiddlewareIsInstalled')}
+          description={t('middleware.changeVersionOrPortClick')}
         />
       ) : null}
 
       <Space size={6} style={{ marginBottom: 6 }} wrap>
-        <Text strong>{t('操作对象')}</Text>
+        <Text strong>{t('middleware.targets')}</Text>
         <Text type="secondary" style={{ fontSize: 12 }}>
-           {t('勾选后可用下面的按钮批量安装 / 启停 / 移除；每行右侧也可以只操作这一个')} </Text>
+          {t('middleware.checkToUseTheButtons')}{' '}
+        </Text>
       </Space>
 
       <Table<MiddlewareComponent>
@@ -494,7 +520,7 @@ const MiddlewarePanel: React.FC = () => {
           disabled={!canAdmin || missing.length === 0}
           onClick={() => openInstall(missing, false)}
         >
-{t('一键安装缺失（{count}）', { count: missing.length })}
+          {t('common.installMissing', { count: missing.length })}
         </Button>
         <Button
           icon={<ThunderboltOutlined />}
@@ -502,28 +528,32 @@ const MiddlewarePanel: React.FC = () => {
           disabled={!canAdmin || selected.length === 0}
           onClick={() => openInstall(selected, false)}
         >
-           {t('安装所选')} </Button>
+          {t('middleware.installSelected')}{' '}
+        </Button>
         <Button
           icon={<PlayCircleOutlined />}
           loading={busy}
           disabled={!canAdmin || selected.length === 0}
           onClick={() => confirmAction(selected, 'start')}
         >
-           {t('启动所选')} </Button>
+          {t('middleware.startSelected')}{' '}
+        </Button>
         <Button
           icon={<PoweroffOutlined />}
           loading={busy}
           disabled={!canAdmin || selected.length === 0}
           onClick={() => confirmAction(selected, 'stop')}
         >
-           {t('停止所选')} </Button>
+          {t('middleware.stopSelected')}{' '}
+        </Button>
         <Button
           icon={<ReloadOutlined />}
           loading={busy}
           disabled={!canAdmin || selected.length === 0}
           onClick={() => confirmAction(selected, 'restart')}
         >
-           {t('重启所选')} </Button>
+          {t('middleware.restartSelected')}{' '}
+        </Button>
         <Button
           danger
           icon={<DeleteOutlined />}
@@ -531,25 +561,29 @@ const MiddlewarePanel: React.FC = () => {
           disabled={!canAdmin || selected.length === 0}
           onClick={() => confirmAction(selected, 'remove')}
         >
-           {t('移除所选')} </Button>
+          {t('middleware.removeSelected')}{' '}
+        </Button>
         <Button
           icon={<ExperimentOutlined />}
           loading={busy}
           disabled={!canAdmin || selected.length === 0}
           onClick={() => openInstall(selected, true)}
         >
-           {t('预演（dry-run）')} </Button>
+          {t('middleware.dryRun')}{' '}
+        </Button>
         <Button icon={<DownloadOutlined />} onClick={download}>
-           {t('下载脚本')} </Button>
+          {t('common.downloadScript')}{' '}
+        </Button>
       </Space>
 
       <Paragraph type="secondary" style={{ fontSize: 12, marginTop: 12, marginBottom: 0 }}>
-        {t('每次操作都是一次普通运行，可在运行列表按项目')} <Text code>{projectKey}</Text>{' '}
-        {t('查看历史。')}
+        {t('middleware.everyActionIsAnOrdinary')} <Text code>{projectKey}</Text>{' '}
+        {t('middleware.viewHistory')}
         {data?.scriptPath ? (
           <>
             {' '}
-{t('脚本位置：')}<Text code>{data.scriptPath}</Text>
+            {t('common.scriptPath')}
+            <Text code>{data.scriptPath}</Text>
           </>
         ) : null}
         {data?.hint ? ` ${data.hint}` : ''}
@@ -560,28 +594,27 @@ const MiddlewarePanel: React.FC = () => {
         open={installOpen}
         title={
           installDryRun
-            ? t('预演：{p0}', { p0: pickedNames(installKeys) })
-            : t('安装：{p0}', { p0: pickedNames(installKeys) })
+            ? t('middleware.dryRunTitle', { p0: pickedNames(installKeys) })
+            : t('middleware.install', { p0: pickedNames(installKeys) })
         }
         onCancel={() => setInstallOpen(false)}
         onOk={() => submit(installKeys, 'install', installDryRun, installMode)}
         confirmLoading={busy}
-        okText={installDryRun ? t('开始预演') : t('开始安装')}
-        cancelText={t('取消')}
+        okText={installDryRun ? t('common.startDryRun') : t('common.startInstall')}
+        cancelText={t('common.cancel')}
         destroyOnClose
         width={620}
       >
         <Paragraph type="secondary" style={{ fontSize: 12 }}>
           {installDryRun
-            ? t('预演只打印将会执行的动作（拉镜像 / 装包 / 写配置 / 起服务），不做任何修改。')
-            : t('安装以 root 在服务端机器上执行：拉镜像或装包、写配置、起服务。几分钟内完成，可在运行详情页看实时日志或取消。')}
+            ? t('middleware.dryRunOnlyPrintsThe')
+            : t('middleware.installationRunsAsRootOn')}
         </Paragraph>
         <Form layout="vertical">
           <Form.Item
-            label={t('安装方式')}
+            label={t('middleware.installMethod')}
             extra={
-              <span style={{ fontSize: 12 }}>
-                 {t('只列出所选中间件支持的方式；多个中间件的可选方式不一致时取并集，接口一次只能带一种方式。')} </span>
+              <span style={{ fontSize: 12 }}>{t('middleware.onlyMethodsSupportedByThe')} </span>
             }
           >
             <Radio.Group value={installMode} onChange={(e) => setInstallMode(e.target.value)}>
@@ -598,12 +631,12 @@ const MiddlewarePanel: React.FC = () => {
             .filter((c) => installKeys.includes(c.key))
             .map((c) => (
               <Text key={c.key} type="secondary" style={{ fontSize: 12 }}>
-{t('{name}：支持 {modes}，默认 {mode}', {
+                {t('middleware.supportsDefault', {
                   name: c.name,
                   modes: (c.modes?.length ? c.modes : ['docker']).join(' / '),
                   mode: MODE_LABEL[c.defaultMode] || c.defaultMode || 'docker',
                 })}
-                {c.estimate ? t(' · 约 {estimate}', { estimate: c.estimate }) : ''}
+                {c.estimate ? t('middleware.estimate', { estimate: c.estimate }) : ''}
               </Text>
             ))}
         </Space>
@@ -612,18 +645,18 @@ const MiddlewarePanel: React.FC = () => {
       {/* ---------- 参数编辑：字段完全由后端下发 ---------- */}
       <Modal
         open={!!editing}
-        title={editing ? t('编辑参数：{name}', { name: editing.name }) : ''}
+        title={editing ? t('middleware.editParameters', { name: editing.name }) : ''}
         onCancel={() => setEditing(null)}
         onOk={saveEdit}
         confirmLoading={saving}
-        okText={t('保存')}
-        cancelText={t('取消')}
+        okText={t('common.save')}
+        cancelText={t('common.cancel')}
         destroyOnClose
         width={680}
       >
         <Paragraph type="secondary" style={{ fontSize: 12 }}>
-{t('留空表示用默认值。保存后点该行的「{action}」或「重启所选」即按新参数执行，参数会记录在那次操作的运行里。', {
-            action: editing?.installed ? t('重装') : t('安装'),
+          {t('middleware.leaveEmptyToUseThe', {
+            action: editing?.installed ? t('common.reinstall') : t('common.install'),
           })}
         </Paragraph>
         <Form form={form} layout="vertical" preserve={false}>
@@ -644,8 +677,8 @@ const MiddlewarePanel: React.FC = () => {
                   {f.help}
                   {f.default ? (
                     <>
-{' '}
-                      {t('默认')} <Text code>{f.default}</Text>
+                      {' '}
+                      {t('common.default')} <Text code>{f.default}</Text>
                     </>
                   ) : null}
                 </span>
@@ -655,7 +688,11 @@ const MiddlewarePanel: React.FC = () => {
             </Form.Item>
           ))}
           {(editing?.fields || []).length === 0 ? (
-            <Alert type="info" showIcon message={t('这个中间件没有可配置的参数')} />
+            <Alert
+              type="info"
+              showIcon
+              message={t('middleware.middlewareHasNoConfigurableParameters')}
+            />
           ) : null}
         </Form>
       </Modal>

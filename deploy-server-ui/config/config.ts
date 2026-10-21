@@ -38,13 +38,14 @@ const config: ReturnType<typeof defineConfig> = defineConfig({
   /**
    * @name 国际化（中英双语）
    *
-   * 应用自己的文案走 src/i18n 的 t()（key 就是中文原文，见 src/locales/zh-CN.ts 的说明），
+   * 应用自己的文案走 src/i18n 的 t()（key 是语义化 id，见 src/locales/zh-CN.ts 的说明），
    * 不依赖这个插件。这里开 locale 插件只为一件事：**路由菜单名**。
-   * umi 的 layout 插件把菜单名当词条处理——按 `menu.<route name>` 组装 id 去查
+   * umi 的 layout 插件把路由 name 当词条处理——按 `menu.<route name>` 组装 id 去查
    * （见 @umijs/route-utils 的 transformRoute），没有这个插件它拿不到 formatMessage，
-   * 菜单就永远是中文原文。
+   * 菜单就永远显示路由配置里的标识。
    *
-   * 所以 src/locales/ 里只需要维护 `menu.*` 这些 id；其余词条由 src/i18n 负责。
+   * 所以 src/locales/ 里还需要维护 `menu.*` 这些 id；其余词条由 src/i18n 负责。
+   * 路由 name 使用语义标识（login / projects / settings ...），不要写中文。
    * baseNavigator 关掉：内网后台默认一律中文，语言由用户在「个人设置」里选，
    * 存 localStorage（umi_locale），与 src/i18n 读的是同一个 key。
    * @doc https://umijs.org/docs/max/i18n

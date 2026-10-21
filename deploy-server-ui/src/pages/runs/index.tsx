@@ -1,27 +1,31 @@
+import { t } from '@/i18n';
 import { runApi } from '@/services/run';
 import type { Run } from '@/services/types';
 import { RUN_STATUS_META, RUN_STATUS_OPTIONS, formatDuration, formatTime } from '@/utils/constants';
-import { PageContainer, ProTable } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
+import { PageContainer, ProTable } from '@ant-design/pro-components';
 import { history } from '@umijs/max';
 import { Space, Tag } from 'antd';
 import React from 'react';
-import { t } from '@/i18n';
 
 const Runs: React.FC = () => {
   const columns: ProColumns<Run>[] = [
     {
       // 一列同时放项目与任务：两者都是「一次运行」的对象，
       // 分成两列会让其中一列永远是空的。targetKind 决定链接去哪一侧。
-      title: t('执行对象'),
+      title: t('run.targets'),
       dataIndex: 'projectKey',
-      fieldProps: { placeholder: t('项目 / 任务的 key') },
+      fieldProps: { placeholder: t('run.projectTaskKey') },
       render: (_, row) => {
         const isTask = row.targetKind === 'task';
         const key = row.targetKey || row.projectKey;
         return (
           <Space size={6}>
-            {isTask ? <Tag color="geekblue">{t('任务')}</Tag> : <Tag color="blue">{t('项目')}</Tag>}
+            {isTask ? (
+              <Tag color="geekblue">{t('common.task')}</Tag>
+            ) : (
+              <Tag color="blue">{t('common.project')}</Tag>
+            )}
             <a onClick={() => history.push(isTask ? `/tasks/${key}` : `/projects/${key}`)}>
               {row.targetName || row.projectName || key}
             </a>
@@ -30,39 +34,39 @@ const Runs: React.FC = () => {
       },
     },
     {
-      title: t('类型'),
+      title: t('common.type'),
       dataIndex: 'targetKind',
       hideInTable: true,
       valueType: 'select',
       valueEnum: {
-        project: { text: t('项目') },
-        task: { text: t('任务') },
+        project: { text: t('common.project') },
+        task: { text: t('common.task') },
       },
     },
     {
-      title: t('状态'),
+      title: t('common.status'),
       dataIndex: 'status',
       valueType: 'select',
-      fieldProps: { options: RUN_STATUS_OPTIONS, placeholder: t('全部状态') },
+      fieldProps: { options: RUN_STATUS_OPTIONS, placeholder: t('run.allStatuses') },
       render: (_, row) => (
         <Tag color={RUN_STATUS_META[row.status]?.color}>{RUN_STATUS_META[row.status]?.text}</Tag>
       ),
     },
     {
-      title: t('构建号'),
+      title: t('common.buildNumber'),
       dataIndex: 'buildNumber',
       hideInSearch: true,
       width: 100,
       render: (_, row) => <a onClick={() => history.push(`/runs/${row.id}`)}>#{row.buildNumber}</a>,
     },
     {
-      title: t('触发方式'),
+      title: t('common.triggerMode'),
       dataIndex: 'triggerType',
       hideInSearch: true,
       width: 110,
     },
     {
-      title: t('触发人'),
+      title: t('common.triggeredBy'),
       dataIndex: 'triggerUserName',
       hideInSearch: true,
       width: 130,
@@ -76,21 +80,21 @@ const Runs: React.FC = () => {
       ),
     },
     {
-      title: t('分支'),
+      title: t('common.branch'),
       dataIndex: 'requestedRef',
       hideInSearch: true,
       width: 110,
       render: (_, row) => row.requestedRef || '-',
     },
     {
-      title: t('耗时'),
+      title: t('common.duration'),
       dataIndex: 'durationMs',
       hideInSearch: true,
       width: 100,
       render: (_, row) => formatDuration(row.durationMs),
     },
     {
-      title: t('退出码'),
+      title: t('common.exitCode'),
       dataIndex: 'exitCode',
       hideInSearch: true,
       width: 90,
@@ -102,26 +106,27 @@ const Runs: React.FC = () => {
         ),
     },
     {
-      title: t('开始时间'),
+      title: t('common.startTime'),
       dataIndex: 'startedAt',
       hideInSearch: true,
       width: 175,
       render: (_, row) => formatTime(row.startedAt),
     },
     {
-      title: t('操作'),
+      title: t('common.actions'),
       valueType: 'option',
       width: 100,
       fixed: 'right',
       render: (_, row) => [
         <a key="detail" onClick={() => history.push(`/runs/${row.id}`)}>
-           {t('日志')} </a>,
+          {t('common.logs')}{' '}
+        </a>,
       ],
     },
   ];
 
   return (
-    <PageContainer title={t('运行记录')}>
+    <PageContainer title={t('run.runs')}>
       <ProTable<Run>
         rowKey="id"
         columns={columns}

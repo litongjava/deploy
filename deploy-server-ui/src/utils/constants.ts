@@ -1,3 +1,4 @@
+import { t } from '@/i18n';
 import type {
   ConcurrencyType,
   CredentialType,
@@ -9,7 +10,6 @@ import type {
   ShellType,
   TriggerType,
 } from '@/services/types';
-import { t } from '@/i18n';
 
 /** 状态 → 颜色 + 中文 */
 type RunStatusMeta = { color: string; text: string };
@@ -17,13 +17,13 @@ type RunStatusMeta = { color: string; text: string };
 // 空字符串表示尚无运行状态，映射中没有对应项，保留调用处的回退显示。
 export const RUN_STATUS_META: Record<RunStatus, RunStatusMeta> &
   Partial<Record<'', RunStatusMeta>> = {
-  queued: { color: 'default', text: t('排队中') },
-  running: { color: 'processing', text: t('运行中') },
-  success: { color: 'success', text: t('成功') },
-  failed: { color: 'error', text: t('失败') },
-  canceled: { color: 'warning', text: t('已取消') },
-  timeout: { color: 'volcano', text: t('超时') },
-  error: { color: 'error', text: t('异常') },
+  queued: { color: 'default', text: t('common.queued') },
+  running: { color: 'processing', text: t('common.running') },
+  success: { color: 'success', text: t('common.success') },
+  failed: { color: 'error', text: t('common.failed') },
+  canceled: { color: 'warning', text: t('status.canceled') },
+  timeout: { color: 'volcano', text: t('status.timeout') },
+  error: { color: 'error', text: t('status.error') },
 };
 
 export const RUN_STATUS_OPTIONS = (Object.keys(RUN_STATUS_META) as RunStatus[]).map((k) => ({
@@ -32,22 +32,22 @@ export const RUN_STATUS_OPTIONS = (Object.keys(RUN_STATUS_META) as RunStatus[]).
 }));
 
 export const PREPARE_STATUS_META: Record<PrepareStatus, { color: string; text: string }> = {
-  skipped: { color: 'default', text: t('未启用') },
-  running: { color: 'processing', text: t('进行中') },
-  success: { color: 'success', text: t('成功') },
-  failed: { color: 'error', text: t('失败') },
+  skipped: { color: 'default', text: t('common.disabled') },
+  running: { color: 'processing', text: t('status.progress') },
+  success: { color: 'success', text: t('common.success') },
+  failed: { color: 'error', text: t('common.failed') },
 };
 
 export const TRIGGER_TYPE_META: Record<TriggerType, string> = {
-  web: t('网页'),
+  web: t('status.web'),
   api: 'API',
   cli: 'CLI',
   hook: 'Hook',
-  rerun: t('重跑'),
+  rerun: t('status.reRun'),
 };
 
 export const SHELL_OPTIONS: { label: string; value: ShellType }[] = [
-  { label: t('自动（auto）'), value: 'auto' },
+  { label: t('common.shellAuto'), value: 'auto' },
   { label: 'bash', value: 'bash' },
   { label: 'sh', value: 'sh' },
   { label: 'pwsh', value: 'pwsh' },
@@ -55,19 +55,19 @@ export const SHELL_OPTIONS: { label: string; value: ShellType }[] = [
 ];
 
 export const CONCURRENCY_OPTIONS: { label: string; value: ConcurrencyType }[] = [
-  { label: t('排队串行（queue）'), value: 'queue' },
-  { label: t('允许并行（allow）'), value: 'allow' },
-  { label: t('取消上一次（cancelPrev）'), value: 'cancelPrev' },
+  { label: t('status.concurrencyQueue'), value: 'queue' },
+  { label: t('status.concurrencyAllow'), value: 'allow' },
+  { label: t('status.concurrencyCancelPrev'), value: 'cancelPrev' },
 ];
 
 export const FAIL_STRATEGY_OPTIONS: { label: string; value: FailStrategy }[] = [
-  { label: t('失败即停（abort）'), value: 'abort' },
-  { label: t('忽略错误继续（continue）'), value: 'continue' },
+  { label: t('common.failureAbort'), value: 'abort' },
+  { label: t('common.failureContinue'), value: 'continue' },
 ];
 
 export const CREDENTIAL_TYPE_OPTIONS: { label: string; value: CredentialType }[] = [
-  { label: t('HTTPS Token / 密码'), value: 'https_token' },
-  { label: t('SSH 私钥'), value: 'ssh_key' },
+  { label: t('status.authHttps'), value: 'https_token' },
+  { label: t('common.sshPrivateKey'), value: 'ssh_key' },
 ];
 
 export const PROJECT_KEY_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
@@ -82,13 +82,13 @@ export const PROJECT_KIND_META: Record<
   ProjectKind,
   { color: string; text: string; iconColor: string }
 > = {
-  app: { color: 'blue', text: t('应用项目'), iconColor: '#1677ff' },
-  lib: { color: 'purple', text: t('构建项目'), iconColor: '#722ed1' },
+  app: { color: 'blue', text: t('common.applicationProject'), iconColor: '#1677ff' },
+  lib: { color: 'purple', text: t('common.buildProject'), iconColor: '#722ed1' },
 };
 
 export const PROJECT_KIND_OPTIONS: { label: string; value: ProjectKind }[] = [
-  { label: t('应用项目'), value: 'app' },
-  { label: t('构建项目'), value: 'lib' },
+  { label: t('common.applicationProject'), value: 'app' },
+  { label: t('common.buildProject'), value: 'lib' },
 ];
 
 /** Secret 环境变量的占位符（提交时若仍为该值则保持原值） */

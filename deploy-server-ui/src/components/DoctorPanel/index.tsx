@@ -1,9 +1,9 @@
+import { t } from '@/i18n';
 import { systemApi } from '@/services/system';
 import type { DoctorResult } from '@/services/types';
 import { CheckCircleFilled, CloseCircleFilled, ReloadOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Descriptions, Space, Spin, Table, Tag, Typography } from 'antd';
 import React, { useCallback, useEffect, useState } from 'react';
-import { t } from '@/i18n';
 
 const { Text, Paragraph } = Typography;
 
@@ -18,7 +18,7 @@ const DoctorPanel: React.FC<{ data?: DoctorResult | null; loading?: boolean }> =
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: '32px 0' }}>
-        <Spin tip={t('正在检测服务端环境…')}>
+        <Spin tip={t('doctor.checkingTheServerEnvironment')}>
           <div style={{ height: 60 }} />
         </Spin>
       </div>
@@ -29,8 +29,8 @@ const DoctorPanel: React.FC<{ data?: DoctorResult | null; loading?: boolean }> =
       <Alert
         type="warning"
         showIcon
-        message={t('未能获取环境自检结果')}
-        description={t('后端 /system/doctor 接口不可用，或当前未登录。')}
+        message={t('doctor.failedToFetchDoctorResults')}
+        description={t('doctor.endpointUnavailable')}
       />
     );
   }
@@ -40,33 +40,35 @@ const DoctorPanel: React.FC<{ data?: DoctorResult | null; loading?: boolean }> =
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="middle">
       <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} bordered>
-        <Descriptions.Item label={t('操作系统')}>
+        <Descriptions.Item label={t('common.operatingSystem')}>
           {data.os}/{data.arch}
         </Descriptions.Item>
-        <Descriptions.Item label={t('主机名')}>{data.hostname || '-'}</Descriptions.Item>
-        <Descriptions.Item label={t('服务端版本')}>{data.serverVersion || '-'}</Descriptions.Item>
-        <Descriptions.Item label={t('Go 版本')}>{data.goVersion || '-'}</Descriptions.Item>
-        <Descriptions.Item label={t('默认 Shell')}>
+        <Descriptions.Item label={t('common.hostname')}>{data.hostname || '-'}</Descriptions.Item>
+        <Descriptions.Item label={t('doctor.serverVersion')}>
+          {data.serverVersion || '-'}
+        </Descriptions.Item>
+        <Descriptions.Item label={t('doctor.goVersion')}>{data.goVersion || '-'}</Descriptions.Item>
+        <Descriptions.Item label={t('doctor.defaultShell')}>
           {data.shell?.selected || '-'}
           {data.shell?.path ? `（${data.shell.path}）` : ''}
         </Descriptions.Item>
-        <Descriptions.Item label={t('可用 Shell')}>
+        <Descriptions.Item label={t('doctor.availableShells')}>
           {(data.shell?.available || []).join(', ') || '-'}
         </Descriptions.Item>
-        <Descriptions.Item label={t('工作根目录')}>
+        <Descriptions.Item label={t('common.workspaceRoot')}>
           <Text code>{data.webRoot || '-'}</Text>{' '}
           {data.webRootWritable ? (
-            <Tag color="success">{t('可写')}</Tag>
+            <Tag color="success">{t('doctor.writable')}</Tag>
           ) : (
-            <Tag color="error">{t('不可写')}</Tag>
+            <Tag color="error">{t('doctor.readOnly')}</Tag>
           )}
         </Descriptions.Item>
-        <Descriptions.Item label={t('数据目录')}>
+        <Descriptions.Item label={t('doctor.dataDirectory')}>
           <Text code>{data.dataDir || '-'}</Text>{' '}
           {data.dataDirWritable ? (
-            <Tag color="success">{t('可写')}</Tag>
+            <Tag color="success">{t('doctor.writable')}</Tag>
           ) : (
-            <Tag color="error">{t('不可写')}</Tag>
+            <Tag color="error">{t('doctor.readOnly')}</Tag>
           )}
         </Descriptions.Item>
       </Descriptions>
@@ -78,26 +80,28 @@ const DoctorPanel: React.FC<{ data?: DoctorResult | null; loading?: boolean }> =
         dataSource={data.checks || []}
         columns={[
           {
-            title: t('工具'),
+            title: t('doctor.tool'),
             dataIndex: 'name',
             width: 120,
             render: (v: string) => <Text strong>{v}</Text>,
           },
           {
-            title: t('状态'),
+            title: t('common.status'),
             dataIndex: 'found',
             width: 110,
             render: (found: boolean) =>
               found ? (
                 <Tag icon={<CheckCircleFilled />} color="success">
-                   {t('已就绪')} </Tag>
+                  {t('doctor.ready')}{' '}
+                </Tag>
               ) : (
                 <Tag icon={<CloseCircleFilled />} color="error">
-                   {t('未找到')} </Tag>
+                  {t('doctor.notFound')}{' '}
+                </Tag>
               ),
           },
           {
-            title: t('版本 / 路径'),
+            title: t('doctor.versionPath'),
             dataIndex: 'version',
             render: (_: string, row) => (
               <Space direction="vertical" size={0}>
@@ -111,7 +115,7 @@ const DoctorPanel: React.FC<{ data?: DoctorResult | null; loading?: boolean }> =
             ),
           },
           {
-            title: t('说明 / 安装提示'),
+            title: t('doctor.descriptionInstallHints'),
             dataIndex: 'hint',
             render: (hint: string) => hint || <Text type="secondary">-</Text>,
           },
@@ -122,17 +126,19 @@ const DoctorPanel: React.FC<{ data?: DoctorResult | null; loading?: boolean }> =
         <Alert
           type="warning"
           showIcon
-          message={t('有 {length} 项工具未找到：{p1}', { length: missing.length, p1: missing
-            .map((m) => m.name)
-            .join('、') })}
+          message={t('doctor.toolsNotFound', {
+            length: missing.length,
+            p1: missing.map((m) => m.name).join('、'),
+          })}
           description={
             <div>
               <Paragraph style={{ marginBottom: 4 }}>
-                 {t('可以在下面「工具链一键安装」里一键装上（管理员），或按下面的提示在这台服务器上手动装：')} </Paragraph>
+                {t('doctor.installItWithOneClick')}{' '}
+              </Paragraph>
               <ul style={{ marginBottom: 0, paddingLeft: 18, listStyle: 'disc' }}>
                 {missing.map((m) => (
                   <li key={m.name}>
-                    <Text code>{m.name}</Text>：{m.hint || t('请参考对应工具的官方安装文档')}
+                    <Text code>{m.name}</Text>：{m.hint || t('doctor.referToTheOfficialInstall')}
                   </li>
                 ))}
               </ul>
@@ -140,7 +146,7 @@ const DoctorPanel: React.FC<{ data?: DoctorResult | null; loading?: boolean }> =
           }
         />
       ) : (
-        <Alert type="success" showIcon message={t('所有检测项均已就绪')} />
+        <Alert type="success" showIcon message={t('doctor.allChecksAreReady')} />
       )}
     </Space>
   );
@@ -169,10 +175,11 @@ export const DoctorPanelWithFetch: React.FC = () => {
 
   return (
     <Card
-      title={t('环境自检')}
+      title={t('common.doctor')}
       extra={
         <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
-           {t('重新检测')} </Button>
+          {t('common.recheck')}{' '}
+        </Button>
       }
     >
       <DoctorPanel data={data} loading={loading} />

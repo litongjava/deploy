@@ -1,3 +1,4 @@
+import { t } from '@/i18n';
 import { authApi } from '@/services/auth';
 import { clearToken } from '@/services/authStore';
 import {
@@ -13,7 +14,6 @@ import React, { useCallback } from 'react';
 import { flushSync } from 'react-dom';
 import HeaderDropdown from '../HeaderDropdown';
 import { LanguageMenuItemLabel } from '../LanguageSwitcher';
-import { t } from '@/i18n';
 
 export type GlobalHeaderRightProps = {
   menu?: boolean;
@@ -117,12 +117,12 @@ export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({ children }) =
     {
       key: 'center',
       icon: <UserOutlined />,
-      label: t('个人设置'),
+      label: t('common.profile'),
     },
     {
       key: 'settings',
       icon: <SettingOutlined />,
-      label: t('系统设置'),
+      label: t('common.systemSettings'),
     },
     {
       // 语言切换：标签自带 onClick 直接切语言，所以这里不能再落到下面
@@ -134,7 +134,7 @@ export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({ children }) =
       key: 'help',
       icon: <QuestionCircleOutlined />,
       // 顶栏那个「?」的 title 提示原样保留：悬停在这一项上仍能看到接口契约的位置
-      label: <span title={t('接口契约见 docs/API设计.md')}>{t('帮助')}</span>,
+      label: <span title={t('account.apiContractDocs')}>{t('account.help')}</span>,
     },
     {
       type: 'divider' as const,
@@ -142,7 +142,7 @@ export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({ children }) =
     {
       key: 'logout',
       icon: <LogoutOutlined />,
-      label: t('退出登录'),
+      label: t('account.signOut'),
     },
   ];
 

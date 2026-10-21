@@ -1,4 +1,5 @@
 import ProjectKindIcon from '@/components/ProjectKindIcon';
+import { t } from '@/i18n';
 import { projectApi } from '@/services/project';
 import type { ProjectBrief } from '@/services/types';
 import { RUN_STATUS_META, formatTime } from '@/utils/constants';
@@ -8,7 +9,6 @@ import { PageContainer, ProTable } from '@ant-design/pro-components';
 import { history, useAccess } from '@umijs/max';
 import { Button, Dropdown, Popconfirm, Segmented, Space, Tag, message } from 'antd';
 import React, { useRef, useState } from 'react';
-import { t } from '@/i18n';
 
 const Projects: React.FC = () => {
   const actionRef = useRef<ActionType>();
@@ -23,8 +23,11 @@ const Projects: React.FC = () => {
       const depCount = res?.dependencies?.length || 0;
       messageApi.success(
         withDependencies && depCount > 0
-          ? t('已触发构建 #{buildNumber}，先构建 {depCount} 个依赖', { buildNumber: res.buildNumber, depCount: depCount })
-          : t('已触发构建 #{buildNumber}', { buildNumber: res.buildNumber }),
+          ? t('project.triggeredBuildBuildingDependenciesFirst', {
+              buildNumber: res.buildNumber,
+              depCount: depCount,
+            })
+          : t('project.triggeredBuild', { buildNumber: res.buildNumber }),
       );
       history.push(`/runs/${res.runId}`);
     } catch (e) {
@@ -35,7 +38,7 @@ const Projects: React.FC = () => {
   const toggleArchive = async (key: string, archived: boolean) => {
     try {
       await projectApi.archive(key, archived);
-      messageApi.success(archived ? t('已归档') : t('已取消归档'));
+      messageApi.success(archived ? t('common.archived') : t('common.unarchivedSuccess'));
       actionRef.current?.reload();
     } catch (e) {
       // 统一错误提示
@@ -45,7 +48,7 @@ const Projects: React.FC = () => {
   const removeProject = async (key: string) => {
     try {
       await projectApi.remove(key);
-      messageApi.success(t('已删除'));
+      messageApi.success(t('common.deleted'));
       actionRef.current?.reload();
     } catch (e) {
       // 统一错误提示
@@ -54,23 +57,23 @@ const Projects: React.FC = () => {
 
   const columns: ProColumns<ProjectBrief>[] = [
     {
-      title: t('项目'),
+      title: t('common.project'),
       dataIndex: 'keyword',
       hideInTable: true,
-      fieldProps: { placeholder: t('按 key 或名称搜索') },
+      fieldProps: { placeholder: t('common.searchByKeyOrName') },
     },
     {
-      title: t('类型'),
+      title: t('common.type'),
       dataIndex: 'kind',
       hideInTable: true,
       valueType: 'select',
       valueEnum: {
-        app: { text: t('应用项目') },
-        lib: { text: t('构建项目') },
+        app: { text: t('common.applicationProject') },
+        lib: { text: t('common.buildProject') },
       },
     },
     {
-      title: t('名称'),
+      title: t('common.name'),
       dataIndex: 'name',
       hideInSearch: true,
       render: (_, row) => (
@@ -85,7 +88,7 @@ const Projects: React.FC = () => {
       ),
     },
     {
-      title: t('依赖'),
+      title: t('project.dependencies'),
       dataIndex: 'dependencies',
       hideInSearch: true,
       width: 180,
@@ -103,7 +106,7 @@ const Projects: React.FC = () => {
         ),
     },
     {
-      title: t('工作目录'),
+      title: t('common.workingDirectory'),
       dataIndex: 'workdir',
       hideInSearch: true,
       ellipsis: true,
@@ -119,21 +122,21 @@ const Projects: React.FC = () => {
       ),
     },
     {
-      title: t('归属'),
+      title: t('common.owner'),
       dataIndex: 'ownerName',
       hideInSearch: true,
       width: 110,
       render: (_, row) => row.ownerName || '-',
     },
     {
-      title: t('命令数'),
+      title: t('project.commands'),
       dataIndex: 'runCount',
       hideInSearch: true,
       width: 90,
-      render: (_, row) => t('{runCount} 次运行', { runCount: row.runCount }),
+      render: (_, row) => t('project.runs', { runCount: row.runCount }),
     },
     {
-      title: t('上次运行'),
+      title: t('common.lastRun'),
       dataIndex: 'lastRunAt',
       hideInSearch: true,
       width: 210,
@@ -146,19 +149,23 @@ const Projects: React.FC = () => {
             <span style={{ fontSize: 12 }}>{formatTime(row.lastRunAt)}</span>
           </Space>
         ) : (
-          <span style={{ color: '#999' }}>{t('从未运行')}</span>
+          <span style={{ color: '#999' }}>{t('common.neverRun')}</span>
         ),
     },
     {
-      title: t('状态'),
+      title: t('common.status'),
       dataIndex: 'archived',
       hideInSearch: true,
       width: 90,
       render: (_, row) =>
-        row.archived ? <Tag color="default">{t('已归档')}</Tag> : <Tag color="green">{t('正常')}</Tag>,
+        row.archived ? (
+          <Tag color="default">{t('common.archived')}</Tag>
+        ) : (
+          <Tag color="green">{t('common.active')}</Tag>
+        ),
     },
     {
-      title: t('操作'),
+      title: t('common.actions'),
       valueType: 'option',
       width: 230,
       fixed: 'right',
@@ -174,13 +181,13 @@ const Projects: React.FC = () => {
               onClick={() => runProject(row.key, true)}
               menu={{
                 items: [
-                  { key: 'with-deps', label: t('含依赖执行（推荐）') },
-                  { key: 'only', label: t('仅执行本项目') },
+                  { key: 'with-deps', label: t('common.runWithDependenciesRecommended') },
+                  { key: 'only', label: t('common.runThisProjectOnly') },
                 ],
                 onClick: ({ key }) => runProject(row.key, key === 'with-deps'),
               }}
             >
-              <PlayCircleOutlined /> {t('执行')}
+              <PlayCircleOutlined /> {t('common.execute')}
             </Dropdown.Button>
           ) : (
             <Button
@@ -191,30 +198,33 @@ const Projects: React.FC = () => {
               disabled={row.archived}
               onClick={() => runProject(row.key)}
             >
-               {t('执行')} </Button>
+              {t('common.execute')}{' '}
+            </Button>
           ),
           <a key="detail" onClick={() => history.push(`/projects/${row.key}`)}>
-             {t('详情')} </a>,
+            {t('common.details')}{' '}
+          </a>,
           canOperate ? (
             <a key="edit" onClick={() => history.push(`/projects/${row.key}/edit`)}>
-               {t('编辑')} </a>
+              {t('common.edit')}{' '}
+            </a>
           ) : null,
           canOperate ? (
             <a key="archive" onClick={() => toggleArchive(row.key, !row.archived)}>
-              {row.archived ? t('取消归档') : t('归档')}
+              {row.archived ? t('common.unarchive') : t('common.archive')}
             </a>
           ) : null,
           canOperate ? (
             <Popconfirm
               key="delete"
-              title={t('删除项目')}
-              description={t('将连带删除运行历史与日志文件，且不可恢复。确认删除 {key}？', { key: row.key })}
-              okText={t('删除')}
+              title={t('project.deleteProject')}
+              description={t('common.deleteProjectConfirm', { key: row.key })}
+              okText={t('common.delete')}
               okButtonProps={{ danger: true }}
-              cancelText={t('取消')}
+              cancelText={t('common.cancel')}
               onConfirm={() => removeProject(row.key)}
             >
-              <a style={{ color: '#ff4d4f' }}>{t('删除')}</a>
+              <a style={{ color: '#ff4d4f' }}>{t('common.delete')}</a>
             </Popconfirm>
           ) : null,
         ];
@@ -223,7 +233,7 @@ const Projects: React.FC = () => {
   ];
 
   return (
-    <PageContainer title={t('项目')}>
+    <PageContainer title={t('common.project')}>
       {contextHolder}
       <ProTable<ProjectBrief>
         rowKey="key"
@@ -256,9 +266,9 @@ const Projects: React.FC = () => {
                 actionRef.current?.reload();
               }}
               options={[
-                { label: t('未归档'), value: 'active' },
-                { label: t('已归档'), value: 'archived' },
-                { label: t('全部'), value: 'all' },
+                { label: t('common.unarchived'), value: 'active' },
+                { label: t('common.archived'), value: 'archived' },
+                { label: t('common.all'), value: 'all' },
               ]}
             />,
             <Button
@@ -269,7 +279,8 @@ const Projects: React.FC = () => {
                 actionRef.current?.reload();
               }}
             >
-               {t('只看我的')} </Button>,
+              {t('common.mineOnly')}{' '}
+            </Button>,
             // 新建入口必须放在 toolbar.actions 里：ProTable 会用 toolbar.actions
             // 覆盖 toolBarRender 的返回值，写在 toolBarRender 里按钮根本不会渲染。
             <Button
@@ -278,7 +289,8 @@ const Projects: React.FC = () => {
               icon={<PlusOutlined />}
               onClick={() => history.push('/projects/new')}
             >
-               {t('新建项目')} </Button>,
+              {t('common.newProject')}{' '}
+            </Button>,
           ],
         }}
       />

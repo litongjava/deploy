@@ -1,3 +1,4 @@
+import { t } from '@/i18n';
 import { runApi } from '@/services/run';
 import { downloadToolchainScript, systemApi } from '@/services/system';
 import type { Run, ToolchainComponent, ToolchainList } from '@/services/types';
@@ -27,8 +28,7 @@ import {
   Typography,
   message,
 } from 'antd';
-import React, { useCallback, useEffect, useState } from 'react';
-import { t } from '@/i18n';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 const { Text, Paragraph } = Typography;
 
@@ -38,6 +38,109 @@ const INSTALL_PROJECT_KEY = 'system-toolchain';
 interface FieldFormValues {
   [key: string]: string;
 }
+
+type Mirror = 'off' | 'cn';
+
+/** 已改过的参数拼成一行摘要（没改过返回空串） */
+const paramsSummary = (c: ToolchainComponent) => {
+  const changed = (c.fields || []).filter((f) => f.value);
+  if (changed.length === 0) return '';
+  return changed.map((f) => `${f.key}=${f.value}`).join('  ');
+};
+
+/**
+ * 每个组件自己的安装源说明。
+ *
+ * 以前这里是一段所有组件共用的「Maven settings.xml / Cargo 配置」提示，勾
+ * nvm 或 Go 时也会看到，属于串台。现在按组件和所选安装源给出真正相关的说明：
+ * 包管理器组件（cc/java/maven/certbot）不走安装源，只有下载/镜像类组件才受影响。
+ */
+const componentHint = (key: string, mirror: Mirror): string => {
+  switch (key) {
+    case 'cc':
+      return t('toolchain.hint.cc');
+    case 'java':
+      return t('toolchain.hint.java');
+    case 'maven':
+      return mirror === 'cn' ? t('toolchain.hint.maven.cn') : t('toolchain.hint.maven.off');
+    case 'nvm':
+      return mirror === 'cn' ? t('toolchain.hint.nvm.cn') : t('toolchain.hint.nvm.off');
+    case 'node':
+      return mirror === 'cn' ? t('toolchain.hint.node.cn') : t('toolchain.hint.node.off');
+    case 'pnpm':
+      return mirror === 'cn' ? t('toolchain.hint.pnpm.cn') : t('toolchain.hint.pnpm.off');
+    case 'go':
+      return mirror === 'cn' ? t('toolchain.hint.go.cn') : t('toolchain.hint.go.off');
+    case 'rust':
+      return mirror === 'cn' ? t('toolchain.hint.rust.cn') : t('toolchain.hint.rust.off');
+    case 'certbot':
+      return t('toolchain.hint.certbot');
+    default:
+      return '';
+  }
+};
+
+interface InstallConfirmContentProps {
+  picked: ToolchainComponent[];
+  dryRun: boolean;
+  onMirrorChange: (mirror: Mirror) => void;
+}
+
+/** 确认弹窗正文：安装源切换后，各组件下面的提示随之更新。 */
+const InstallConfirmContent: React.FC<InstallConfirmContentProps> = ({
+  picked,
+  dryRun,
+  onMirrorChange,
+}) => {
+  const [mirror, setMirror] = useState<Mirror>('off');
+
+  return (
+    <Space direction="vertical" size={6} style={{ width: '100%' }}>
+      <Text strong>{t('toolchain.source')}</Text>
+      <Radio.Group
+        value={mirror}
+        onChange={(e) => {
+          setMirror(e.target.value);
+          onMirrorChange(e.target.value);
+        }}
+      >
+        <Space direction="vertical">
+          <Radio value="off">{t('toolchain.source.official')}</Radio>
+          <Radio value="cn">{t('toolchain.source.cn')}</Radio>
+        </Space>
+      </Radio.Group>
+      <div>
+        {picked.map((c) => {
+          const hint = componentHint(c.key, mirror);
+          return (
+            <div key={c.key} style={{ marginBottom: 8 }}>
+              <div>
+                · <Text strong>{c.name}</Text>
+                <Text type="secondary">（{c.estimate}）</Text>
+              </div>
+              {paramsSummary(c) ? (
+                <div style={{ fontSize: 12 }}>
+                  <Text type="secondary">
+                    {t('toolchain.parametersLabel')}
+                    {paramsSummary(c)}
+                  </Text>
+                </div>
+              ) : null}
+              {hint ? (
+                <div style={{ fontSize: 12, marginTop: 2 }}>
+                  <Text type="secondary">{hint}</Text>
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      <Text type="secondary">
+        {dryRun ? t('toolchain.footer.dryRun') : t('toolchain.footer.install')}
+      </Text>
+    </Space>
+  );
+};
 
 /**
  * 工具链一键安装面板（挂在「环境自检」页）。
@@ -94,74 +197,55 @@ const ToolchainPanel: React.FC = () => {
     loadRuns();
   }, [load, loadRuns]);
 
-  /** 已改过的参数拼成一行摘要（没改过返回空串） */
-  const paramsSummary = (c: ToolchainComponent) => {
-    const changed = (c.fields || []).filter((f) => f.value);
-    if (changed.length === 0) return '';
-    return changed.map((f) => `${f.key}=${f.value}`).join('  ');
-  };
+  /** 本次确认框里选中的安装源；弹窗内容是受控组件，值回写到这个 ref 供 onOk 使用 */
+  const mirrorRef = useRef<Mirror>('off');
 
-  const runInstall = async (keys: string[], dryRun: boolean, mirror: 'cn' | 'off') => {
+  const runInstall = async (keys: string[], dryRun: boolean, mirror: Mirror) => {
     setBusy(true);
     try {
-      const res = await systemApi.installToolchains({ components: keys, dryRun, force: !dryRun, mirror });
+      const res = await systemApi.installToolchains({
+        components: keys,
+        dryRun,
+        force: !dryRun,
+        mirror,
+      });
       if (res?.nothingToDo) {
-        messageApi.info(t('所选组件都已安装；要换版本请点该行的「编辑」改参数后「重装」'));
+        messageApi.info(t('toolchain.allSelectedComponentsAreInstalled'));
         load();
         return;
       }
       messageApi.success(
         dryRun
-          ? t('已开始预演（{length} 项），正在跳转日志…', { length: keys.length })
-          : t('已开始安装（{length} 项），正在跳转日志…', { length: keys.length }),
+          ? t('toolchain.dryRunStartedItemsJumping', { length: keys.length })
+          : t('toolchain.installStartedItemsJumpingTo', { length: keys.length }),
       );
       history.push(`/runs/${res.runId}`);
-    } catch (e) {
-      throw e; // 保留弹窗，允许重试
     } finally {
+      // 失败时异常继续抛给 Modal.confirm：弹窗不关，允许重试
       setBusy(false);
     }
   };
 
   const confirm = (keys: string[], dryRun: boolean, label: string) => {
-    let mirror: 'off' | 'cn' = 'off';
+    mirrorRef.current = 'off';
     const picked = (data?.components || []).filter((c) => keys.includes(c.key));
     Modal.confirm({
-      title: dryRun ? t('预演：{label}', { label: label }) : t('确认安装：{label}', { label: label }),
+      title: dryRun
+        ? t('toolchain.dryRunTitle', { label: label })
+        : t('toolchain.confirmInstall', { label: label }),
       width: 640,
       content: (
-        <Space direction="vertical" size={6} style={{ width: '100%' }}>
-          <Text strong>{t('安装源')}</Text>
-          <Radio.Group defaultValue="off" onChange={(e) => { mirror = e.target.value; }}>
-            <Space direction="vertical">
-              <Radio value="off">{t('官方源（适合国外服务器）')}</Radio>
-              <Radio value="cn">{t('国内镜像（适合国内服务器）')}</Radio>
-            </Space>
-          </Radio.Group>
-          <Alert type="info" showIcon message={t('已有 Maven settings.xml 和 Cargo 配置保留，可能继续使用原镜像；自定义下载地址优先。官方模式忽略已保存的 Node/Rust 镜像参数。')} />
-          <div>
-            {picked.map((c) => (
-              <div key={c.key} style={{ marginBottom: 4 }}>
-                · <Text strong>{c.name}</Text>
-                <Text type="secondary">（{c.estimate}）</Text>
-                {paramsSummary(c) ? (
-                  <div style={{ fontSize: 12 }}>
-                    <Text type="secondary">{t('参数：')}{paramsSummary(c)}</Text>
-                  </div>
-                ) : null}
-              </div>
-            ))}
-          </div>
-          <Text type="secondary">
-            {dryRun
-              ? t('预演只打印将会执行的动作（apt 装包、下载解压、写 profile.d），不做任何修改。')
-              : t('安装以 root 在服务端机器上执行：apt 装包、下载解压、写 /etc/profile.d。几分钟内完成，可在运行详情页看实时日志或取消。')}
-          </Text>
-        </Space>
+        <InstallConfirmContent
+          picked={picked}
+          dryRun={dryRun}
+          onMirrorChange={(m) => {
+            mirrorRef.current = m;
+          }}
+        />
       ),
-      okText: dryRun ? t('开始预演') : t('开始安装'),
-      cancelText: t('取消'),
-      onOk: () => runInstall(keys, dryRun, mirror),
+      okText: dryRun ? t('common.startDryRun') : t('common.startInstall'),
+      cancelText: t('common.cancel'),
+      onOk: () => runInstall(keys, dryRun, mirrorRef.current),
     });
   };
 
@@ -180,7 +264,7 @@ const ToolchainPanel: React.FC = () => {
     setSaving(true);
     try {
       await systemApi.updateToolchain(editing.key, { fields: values });
-      messageApi.success(t('{name} 的参数已保存，下次安装/重装生效', { name: editing.name }));
+      messageApi.success(t('toolchain.parametersForSavedTheyTake', { name: editing.name }));
       setEditing(null);
       load();
     } catch (e) {
@@ -201,9 +285,9 @@ const ToolchainPanel: React.FC = () => {
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
-      messageApi.success(t('脚本已下载，可手动在服务器上执行'));
+      messageApi.success(t('common.scriptDownloaded'));
     } catch (e: any) {
-      messageApi.error(e?.message || t('下载失败'));
+      messageApi.error(e?.message || t('common.downloadFailed'));
     }
   };
 
@@ -213,7 +297,7 @@ const ToolchainPanel: React.FC = () => {
 
   const columns = [
     {
-      title: t('组件'),
+      title: t('toolchain.components'),
       dataIndex: 'name',
       render: (name: string, row: ToolchainComponent) => (
         <Space direction="vertical" size={0}>
@@ -225,20 +309,22 @@ const ToolchainPanel: React.FC = () => {
       ),
     },
     {
-      title: t('状态'),
+      title: t('common.status'),
       dataIndex: 'installed',
       width: 100,
       render: (installed: boolean) =>
         installed ? (
           <Tag icon={<CheckCircleFilled />} color="success">
-             {t('已安装')} </Tag>
+            {t('common.installed')}{' '}
+          </Tag>
         ) : (
           <Tag icon={<CloseCircleFilled />} color="error">
-             {t('缺失')} </Tag>
+            {t('toolchain.missing')}{' '}
+          </Tag>
         ),
     },
     {
-      title: t('版本 / 位置'),
+      title: t('toolchain.versionLocation'),
       dataIndex: 'version',
       width: 250,
       render: (_: string, row: ToolchainComponent) => (
@@ -253,13 +339,13 @@ const ToolchainPanel: React.FC = () => {
       ),
     },
     {
-      title: t('安装参数'),
+      title: t('toolchain.installParameters'),
       dataIndex: 'fields',
       width: 210,
       render: (_: unknown, row: ToolchainComponent) => {
         const changed = (row.fields || []).filter((f) => f.value);
         if (changed.length === 0) {
-          return <Text type="secondary">{t('默认')}</Text>;
+          return <Text type="secondary">{t('common.default')}</Text>;
         }
         return (
           <Space direction="vertical" size={0}>
@@ -272,33 +358,50 @@ const ToolchainPanel: React.FC = () => {
         );
       },
     },
-    { title: t('说明'), dataIndex: 'note' },
+    { title: t('common.note'), dataIndex: 'note' },
     {
-      title: t('操作'),
+      title: t('common.actions'),
       valueType: 'option',
       width: 140,
       render: (_: unknown, row: ToolchainComponent) => [
-        <Tooltip key="edit" title={canAdmin ? t('改版本 / 下载地址 / 安装目录') : t('仅管理员可改')}>
-          <a
-            onClick={() =>
-              canAdmin ? openEdit(row) : messageApi.warning(t('只有管理员可以修改安装参数'))
-            }
-          >
-            <EditOutlined /> {t('编辑')}
-          </a>
-        </Tooltip>,
         <Tooltip
-          key="install"
-          title={canAdmin ? (row.installed ? t('按当前参数重装') : t('按当前参数安装')) : t('仅管理员可安装')}
+          key="edit"
+          title={
+            canAdmin ? t('toolchain.changeVersionDownloadURLInstall') : t('common.adminOnlyEdit')
+          }
         >
           <a
             onClick={() =>
               canAdmin
-                ? confirm([row.key], false, `${row.installed ? t('重装') : t('安装')} ${row.name}`)
-                : messageApi.warning(t('只有管理员可以安装工具链'))
+                ? openEdit(row)
+                : messageApi.warning(t('toolchain.onlyAdministratorsCanChangeInstall'))
             }
           >
-            <ThunderboltOutlined /> {row.installed ? t('重装') : t('安装')}
+            <EditOutlined /> {t('common.edit')}
+          </a>
+        </Tooltip>,
+        <Tooltip
+          key="install"
+          title={
+            canAdmin
+              ? row.installed
+                ? t('common.reinstallWithCurrentParameters')
+                : t('common.installWithCurrentParameters')
+              : t('common.adminOnlyInstall')
+          }
+        >
+          <a
+            onClick={() =>
+              canAdmin
+                ? confirm(
+                    [row.key],
+                    false,
+                    `${row.installed ? t('common.reinstall') : t('common.install')} ${row.name}`,
+                  )
+                : messageApi.warning(t('toolchain.onlyAdministratorsCanInstallThe'))
+            }
+          >
+            <ThunderboltOutlined /> {row.installed ? t('common.reinstall') : t('common.install')}
           </a>
         </Tooltip>,
       ],
@@ -307,30 +410,30 @@ const ToolchainPanel: React.FC = () => {
 
   const runColumns = [
     {
-      title: t('时间'),
+      title: t('toolchain.time'),
       dataIndex: 'createdAt',
       width: 180,
       render: (v: string, row: Run) => (
         <Space direction="vertical" size={0}>
           <span>{formatTime(v)}</span>
           <Text type="secondary" style={{ fontSize: 12 }}>
-{t('运行 #{id} · 构建号 {buildNumber}', { id: row.id, buildNumber: row.buildNumber })}
+            {t('toolchain.runBuild', { id: row.id, buildNumber: row.buildNumber })}
           </Text>
         </Space>
       ),
     },
     {
-      title: t('装的组件'),
+      title: t('toolchain.componentsInstalled'),
       dataIndex: 'params',
       width: 200,
       render: (_: unknown, row: Run) => <Text code>{(row.params || {}).components || '-'}</Text>,
     },
     {
-      title: t('参数'),
+      title: t('toolchain.parameters'),
       dataIndex: 'params',
       render: (_: unknown, row: Run) => {
         const entries = Object.entries(row.params || {}).filter(([k]) => k !== 'components');
-        if (entries.length === 0) return <Text type="secondary">{t('默认')}</Text>;
+        if (entries.length === 0) return <Text type="secondary">{t('common.default')}</Text>;
         return (
           <Text type="secondary" style={{ fontSize: 12 }}>
             {entries.map(([k, v]) => `${k}=${v}`).join('  ')}
@@ -339,7 +442,7 @@ const ToolchainPanel: React.FC = () => {
       },
     },
     {
-      title: t('状态'),
+      title: t('common.status'),
       dataIndex: 'status',
       width: 100,
       render: (v: Run['status']) => (
@@ -347,26 +450,29 @@ const ToolchainPanel: React.FC = () => {
       ),
     },
     {
-      title: t('耗时'),
+      title: t('common.duration'),
       dataIndex: 'durationMs',
       width: 90,
       render: (v: number) => formatDuration(v),
     },
     {
-      title: t('日志'),
+      title: t('common.logs'),
       width: 80,
-      render: (_: unknown, row: Run) => <a onClick={() => history.push(`/runs/${row.id}`)}>{t('查看')}</a>,
+      render: (_: unknown, row: Run) => (
+        <a onClick={() => history.push(`/runs/${row.id}`)}>{t('toolchain.view')}</a>
+      ),
     },
   ];
 
   return (
     <Card
-      title={t('工具链一键安装')}
+      title={t('toolchain.oneClickToolchainInstall')}
       style={{ marginTop: 16 }}
       extra={
         <Space>
           <Button icon={<DownloadOutlined />} onClick={download}>
-             {t('下载脚本')} </Button>
+            {t('common.downloadScript')}{' '}
+          </Button>
           <Button
             icon={<ReloadOutlined />}
             onClick={() => {
@@ -375,7 +481,8 @@ const ToolchainPanel: React.FC = () => {
             }}
             loading={loading}
           >
-             {t('重新检测')} </Button>
+            {t('common.recheck')}{' '}
+          </Button>
         </Space>
       }
     >
@@ -386,8 +493,8 @@ const ToolchainPanel: React.FC = () => {
           style={{ marginBottom: 12 }}
           type="info"
           showIcon
-          message={t('只有管理员可以安装或修改工具链参数')}
-          description={t('你可以查看各组件是否就绪、各自的版本与安装位置，以及历史安装记录。')}
+          message={t('toolchain.onlyAdministratorsCanInstallOr')}
+          description={t('toolchain.readOnlyHint')}
         />
       ) : null}
 
@@ -396,8 +503,8 @@ const ToolchainPanel: React.FC = () => {
           style={{ marginBottom: 12 }}
           type="warning"
           showIcon
-          message={t('当前服务端是 {platform}，一键安装只支持 Linux', { platform: data?.platform })}
-          description={t('安装脚本基于 bash 与 apt/dnf；这里仍可以点「预演」看看它打算做什么，或下载脚本到 Linux 机器上手动执行。')}
+          message={t('common.linuxOnlyInstall', { platform: data?.platform })}
+          description={t('toolchain.installScriptTargetsBashAnd')}
         />
       ) : null}
 
@@ -406,16 +513,21 @@ const ToolchainPanel: React.FC = () => {
           style={{ marginBottom: 12 }}
           type="warning"
           showIcon
-          message={t('{length} 个组件缺失：{p1}（已就绪 {installedCount}/{p3}）', { length: missing.length, p1: missing.join('、'), installedCount: installedCount, p3: components.length })}
-          description={t('点「一键安装缺失」即可在服务端自动安装；也可以点某一行的「编辑」改版本 / 下载地址 / 安装目录，再点「安装」。安装过程是一次普通运行，可看实时日志、随时取消。')}
+          message={t('toolchain.componentsMissingReady', {
+            length: missing.length,
+            p1: missing.join('、'),
+            installedCount: installedCount,
+            p3: components.length,
+          })}
+          description={t('toolchain.missingHint')}
         />
       ) : (
         <Alert
           style={{ marginBottom: 12 }}
           type="success"
           showIcon
-          message={t('全部组件都已就绪')}
-          description={t('要换版本就点对应行的「编辑」改参数，然后点「重装」。')}
+          message={t('toolchain.allComponentsAreReady')}
+          description={t('toolchain.reinstallHint')}
         />
       )}
 
@@ -439,37 +551,50 @@ const ToolchainPanel: React.FC = () => {
           icon={<ThunderboltOutlined />}
           loading={busy}
           disabled={!canAdmin || missing.length === 0}
-          onClick={() => confirm(missing, false, t('安装全部缺失（{length} 项）', { length: missing.length }))}
+          onClick={() =>
+            confirm(missing, false, t('toolchain.installAllMissing', { length: missing.length }))
+          }
         >
-{t('一键安装缺失（{count}）', { count: missing.length })}
+          {t('common.installMissing', { count: missing.length })}
         </Button>
         <Button
           loading={busy}
           disabled={!canAdmin || selected.length === 0}
-          onClick={() => confirm(selected, false, t('安装所选（{length} 项）', { length: selected.length }))}
+          onClick={() =>
+            confirm(
+              selected,
+              false,
+              t('toolchain.installSelectedCount', { length: selected.length }),
+            )
+          }
         >
-{t('安装所选（{count}）', { count: selected.length })}
+          {t('toolchain.installSelected', { count: selected.length })}
         </Button>
         <Button
           icon={<ExperimentOutlined />}
           loading={busy}
           disabled={selected.length === 0}
-          onClick={() => confirm(selected, true, t('预演所选（{length} 项）', { length: selected.length }))}
+          onClick={() =>
+            confirm(selected, true, t('toolchain.dryRunSelected', { length: selected.length }))
+          }
         >
-           {t('预演')} </Button>
+          {t('toolchain.dryRun')}{' '}
+        </Button>
         <Text type="secondary" style={{ fontSize: 12 }}>
-{t('脚本位置：')}<Text code>{data?.scriptPath || '-'}</Text>
+          {t('common.scriptPath')}
+          <Text code>{data?.scriptPath || '-'}</Text>
         </Text>
       </Space>
 
       <Card
         type="inner"
-        title={t('安装记录')}
+        title={t('toolchain.installHistory')}
         style={{ marginTop: 16 }}
-        extra={<a onClick={loadRuns}>{t('刷新记录')}</a>}
+        extra={<a onClick={loadRuns}>{t('toolchain.refreshRecords')}</a>}
       >
         <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
-           {t('每次安装 / 重装都是一次普通运行，记录里能看到用了哪些参数（版本、下载地址、安装目录）；\n          具体「装到哪」见运行日志末尾的汇总表与上面「版本 / 位置」列。')} </Paragraph>
+          {t('toolchain.historyHint')}{' '}
+        </Paragraph>
         <Table<Run>
           size="small"
           rowKey="id"
@@ -477,24 +602,24 @@ const ToolchainPanel: React.FC = () => {
           pagination={false}
           dataSource={runs}
           columns={runColumns as any}
-          locale={{ emptyText: t('还没有安装记录') }}
+          locale={{ emptyText: t('toolchain.noInstallHistoryYet') }}
         />
       </Card>
 
       <Modal
         open={!!editing}
-        title={editing ? t('编辑安装参数：{name}', { name: editing.name }) : ''}
+        title={editing ? t('toolchain.editInstallParameters', { name: editing.name }) : ''}
         onCancel={() => setEditing(null)}
         onOk={saveEdit}
         confirmLoading={saving}
-        okText={t('保存')}
-        cancelText={t('取消')}
+        okText={t('common.save')}
+        cancelText={t('common.cancel')}
         destroyOnClose
         width={680}
       >
         <Paragraph type="secondary" style={{ fontSize: 12 }}>
-{t('留空表示用脚本默认值。保存后点该行的「{action}」即按新参数执行，参数会记录在那次安装的运行里。', {
-            action: editing?.installed ? t('重装') : t('安装'),
+          {t('toolchain.emptyDefaultHint', {
+            action: editing?.installed ? t('common.reinstall') : t('common.install'),
           })}
         </Paragraph>
         <Form form={form} layout="vertical" preserve={false}>
@@ -515,8 +640,8 @@ const ToolchainPanel: React.FC = () => {
                   {f.help}
                   {f.default ? (
                     <>
-{' '}
-                      {t('默认')} <Text code>{f.default}</Text>
+                      {' '}
+                      {t('common.default')} <Text code>{f.default}</Text>
                     </>
                   ) : null}
                 </span>
@@ -526,7 +651,11 @@ const ToolchainPanel: React.FC = () => {
             </Form.Item>
           ))}
           {(editing?.fields || []).length === 0 ? (
-            <Alert type="info" showIcon message={t('这个组件没有可配置的参数')} />
+            <Alert
+              type="info"
+              showIcon
+              message={t('toolchain.componentHasNoConfigurableParameters')}
+            />
           ) : null}
         </Form>
       </Modal>

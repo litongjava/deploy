@@ -1,28 +1,18 @@
 import ProjectKindIcon from '@/components/ProjectKindIcon';
+import { t } from '@/i18n';
 import { projectApi } from '@/services/project';
 import { runApi } from '@/services/run';
 import type { HookToken, HookTokenCreated, Project, Run } from '@/services/types';
 import {
-  PREPARE_STATUS_META,
   PROJECT_KIND_META,
   RUN_STATUS_META,
   SECRET_PLACEHOLDER,
   formatDuration,
   formatTime,
 } from '@/utils/constants';
-import {
-  CopyOutlined,
-  PlayCircleOutlined,
-  PlusOutlined,
-  ReloadOutlined,
-} from '@ant-design/icons';
+import { CopyOutlined, PlayCircleOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
-import {
-  PageContainer,
-  ProCard,
-  ProDescriptions,
-  ProTable,
-} from '@ant-design/pro-components';
+import { PageContainer, ProCard, ProDescriptions, ProTable } from '@ant-design/pro-components';
 import { history, useParams } from '@umijs/max';
 import {
   Alert,
@@ -44,7 +34,6 @@ import {
   message,
 } from 'antd';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { t } from '@/i18n';
 
 const { Text, Paragraph } = Typography;
 
@@ -106,8 +95,11 @@ const ProjectDetail: React.FC = () => {
       const depCount = res?.dependencies?.length || 0;
       messageApi.success(
         withDependencies && depCount > 0
-          ? t('已触发构建 #{buildNumber}，先构建 {depCount} 个依赖', { buildNumber: res.buildNumber, depCount: depCount })
-          : t('已触发构建 #{buildNumber}', { buildNumber: res.buildNumber }),
+          ? t('project.triggeredBuildBuildingDependenciesFirst', {
+              buildNumber: res.buildNumber,
+              depCount: depCount,
+            })
+          : t('project.triggeredBuild', { buildNumber: res.buildNumber }),
       );
       history.push(`/runs/${res.runId}`);
     } catch (e) {
@@ -117,7 +109,7 @@ const ProjectDetail: React.FC = () => {
     }
   };
 
-  const copy = async (text: string, tip = t('已复制')) => {
+  const copy = async (text: string, tip = t('common.copied')) => {
     try {
       await navigator.clipboard.writeText(text);
       messageApi.success(tip);
@@ -132,7 +124,7 @@ const ProjectDetail: React.FC = () => {
         document.execCommand('copy');
         messageApi.success(tip);
       } catch (err) {
-        messageApi.error(t('复制失败，请手动选择文本'));
+        messageApi.error(t('common.copyFailed'));
       }
       document.body.removeChild(el);
     }
@@ -167,7 +159,7 @@ const ProjectDetail: React.FC = () => {
   const removeHook = async (id: number) => {
     try {
       await projectApi.removeHook(id);
-      messageApi.success(t('已删除'));
+      messageApi.success(t('common.deleted'));
       loadHooks();
     } catch (e) {
       // 统一提示
@@ -186,13 +178,13 @@ const ProjectDetail: React.FC = () => {
 
   const runColumns: ProColumns<Run>[] = [
     {
-      title: t('构建号'),
+      title: t('common.buildNumber'),
       dataIndex: 'buildNumber',
       width: 90,
       render: (_, row) => <a onClick={() => history.push(`/runs/${row.id}`)}>#{row.buildNumber}</a>,
     },
     {
-      title: t('状态'),
+      title: t('common.status'),
       dataIndex: 'status',
       width: 100,
       render: (_, row) => (
@@ -200,31 +192,32 @@ const ProjectDetail: React.FC = () => {
       ),
     },
     {
-      title: t('触发'),
+      title: t('common.trigger'),
       dataIndex: 'triggerUserName',
       width: 140,
       render: (_, row) => `${row.triggerType} / ${row.triggerUserName || '-'}`,
     },
-    { title: t('分支'), dataIndex: 'requestedRef', width: 110 },
+    { title: t('common.branch'), dataIndex: 'requestedRef', width: 110 },
     {
-      title: t('耗时'),
+      title: t('common.duration'),
       dataIndex: 'durationMs',
       width: 100,
       render: (_, row) => formatDuration(row.durationMs),
     },
     {
-      title: t('开始时间'),
+      title: t('common.startTime'),
       dataIndex: 'startedAt',
       width: 170,
       render: (_, row) => formatTime(row.startedAt),
     },
     {
-      title: t('操作'),
+      title: t('common.actions'),
       valueType: 'option',
       width: 100,
       render: (_, row) => [
         <a key="log" onClick={() => history.push(`/runs/${row.id}`)}>
-           {t('查看日志')} </a>,
+          {t('common.viewLogs')}{' '}
+        </a>,
       ],
     },
   ];
@@ -246,13 +239,14 @@ const ProjectDetail: React.FC = () => {
             onClick={() => handleRun(undefined, true)}
             menu={{
               items: [
-                { key: 'with-deps', label: t('含依赖执行（推荐）') },
-                { key: 'only', label: t('仅执行本项目') },
+                { key: 'with-deps', label: t('common.runWithDependenciesRecommended') },
+                { key: 'only', label: t('common.runThisProjectOnly') },
               ],
               onClick: ({ key }) => handleRun(undefined, key === 'with-deps'),
             }}
           >
-             {t('执行')} </Dropdown.Button>
+            {t('common.execute')}{' '}
+          </Dropdown.Button>
         ) : (
           <Button
             key="run"
@@ -262,14 +256,16 @@ const ProjectDetail: React.FC = () => {
             disabled={!project || project.archived || !project.canEdit}
             onClick={() => handleRun()}
           >
-             {t('执行')} </Button>
+            {t('common.execute')}{' '}
+          </Button>
         ),
         <Button
           key="edit"
           disabled={!project || !project.canEdit}
           onClick={() => history.push(`/projects/${key}/edit`)}
         >
-           {t('编辑')} </Button>,
+          {t('common.edit')}{' '}
+        </Button>,
       ]}
     >
       {contextHolder}
@@ -278,8 +274,8 @@ const ProjectDetail: React.FC = () => {
           style={{ marginBottom: 16 }}
           type="warning"
           showIcon
-          message={t('该项目已归档，无法执行')}
-          description={t('如需继续使用，请在项目列表取消归档。')}
+          message={t('project.projectIsArchivedAndCannot')}
+          description={t('project.useItAgainUnarchiveIt')}
         />
       ) : null}
 
@@ -289,7 +285,7 @@ const ProjectDetail: React.FC = () => {
             style={{ marginBottom: 16 }}
             type="success"
             showIcon
-            message={t('依赖构建顺序（点「执行」默认含依赖）')}
+            message={t('project.dependencyBuildOrderRunIncludes')}
             description={
               <Space wrap size={4}>
                 {project.dependencyPlan.order.map((d) => (
@@ -298,9 +294,7 @@ const ProjectDetail: React.FC = () => {
                   </Tag>
                 ))}
                 <span>→</span>
-                <Tag color={PROJECT_KIND_META[project.kind || 'app']?.color}>
-                  {project.key}
-                </Tag>
+                <Tag color={PROJECT_KIND_META[project.kind || 'app']?.color}>{project.key}</Tag>
               </Space>
             }
           />
@@ -309,7 +303,7 @@ const ProjectDetail: React.FC = () => {
             style={{ marginBottom: 16 }}
             type="error"
             showIcon
-            message={t('依赖配置当前不可用，含依赖执行会被拒绝')}
+            message={t('project.dependencyUnavailableReject')}
             description={project.dependencyPlan.error}
           />
         )
@@ -320,7 +314,7 @@ const ProjectDetail: React.FC = () => {
           style={{ marginBottom: 16 }}
           type="info"
           showIcon
-          message={t('被以下项目依赖')}
+          message={t('project.dependedOnBy')}
           description={
             <Space wrap size={4}>
               {(project?.dependents || []).map((d) => (
@@ -334,25 +328,25 @@ const ProjectDetail: React.FC = () => {
       ) : null}
 
       <ProCard gutter={16} wrap>
-        <ProCard colSpan={{ xs: 24, lg: 14 }} title={t('基本信息')} bordered>
+        <ProCard colSpan={{ xs: 24, lg: 14 }} title={t('common.basicInformation')} bordered>
           <ProDescriptions<Project>
             column={2}
             dataSource={project || undefined}
             columns={[
-              { title: t('项目 Key'), dataIndex: 'key', copyable: true },
-              { title: t('名称'), dataIndex: 'name' },
+              { title: t('project.projectKey'), dataIndex: 'key', copyable: true },
+              { title: t('common.name'), dataIndex: 'name' },
               {
-                title: t('项目类型'),
+                title: t('project.projectType'),
                 dataIndex: 'kind',
                 // 与项目列表一致：图标 + 悬浮提示，不再铺一段「应用项目 / 构建项目」文字
                 render: (_, row) => <ProjectKindIcon kind={row.kind} />,
               },
               {
-                title: t('依赖的项目'),
+                title: t('project.dependentProjects'),
                 dataIndex: 'dependencies',
                 render: (_, row) =>
                   (row.dependencies || []).length === 0 ? (
-                    <Text type="secondary">{t('无')}</Text>
+                    <Text type="secondary">{t('project.none')}</Text>
                   ) : (
                     <Space size={4} wrap>
                       {(row.dependencies || []).map((k) => (
@@ -364,50 +358,51 @@ const ProjectDetail: React.FC = () => {
                   ),
               },
               {
-                title: t('工作目录'),
+                title: t('common.workingDirectory'),
                 dataIndex: 'workdir',
                 span: 2,
                 copyable: true,
               },
               { title: 'Shell', dataIndex: 'shell' },
-              { title: t('并发策略'), dataIndex: 'concurrency' },
+              { title: t('common.concurrencyPolicy'), dataIndex: 'concurrency' },
               {
-                title: t('归属'),
+                title: t('common.owner'),
                 dataIndex: 'ownerName',
               },
               {
-                title: t('默认超时'),
+                title: t('common.defaultTimeout'),
                 dataIndex: 'timeoutSec',
-                render: (v) => (v ? t('{v} 秒', { v: v }) : t('不限制')),
+                render: (v) => (v ? t('project.seconds', { v: v }) : t('common.unlimited')),
               },
               {
-                title: t('Hook 触发'),
+                title: t('common.hookTrigger'),
                 dataIndex: 'hookEnabled',
-                render: (v) => (v ? <Badge status="success" text={t('已启用')} /> : t('已关闭')),
+                render: (v) =>
+                  v ? <Badge status="success" text={t('common.enabled')} /> : t('common.closed'),
               },
               {
-                title: t('Git 准备'),
+                title: t('project.gitPreparation'),
                 dataIndex: 'useGit',
                 render: (v, row) =>
                   v ? (
                     <Space direction="vertical" size={0}>
                       <Text>{row.gitUrl}</Text>
                       <Text type="secondary" style={{ fontSize: 12 }}>
-                        {t('分支 {branch}', { branch: row.gitBranch })}
-                        {row.gitSubdir ? t(' · 子目录 {gitSubdir}', { gitSubdir: row.gitSubdir }) : ''}
-                        {row.gitDepth ? t(' · 深度 {gitDepth}', { gitDepth: row.gitDepth }) : ''}
+                        {t('project.branch', { branch: row.gitBranch })}
+                        {row.gitSubdir ? t('project.subdir', { gitSubdir: row.gitSubdir }) : ''}
+                        {row.gitDepth ? t('project.depth', { gitDepth: row.gitDepth }) : ''}
                       </Text>
                     </Space>
                   ) : (
-                    t('未启用')
+                    t('common.disabled')
                   ),
               },
               {
-                title: t('累计运行'),
+                title: t('common.totalRuns'),
                 dataIndex: 'runCount',
               },
               {
-                title: t('上次运行'),
+                title: t('common.lastRun'),
                 dataIndex: 'lastRunAt',
                 span: 2,
                 render: (v, row) =>
@@ -420,16 +415,19 @@ const ProjectDetail: React.FC = () => {
                       <span>{formatTime(row.lastRunAt)}</span>
                     </Space>
                   ) : (
-                    t('从未运行')
+                    t('common.neverRun')
                   ),
               },
             ]}
           />
         </ProCard>
 
-        <ProCard colSpan={{ xs: 24, lg: 10 }} title={t('环境变量')} bordered>
+        <ProCard colSpan={{ xs: 24, lg: 10 }} title={t('common.environmentVariables')} bordered>
           {(project?.envs || []).length === 0 ? (
-            <Empty description={t('没有环境变量')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            <Empty
+              description={t('common.noEnvironmentVariables')}
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+            />
           ) : (
             <Table
               rowKey={(r) => String(r.id ?? r.key)}
@@ -437,18 +435,23 @@ const ProjectDetail: React.FC = () => {
               pagination={false}
               dataSource={project?.envs || []}
               columns={[
-                { title: t('变量名'), dataIndex: 'key' },
+                { title: t('common.variableName'), dataIndex: 'key' },
                 {
-                  title: t('值'),
+                  title: t('common.value'),
                   dataIndex: 'value',
                   render: (_, row) =>
-                    row.isSecret ? <Text code>{SECRET_PLACEHOLDER}</Text> : <Text code>{row.value}</Text>,
+                    row.isSecret ? (
+                      <Text code>{SECRET_PLACEHOLDER}</Text>
+                    ) : (
+                      <Text code>{row.value}</Text>
+                    ),
                 },
                 {
-                  title: t('类型'),
+                  title: t('common.type'),
                   dataIndex: 'isSecret',
                   width: 90,
-                  render: (v) => (v ? <Tag color="orange">Secret</Tag> : <Tag>{t('普通')}</Tag>),
+                  render: (v) =>
+                    v ? <Tag color="orange">Secret</Tag> : <Tag>{t('project.standard')}</Tag>,
                 },
               ]}
             />
@@ -457,16 +460,18 @@ const ProjectDetail: React.FC = () => {
       </ProCard>
 
       <Card
-        title={t('命令列表')}
+        title={t('project.commandList')}
         style={{ marginTop: 16 }}
         extra={
           project?.canEdit ? (
-            <Button onClick={() => history.push(`/projects/${key}/edit`)}>{t('编辑命令')}</Button>
+            <Button onClick={() => history.push(`/projects/${key}/edit`)}>
+              {t('project.editCommands')}
+            </Button>
           ) : null
         }
       >
         {(project?.commands || []).length === 0 ? (
-          <Empty description={t('还没有配置命令，去编辑页添加')} />
+          <Empty description={t('project.noCommandsConfiguredAddThem')} />
         ) : (
           <Table
             rowKey="id"
@@ -495,27 +500,30 @@ const ProjectDetail: React.FC = () => {
               ),
             }}
             columns={[
-              { title: t('顺序'), dataIndex: 'sortOrder', width: 70 },
-              { title: t('名称'), dataIndex: 'name' },
+              { title: t('common.order'), dataIndex: 'sortOrder', width: 70 },
+              { title: t('common.name'), dataIndex: 'name' },
               {
-                title: t('启用'),
+                title: t('common.enable'),
                 dataIndex: 'enabled',
                 width: 80,
-                render: (v) => (v ? t('是') : <Text type="secondary">{t('否')}</Text>),
+                render: (v) =>
+                  v ? t('common.yes') : <Text type="secondary">{t('common.no')}</Text>,
               },
               {
-                title: t('失败策略'),
+                title: t('common.failureStrategy'),
                 dataIndex: 'failStrategy',
                 width: 110,
-                render: (v) => (v === 'continue' ? t('继续') : t('中止')),
+                render: (v) => (v === 'continue' ? t('project.continue') : t('project.abort')),
               },
               {
-                title: t('覆盖项'),
+                title: t('common.overrides'),
                 width: 220,
                 render: (_, row) => (
                   <Space size={4} wrap>
                     {row.workdirOverride ? <Tag>cwd: {row.workdirOverride}</Tag> : null}
-                    {row.timeoutSec ? <Tag>{t('超时 {sec}s', { sec: row.timeoutSec })}</Tag> : null}
+                    {row.timeoutSec ? (
+                      <Tag>{t('common.timeoutSec', { sec: row.timeoutSec })}</Tag>
+                    ) : null}
                     {row.shellOverride ? <Tag>shell: {row.shellOverride}</Tag> : null}
                     {!row.workdirOverride && !row.timeoutSec && !row.shellOverride ? (
                       <Text type="secondary">-</Text>
@@ -524,7 +532,7 @@ const ProjectDetail: React.FC = () => {
                 ),
               },
               {
-                title: t('操作'),
+                title: t('common.actions'),
                 width: 110,
                 render: (_, row) => (
                   <Button
@@ -533,7 +541,8 @@ const ProjectDetail: React.FC = () => {
                     disabled={!project?.canEdit || project?.archived}
                     onClick={() => handleRun(row.id)}
                   >
-                     {t('单独执行')} </Button>
+                    {t('common.runOnlyThisProject')}{' '}
+                  </Button>
                 ),
               },
             ]}
@@ -546,16 +555,14 @@ const ProjectDetail: React.FC = () => {
           style={{ marginBottom: 16 }}
           type="info"
           showIcon
-          message={t('Hook 触发地址（免登录，凭 token）')}
+          message={t('project.hookTriggerURLNoSign')}
           description={
             <Space direction="vertical" style={{ width: '100%' }} size={8}>
               <Paragraph style={{ margin: 0 }}>
                 POST <Text code>{`${baseUrl}/api/v1/hooks/{token}`}</Text>
-                {t('，也可以把 token 放在请求头')}{' '}
-                <Text code>X-Deploy-Token</Text>
-                {t('，请求体可省略。默认异步返回 202；加')}{' '}
-                <Text code>?wait=true</Text> {t('或')} <Text code>"async": false</Text>{' '}
-                {t('走同步等待。')}
+                {t('project.hookHeaderHint')} <Text code>X-Deploy-Token</Text>
+                {t('project.hookBodyHint')} <Text code>?wait=true</Text> {t('common.or')}{' '}
+                <Text code>"async": false</Text> {t('project.hookSyncHint')}
               </Paragraph>
               <pre
                 style={{
@@ -571,10 +578,19 @@ const ProjectDetail: React.FC = () => {
                 {hookExample}
               </pre>
               <Space>
-                <Button size="small" icon={<CopyOutlined />} onClick={() => copy(hookExample, t('示例已复制'))}>
-                   {t('复制示例')} </Button>
-                <Button size="small" onClick={() => copy(headerExample, t('示例已复制'))}>
-                   {t('复制 Header 方式示例')} </Button>
+                <Button
+                  size="small"
+                  icon={<CopyOutlined />}
+                  onClick={() => copy(hookExample, t('project.exampleCopied'))}
+                >
+                  {t('project.copyExample')}{' '}
+                </Button>
+                <Button
+                  size="small"
+                  onClick={() => copy(headerExample, t('project.exampleCopied'))}
+                >
+                  {t('project.copyHeaderExample')}{' '}
+                </Button>
               </Space>
             </Space>
           }
@@ -587,9 +603,11 @@ const ProjectDetail: React.FC = () => {
             disabled={!project?.canEdit}
             onClick={() => setCreateOpen(true)}
           >
-             {t('新建 Hook Token')} </Button>
+            {t('common.newHookToken')}{' '}
+          </Button>
           <Button icon={<ReloadOutlined />} onClick={loadHooks} loading={hookLoading}>
-             {t('刷新')} </Button>
+            {t('common.refresh')}{' '}
+          </Button>
         </Space>
 
         <Table<HookToken>
@@ -598,29 +616,38 @@ const ProjectDetail: React.FC = () => {
           loading={hookLoading}
           pagination={false}
           dataSource={hooks}
-          locale={{ emptyText: <Empty description={t('还没有 Hook Token')} /> }}
+          locale={{ emptyText: <Empty description={t('common.noHookTokenYet')} /> }}
           columns={[
-            { title: t('名称'), dataIndex: 'name' },
-            { title: t('前缀'), dataIndex: 'prefix', render: (v) => <Text code>{v}…</Text> },
+            { title: t('common.name'), dataIndex: 'name' },
             {
-              title: t('状态'),
+              title: t('common.prefix'),
+              dataIndex: 'prefix',
+              render: (v) => <Text code>{v}…</Text>,
+            },
+            {
+              title: t('common.status'),
               dataIndex: 'enabled',
               width: 90,
-              render: (v) => (v ? <Tag color="green">{t('启用')}</Tag> : <Tag>{t('禁用')}</Tag>),
+              render: (v) =>
+                v ? (
+                  <Tag color="green">{t('common.enable')}</Tag>
+                ) : (
+                  <Tag>{t('common.disable')}</Tag>
+                ),
             },
             {
-              title: t('过期时间'),
+              title: t('common.expiresAt'),
               dataIndex: 'expiresAt',
               width: 170,
-              render: (v) => (v ? formatTime(v) : t('永不过期')),
+              render: (v) => (v ? formatTime(v) : t('common.neverExpires')),
             },
             {
-              title: t('调用次数'),
+              title: t('common.calls'),
               dataIndex: 'callCount',
               width: 100,
             },
             {
-              title: t('最后使用'),
+              title: t('common.lastUsed'),
               dataIndex: 'lastUsedAt',
               width: 220,
               render: (_, row) =>
@@ -630,31 +657,31 @@ const ProjectDetail: React.FC = () => {
                     {row.lastUsedIp ? <Text type="secondary">{row.lastUsedIp}</Text> : null}
                   </Space>
                 ) : (
-                  <Text type="secondary">{t('从未使用')}</Text>
+                  <Text type="secondary">{t('common.neverUsed')}</Text>
                 ),
             },
             {
-              title: t('操作'),
+              title: t('common.actions'),
               width: 160,
               render: (_, row) => (
                 <Space>
                   <Popconfirm
-                    title={t('重置后原 token 立即失效')}
-                    description={t('确定重新生成该 Hook Token 吗？')}
+                    title={t('project.originalTokenIsInvalidatedImmediately')}
+                    description={t('project.regenerateThisHookToken')}
                     onConfirm={() => resetHook(row.id)}
-                    okText={t('重置')}
-                    cancelText={t('取消')}
+                    okText={t('common.reset')}
+                    cancelText={t('common.cancel')}
                   >
-                    <a>{t('重置')}</a>
+                    <a>{t('common.reset')}</a>
                   </Popconfirm>
                   <Popconfirm
-                    title={t('删除后使用该 token 的调用方会失败')}
+                    title={t('project.callersUsingThisTokenWill')}
                     onConfirm={() => removeHook(row.id)}
-                    okText={t('删除')}
+                    okText={t('common.delete')}
                     okButtonProps={{ danger: true }}
-                    cancelText={t('取消')}
+                    cancelText={t('common.cancel')}
                   >
-                    <a style={{ color: '#ff4d4f' }}>{t('删除')}</a>
+                    <a style={{ color: '#ff4d4f' }}>{t('common.delete')}</a>
                   </Popconfirm>
                 </Space>
               ),
@@ -663,7 +690,7 @@ const ProjectDetail: React.FC = () => {
         />
       </Card>
 
-      <Card title={t('运行历史')} style={{ marginTop: 16 }}>
+      <Card title={t('common.runHistory')} style={{ marginTop: 16 }}>
         <ProTable<Run>
           rowKey="id"
           actionRef={runTableRef}
@@ -685,11 +712,12 @@ const ProjectDetail: React.FC = () => {
       {/* 明文 token 只显示一次 */}
       <Modal
         open={!!plainToken}
-        title={t('Hook Token 已生成（明文仅显示这一次）')}
+        title={t('common.hookTokenGenerated')}
         onCancel={() => setPlainToken(null)}
         footer={[
           <Button key="ok" type="primary" onClick={() => setPlainToken(null)}>
-             {t('我已保存')} </Button>,
+            {t('common.iHaveSavedIt')}{' '}
+          </Button>,
         ]}
         width={640}
       >
@@ -697,13 +725,13 @@ const ProjectDetail: React.FC = () => {
           style={{ marginBottom: 12 }}
           type="warning"
           showIcon
-          message={t('请立即复制保存')}
-          description={t('服务端只保存哈希，关闭后无法再次查看明文，只能重置生成新的 token。')}
+          message={t('common.copyAndSaveItNow')}
+          description={t('project.serverStoresOnlyAHash')}
         />
         {plainToken ? (
           <Descriptions column={1} size="small" bordered>
-            <Descriptions.Item label={t('名称')}>{plainToken.name}</Descriptions.Item>
-            <Descriptions.Item label={t('明文 Token')}>
+            <Descriptions.Item label={t('common.name')}>{plainToken.name}</Descriptions.Item>
+            <Descriptions.Item label={t('common.plaintextToken')}>
               <Space>
                 <Text code copyable style={{ wordBreak: 'break-all' }}>
                   {plainToken.token}
@@ -711,13 +739,14 @@ const ProjectDetail: React.FC = () => {
                 <Button
                   size="small"
                   icon={<CopyOutlined />}
-                  onClick={() => copy(plainToken.token, t('Token 已复制'))}
+                  onClick={() => copy(plainToken.token, t('common.tokenCopied'))}
                 >
-                   {t('复制')} </Button>
+                  {t('common.copy')}{' '}
+                </Button>
               </Space>
             </Descriptions.Item>
-            <Descriptions.Item label={t('过期时间')}>
-              {plainToken.expiresAt ? formatTime(plainToken.expiresAt) : t('永不过期')}
+            <Descriptions.Item label={t('common.expiresAt')}>
+              {plainToken.expiresAt ? formatTime(plainToken.expiresAt) : t('common.neverExpires')}
             </Descriptions.Item>
           </Descriptions>
         ) : null}
@@ -725,23 +754,27 @@ const ProjectDetail: React.FC = () => {
 
       <Modal
         open={createOpen}
-        title={t('新建 Hook Token')}
+        title={t('common.newHookToken')}
         onCancel={() => setCreateOpen(false)}
         onOk={createHook}
-        okText={t('创建')}
-        cancelText={t('取消')}
+        okText={t('common.create')}
+        cancelText={t('common.cancel')}
         destroyOnClose
       >
         <Form form={hookForm} layout="vertical" preserve={false}>
           <Form.Item
             name="name"
-            label={t('名称')}
-            rules={[{ required: true, message: t('请填写名称，便于识别调用方') }]}
+            label={t('common.name')}
+            rules={[{ required: true, message: t('project.enterANameSoCallers') }]}
           >
-            <Input placeholder={t('例如 gitee-push')} />
+            <Input placeholder={t('project.exampleCredentialName')} />
           </Form.Item>
-          <Form.Item name="expiresInDays" label={t('有效天数')} tooltip={t('留空表示永不过期')}>
-            <InputNumber min={1} style={{ width: '100%' }} placeholder={t('例如 90')} />
+          <Form.Item
+            name="expiresInDays"
+            label={t('common.validForDays')}
+            tooltip={t('common.leaveEmptyForNoExpiry')}
+          >
+            <InputNumber min={1} style={{ width: '100%' }} placeholder={t('common.example90')} />
           </Form.Item>
         </Form>
       </Modal>

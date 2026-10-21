@@ -3,7 +3,7 @@
  * @description 只支持 path,component,routes,redirect,wrappers,name,icon 的配置
  * @param path  path 只支持两种占位符配置，第一种是动态参数 :id 的形式，第二种是 * 通配符，通配符只能出现路由字符串的最后。
  * @param component 配置 location 和 path 匹配后用于渲染的 React 组件路径。
- * @param name 菜单名（本项目直接用中文字面量，不走 i18n）
+ * @param name 菜单标识（与 src/locales 的 menu.<name> 词条对应，文案不走这里）
  * @param icon 图标，取值参考 https://ant.design/components/icon-cn
  * @doc https://umijs.org/docs/guides/routes
  */
@@ -15,13 +15,13 @@ export default [
       {
         path: '/user/login',
         layout: false,
-        name: '登录',
+        name: 'login',
         component: './user/login',
       },
       {
         path: '/user/setup',
         layout: false,
-        name: '初始化',
+        name: 'setup',
         component: './user/setup',
       },
       {
@@ -36,7 +36,7 @@ export default [
   },
   {
     path: '/',
-    name: '概览',
+    name: 'dashboard',
     icon: 'DashboardOutlined',
     component: './dashboard',
   },
@@ -44,13 +44,13 @@ export default [
     // 服务器自身的资源占用（CPU/内存/磁盘）。后端数据来自 GET /api/v1/system/info，
     // 任意登录用户可见——只暴露聚合指标，不含工作目录、密钥等配置细节。
     path: '/server-info',
-    name: '服务器',
+    name: 'server',
     icon: 'CloudServerOutlined',
     component: './server-info',
   },
   {
     path: '/projects',
-    name: '项目',
+    name: 'projects',
     icon: 'AppstoreOutlined',
     routes: [
       {
@@ -63,19 +63,19 @@ export default [
         // 静态段在路由排序里优先于 :key，所以 'new' 是保留字，不能用作项目 Key。
         path: '/projects/new',
         hideInMenu: true,
-        name: '新建项目',
+        name: 'new',
         component: './projects/edit',
       },
       {
         path: '/projects/:key/edit',
         hideInMenu: true,
-        name: '编辑项目',
+        name: 'edit',
         component: './projects/edit',
       },
       {
         path: '/projects/:key',
         hideInMenu: true,
-        name: '项目详情',
+        name: 'detail',
         component: './projects/detail',
       },
     ],
@@ -84,7 +84,7 @@ export default [
     // 任务：跑一件事（压测 / 巡检 / 清缓存……）。
     // 与项目的区别是没有 Git 准备阶段与依赖构建，所以编辑页也没有那两张卡片。
     path: '/tasks',
-    name: '任务',
+    name: 'tasks',
     icon: 'UnorderedListOutlined',
     routes: [
       {
@@ -95,26 +95,26 @@ export default [
         // 与 /projects/new 同理：静态段优先于 :key，'new' 是保留字。
         path: '/tasks/new',
         hideInMenu: true,
-        name: '新建任务',
+        name: 'new',
         component: './tasks/edit',
       },
       {
         path: '/tasks/:key/edit',
         hideInMenu: true,
-        name: '编辑任务',
+        name: 'edit',
         component: './tasks/edit',
       },
       {
         path: '/tasks/:key',
         hideInMenu: true,
-        name: '任务详情',
+        name: 'detail',
         component: './tasks/detail',
       },
     ],
   },
   {
     path: '/runs',
-    name: '运行',
+    name: 'runs',
     icon: 'PlayCircleOutlined',
     routes: [
       {
@@ -124,7 +124,7 @@ export default [
       {
         path: '/runs/:id',
         hideInMenu: true,
-        name: '运行详情',
+        name: 'detail',
         component: './runs/detail',
       },
     ],
@@ -133,13 +133,13 @@ export default [
     // 环境自检单独占一个菜单：它回答的是「这台服务器现在什么样、缺什么工具」，
     // 与「改配置」不是一回事，出问题时也更容易被找到。
     path: '/doctor',
-    name: '环境自检',
+    name: 'doctor',
     icon: 'ToolOutlined',
     component: './doctor',
   },
   {
     path: '/settings',
-    name: '设置',
+    name: 'settings',
     icon: 'SettingOutlined',
     routes: [
       {
@@ -148,23 +148,23 @@ export default [
       },
       {
         path: '/settings/profile',
-        name: '个人设置',
+        name: 'profile',
         component: './settings/profile',
       },
       {
         path: '/settings/users',
-        name: '用户管理',
+        name: 'users',
         access: 'canAdmin',
         component: './settings/users',
       },
       {
         path: '/settings/credentials',
-        name: '凭据管理',
+        name: 'credentials',
         component: './settings/credentials',
       },
       {
         path: '/settings/system',
-        name: '系统设置',
+        name: 'system',
         component: './settings/system',
       },
     ],

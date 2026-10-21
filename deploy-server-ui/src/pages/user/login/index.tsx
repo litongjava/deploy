@@ -1,6 +1,8 @@
+import Settings from '@/../config/defaultSettings';
 import { Footer } from '@/components';
+import { t } from '@/i18n';
 import { authApi } from '@/services/auth';
-import { SETUP_PATH, setToken, takeRedirect } from '@/services/authStore';
+import { setToken, SETUP_PATH, takeRedirect } from '@/services/authStore';
 import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { LoginForm, ProFormText } from '@ant-design/pro-components';
 import { Helmet, history, useModel } from '@umijs/max';
@@ -8,8 +10,6 @@ import { Alert, message, Spin } from 'antd';
 import { createStyles } from 'antd-style';
 import React, { useEffect, useState } from 'react';
 import { flushSync } from 'react-dom';
-import Settings from '@/../config/defaultSettings';
-import { t } from '@/i18n';
 
 const useStyles = createStyles(({ token }) => {
   return {
@@ -72,10 +72,10 @@ const Login: React.FC = () => {
         password: values.password,
       });
       setToken(result.token);
-      messageApi.success(t('登录成功！'));
+      messageApi.success(t('login.signedIn'));
       const user = result.user || (await fetchUserInfo());
       if (user?.mustChangePassword) {
-        messageApi.warning(t('首次登录请先修改密码'));
+        messageApi.warning(t('login.changeYourPasswordOnFirst'));
         history.replace('/settings/profile');
         return;
       }
@@ -86,7 +86,7 @@ const Login: React.FC = () => {
         info?.errorMessage ||
         error?.response?.data?.errorMessage ||
         error?.message ||
-        t('登录失败，请重试！');
+        t('login.signInFailedPleaseRetry');
       setErrorMessage(msg);
     } finally {
       setChecking(false);
@@ -98,7 +98,7 @@ const Login: React.FC = () => {
       {messageContextHolder}
       <div className={styles.container}>
         <Helmet>
-          <title>{t('登录 - {title}', { title: Settings.title })}</title>
+          <title>{t('login.signIn', { title: Settings.title })}</title>
         </Helmet>
         <div
           style={{
@@ -118,7 +118,7 @@ const Login: React.FC = () => {
             }}
             logo={<img alt="logo" src={Settings.logo} />}
             title={Settings.title}
-            subTitle={t('轻量命令式 CI/CD 平台 —— 打开网页，选项目，点执行')}
+            subTitle={t('login.subtitle')}
             initialValues={{
               autoLogin: true,
             }}
@@ -127,12 +127,7 @@ const Login: React.FC = () => {
             }}
           >
             {errorMessage && (
-              <Alert
-                style={{ marginBottom: 24 }}
-                message={errorMessage}
-                type="error"
-                showIcon
-              />
+              <Alert style={{ marginBottom: 24 }} message={errorMessage} type="error" showIcon />
             )}
             <ProFormText
               name="username"
@@ -141,11 +136,11 @@ const Login: React.FC = () => {
                 prefix: <UserOutlined />,
                 autoComplete: 'username',
               }}
-              placeholder={t('用户名')}
+              placeholder={t('common.username')}
               rules={[
                 {
                   required: true,
-                  message: t('请输入用户名！'),
+                  message: t('login.enterTheUsername'),
                 },
               ]}
             />
@@ -156,11 +151,11 @@ const Login: React.FC = () => {
                 prefix: <LockOutlined />,
                 autoComplete: 'current-password',
               }}
-              placeholder={t('密码')}
+              placeholder={t('common.password')}
               rules={[
                 {
                   required: true,
-                  message: t('请输入密码！'),
+                  message: t('login.enterThePassword'),
                 },
               ]}
             />

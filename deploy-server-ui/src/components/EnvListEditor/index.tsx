@@ -1,8 +1,8 @@
+import { t } from '@/i18n';
+import { SECRET_PLACEHOLDER } from '@/utils/constants';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Col, Form, Input, Row, Space, Switch, Tooltip } from 'antd';
 import React from 'react';
-import { SECRET_PLACEHOLDER } from '@/utils/constants';
-import { t } from '@/i18n';
 
 export interface EnvDraft {
   id?: number;
@@ -33,14 +33,14 @@ const EnvListEditor: React.FC<{ readonly?: boolean }> = ({ readonly }) => {
                   noStyle
                   name={[field.name, 'key']}
                   rules={[
-                    { required: true, message: t('请填写变量名') },
+                    { required: true, message: t('env.enterAVariableName') },
                     {
                       pattern: /^[A-Za-z_][A-Za-z0-9_]*$/,
-                      message: t('变量名只能包含字母、数字、下划线，且不能以数字开头'),
+                      message: t('env.variableNamesMayContainOnly'),
                     },
                   ]}
                 >
-                  <Input placeholder={t('变量名，例如 MODE')} />
+                  <Input placeholder={t('env.variableNamePlaceholder')} />
                 </Form.Item>
               </Col>
               <Col xs={18} sm={10}>
@@ -52,12 +52,16 @@ const EnvListEditor: React.FC<{ readonly?: boolean }> = ({ readonly }) => {
                         {isSecret ? (
                           <Input.Password
                             placeholder={
-                              readonly ? SECRET_PLACEHOLDER : t('密文（显示 {SECRET_PLACEHOLDER} 表示不修改）', { SECRET_PLACEHOLDER: SECRET_PLACEHOLDER })
+                              readonly
+                                ? SECRET_PLACEHOLDER
+                                : t('env.ciphertextShowingMeansUnchanged', {
+                                    SECRET_PLACEHOLDER: SECRET_PLACEHOLDER,
+                                  })
                             }
                             visibilityToggle={false}
                           />
                         ) : (
-                          <Input placeholder={t('变量值')} />
+                          <Input placeholder={t('env.variableValue')} />
                         )}
                       </Form.Item>
                     );
@@ -66,14 +70,10 @@ const EnvListEditor: React.FC<{ readonly?: boolean }> = ({ readonly }) => {
               </Col>
               <Col xs={6} sm={5}>
                 <Space>
-                  <Form.Item
-                    noStyle
-                    name={[field.name, 'isSecret']}
-                    valuePropName="checked"
-                  >
+                  <Form.Item noStyle name={[field.name, 'isSecret']} valuePropName="checked">
                     <Switch size="small" disabled={readonly} />
                   </Form.Item>
-                  <Tooltip title={t('勾选后该变量为 Secret：接口不再返回明文，日志中自动打码')}>
+                  <Tooltip title={t('env.whenCheckedThisVariableIs')}>
                     <span style={{ color: '#999', fontSize: 12 }}>Secret</span>
                   </Tooltip>
                   {readonly ? null : (
@@ -91,7 +91,8 @@ const EnvListEditor: React.FC<{ readonly?: boolean }> = ({ readonly }) => {
           ))}
           {readonly ? null : (
             <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add(newEnv())}>
-               {t('新增环境变量')} </Button>
+              {t('env.addEnvironmentVariable')}{' '}
+            </Button>
           )}
           <Form.ErrorList errors={errors} />
         </div>

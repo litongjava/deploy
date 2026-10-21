@@ -1,5 +1,5 @@
-import {ProLayoutProps} from '@ant-design/pro-components';
-import baseConfig from "./baseConfig";
+import { ProLayoutProps } from '@ant-design/pro-components';
+import baseConfig from './baseConfig';
 
 const Settings: ProLayoutProps & {
   pwa?: boolean;
@@ -10,7 +10,7 @@ const Settings: ProLayoutProps & {
   colorPrimary: '#1890ff',
   // 侧边菜单 + 顶部栏：用户名显示在右上角（side 布局下 ProLayout 会把头像/用户名
   // 放在侧边栏底部，header 根本不渲染；mix 布局才会渲染顶部栏并把右侧内容放到右上角）
-  layout: "mix",
+  layout: 'mix',
   contentWidth: 'Fluid',
   fixedHeader: false,
   // mix 布局下 ProLayout 会把 header 固定住（needFixedHeader = fixedHeader || layout === "mix"），
@@ -24,7 +24,7 @@ const Settings: ProLayoutProps & {
   iconfontUrl: '',
   splitMenus: false,
   // 让菜单名走 i18n：ProLayout 只有在 menu.locale 为真时才会用 formatMessage 翻路由
-  // name（见 @umijs/route-utils 的 transformRoute），否则菜单永远显示路由里写的中文。
+  // name（见 @umijs/route-utils 的 transformRoute），否则菜单永远显示路由配置里的标识。
   // umi 的 locale 插件把 formatMessage 传给 ProLayout（见 config/config.ts 的 locale 段）。
   menu: { locale: true },
   token: {

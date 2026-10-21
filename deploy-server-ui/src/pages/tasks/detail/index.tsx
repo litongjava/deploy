@@ -1,4 +1,4 @@
-import LogTerminal from '@/components/LogTerminal';
+import { t } from '@/i18n';
 import { runApi } from '@/services/run';
 import { taskApi } from '@/services/task';
 import type { HookToken, HookTokenCreated, Run, Task, TaskStepDraft } from '@/services/types';
@@ -11,9 +11,9 @@ import {
   formatDuration,
   formatTime,
 } from '@/utils/constants';
-import { ArrowLeftOutlined, EditOutlined, PlayCircleOutlined } from '@ant-design/icons';
-import { PageContainer, ProCard, ProDescriptions, ProTable } from '@ant-design/pro-components';
+import { EditOutlined, PlayCircleOutlined } from '@ant-design/icons';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
+import { PageContainer, ProCard, ProDescriptions, ProTable } from '@ant-design/pro-components';
 import { history, useParams } from '@umijs/max';
 import {
   Alert,
@@ -34,7 +34,6 @@ import {
   message,
 } from 'antd';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { t } from '@/i18n';
 
 const { Text, Paragraph } = Typography;
 
@@ -77,7 +76,7 @@ const TaskDetail: React.FC = () => {
   const copy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      messageApi.success(t('已复制'));
+      messageApi.success(t('common.copied'));
     } catch {
       // 非 HTTPS 或旧浏览器下 Clipboard API 不可用，退回 execCommand。
       const el = document.createElement('textarea');
@@ -86,7 +85,7 @@ const TaskDetail: React.FC = () => {
       el.select();
       document.execCommand('copy');
       document.body.removeChild(el);
-      messageApi.success(t('已复制'));
+      messageApi.success(t('common.copied'));
     }
   };
 
@@ -94,7 +93,7 @@ const TaskDetail: React.FC = () => {
     if (!key) return;
     try {
       const res = await taskApi.run(key, stepIndex ? { commandId: stepIndex } : {});
-      messageApi.success(t('已执行任务 #{buildNumber}', { buildNumber: res.buildNumber }));
+      messageApi.success(t('task.taskExecuted', { buildNumber: res.buildNumber }));
       history.push(`/runs/${res.runId}`);
     } catch (e) {
       // 统一错误提示
@@ -120,32 +119,34 @@ const TaskDetail: React.FC = () => {
 
   const stepColumns = [
     {
-      title: t('顺序'),
+      title: t('common.order'),
       dataIndex: 'sortOrder',
       width: 70,
       render: (_: any, __: TaskStepDraft, index: number) => index + 1,
     },
-    { title: t('名称'), dataIndex: 'name' },
+    { title: t('common.name'), dataIndex: 'name' },
     {
-      title: t('启用'),
+      title: t('common.enable'),
       dataIndex: 'enabled',
       width: 80,
-      render: (v: boolean) => (v ? <Tag color="green">{t('启用')}</Tag> : <Tag>{t('禁用')}</Tag>),
+      render: (v: boolean) =>
+        v ? <Tag color="green">{t('common.enable')}</Tag> : <Tag>{t('common.disable')}</Tag>,
     },
     {
-      title: t('失败策略'),
+      title: t('common.failureStrategy'),
       dataIndex: 'failStrategy',
       width: 110,
-      render: (v: string) => (v === 'continue' ? t('忽略错误继续') : t('失败即停')),
+      render: (v: string) =>
+        v === 'continue' ? t('task.continueOnError') : t('task.abortOnFailure'),
     },
     {
-      title: t('覆盖项'),
+      title: t('common.overrides'),
       dataIndex: 'workdirOverride',
       width: 220,
       render: (_: any, row: TaskStepDraft) => (
         <Space size={4} wrap>
           {row.workdirOverride ? <Tag>cwd: {row.workdirOverride}</Tag> : null}
-          {row.timeoutSec ? <Tag>{t('超时 {sec}s', { sec: row.timeoutSec })}</Tag> : null}
+          {row.timeoutSec ? <Tag>{t('common.timeoutSec', { sec: row.timeoutSec })}</Tag> : null}
           {row.shellOverride ? <Tag>shell: {row.shellOverride}</Tag> : null}
           {!row.workdirOverride && !row.timeoutSec && !row.shellOverride ? (
             <span style={{ color: '#999' }}>-</span>
@@ -154,29 +155,26 @@ const TaskDetail: React.FC = () => {
       ),
     },
     {
-      title: t('操作'),
+      title: t('common.actions'),
       valueType: 'option' as const,
       width: 110,
       render: (_: any, __: TaskStepDraft, index: number) => [
-        <a
-          key="run"
-          onClick={() => handleRun(index + 1)}
-          title={t('只执行这一步（任务步骤以 1 为起始序号）')}
-        >
-           {t('单独执行')} </a>,
+        <a key="run" onClick={() => handleRun(index + 1)} title={t('task.runOnlyThisStepTask')}>
+          {t('common.runOnlyThisProject')}{' '}
+        </a>,
       ],
     },
   ];
 
   const runColumns: ProColumns<Run>[] = [
     {
-      title: t('构建号'),
+      title: t('common.buildNumber'),
       dataIndex: 'buildNumber',
       width: 110,
       render: (_, row) => <a onClick={() => history.push(`/runs/${row.id}`)}>#{row.buildNumber}</a>,
     },
     {
-      title: t('状态'),
+      title: t('common.status'),
       dataIndex: 'status',
       width: 100,
       render: (_, row) => (
@@ -184,13 +182,13 @@ const TaskDetail: React.FC = () => {
       ),
     },
     {
-      title: t('触发方式'),
+      title: t('common.triggerMode'),
       dataIndex: 'triggerType',
       width: 100,
       render: (_, row) => TRIGGER_TYPE_META[row.triggerType] || row.triggerType,
     },
     {
-      title: t('触发人'),
+      title: t('common.triggeredBy'),
       dataIndex: 'triggerUserName',
       width: 150,
       render: (_, row) => (
@@ -203,22 +201,26 @@ const TaskDetail: React.FC = () => {
       ),
     },
     {
-      title: t('耗时'),
+      title: t('common.duration'),
       dataIndex: 'durationMs',
       width: 100,
       render: (_, row) => (row.durationMs ? formatDuration(row.durationMs) : '-'),
     },
     {
-      title: t('开始时间'),
+      title: t('common.startTime'),
       dataIndex: 'startedAt',
       width: 180,
       render: (_, row) => formatTime(row.startedAt),
     },
     {
-      title: t('操作'),
+      title: t('common.actions'),
       valueType: 'option',
       width: 90,
-      render: (_, row) => [<a key="log" onClick={() => history.push(`/runs/${row.id}`)}>{t('查看日志')}</a>],
+      render: (_, row) => [
+        <a key="log" onClick={() => history.push(`/runs/${row.id}`)}>
+          {t('common.viewLogs')}
+        </a>,
+      ],
     },
   ];
 
@@ -239,14 +241,16 @@ const TaskDetail: React.FC = () => {
           disabled={!task || task.archived}
           onClick={() => handleRun()}
         >
-           {t('执行任务')} </Button>,
+          {t('task.runTask')}{' '}
+        </Button>,
         <Button
           key="edit"
           icon={<EditOutlined />}
           disabled={!task?.canEdit}
           onClick={() => history.push(`/tasks/${key}/edit`)}
         >
-           {t('编辑')} </Button>,
+          {t('common.edit')}{' '}
+        </Button>,
       ]}
     >
       {contextHolder}
@@ -255,42 +259,48 @@ const TaskDetail: React.FC = () => {
           type="warning"
           showIcon
           style={{ marginBottom: 16 }}
-          message={t('该任务已归档，归档状态下不能执行；需要执行请先取消归档。')}
+          message={t('task.taskIsArchivedAndCannot')}
         />
       ) : null}
 
       <ProCard gutter={16} wrap style={{ marginBottom: 16 }}>
-        <ProCard colSpan={{ xs: 24, lg: 14 }} title={t('基本信息')} bordered>
+        <ProCard colSpan={{ xs: 24, lg: 14 }} title={t('common.basicInformation')} bordered>
           <ProDescriptions<Task> column={2} dataSource={task}>
-            <ProDescriptions.Item label={t('任务 Key')} copyable>
+            <ProDescriptions.Item label={t('task.taskKey')} copyable>
               {task?.key}
             </ProDescriptions.Item>
-            <ProDescriptions.Item label={t('名称')}>{task?.name}</ProDescriptions.Item>
-            <ProDescriptions.Item label={t('工作目录')} span={2} copyable>
+            <ProDescriptions.Item label={t('common.name')}>{task?.name}</ProDescriptions.Item>
+            <ProDescriptions.Item label={t('common.workingDirectory')} span={2} copyable>
               {task?.workdir}
             </ProDescriptions.Item>
             <ProDescriptions.Item label="Shell">
-              {SHELL_OPTIONS.find((o) => o.value === task?.shell)?.label || task?.shell || t('自动')}
+              {SHELL_OPTIONS.find((o) => o.value === task?.shell)?.label ||
+                task?.shell ||
+                t('task.auto')}
             </ProDescriptions.Item>
-            <ProDescriptions.Item label={t('并发策略')}>
+            <ProDescriptions.Item label={t('common.concurrencyPolicy')}>
               {CONCURRENCY_OPTIONS.find((o) => o.value === task?.concurrency)?.label ||
                 task?.concurrency}
             </ProDescriptions.Item>
-            <ProDescriptions.Item label={t('默认超时')}>
-              {task?.timeoutSec ? t('{timeoutSec} 秒', { timeoutSec: task.timeoutSec }) : t('不限制')}
+            <ProDescriptions.Item label={t('common.defaultTimeout')}>
+              {task?.timeoutSec
+                ? t('task.seconds', { timeoutSec: task.timeoutSec })
+                : t('common.unlimited')}
             </ProDescriptions.Item>
-            <ProDescriptions.Item label={t('归属')}>{task?.ownerName || '-'}</ProDescriptions.Item>
-            <ProDescriptions.Item label={t('Hook 触发')}>
+            <ProDescriptions.Item label={t('common.owner')}>
+              {task?.ownerName || '-'}
+            </ProDescriptions.Item>
+            <ProDescriptions.Item label={t('common.hookTrigger')}>
               {task?.hookEnabled ? (
-                <Badge status="success" text={t('已启用')} />
+                <Badge status="success" text={t('common.enabled')} />
               ) : (
-                <Badge status="default" text={t('已关闭')} />
+                <Badge status="default" text={t('common.closed')} />
               )}
             </ProDescriptions.Item>
-            <ProDescriptions.Item label={t('累计运行')}>
-              {t('{count} 次', { count: task?.runCount ?? 0 })}
+            <ProDescriptions.Item label={t('common.totalRuns')}>
+              {t('task.runCountDetail', { count: task?.runCount ?? 0 })}
             </ProDescriptions.Item>
-            <ProDescriptions.Item label={t('上次运行')}>
+            <ProDescriptions.Item label={t('common.lastRun')}>
               {task?.lastRunAt ? (
                 <Space size={6}>
                   <Tag color={RUN_STATUS_META[task.lastRunStatus]?.color || 'default'}>
@@ -299,18 +309,18 @@ const TaskDetail: React.FC = () => {
                   <span>{formatTime(task.lastRunAt)}</span>
                 </Space>
               ) : (
-                t('从未运行')
+                t('common.neverRun')
               )}
             </ProDescriptions.Item>
-            <ProDescriptions.Item label={t('描述')} span={2}>
+            <ProDescriptions.Item label={t('common.description')} span={2}>
               {task?.description || '-'}
             </ProDescriptions.Item>
           </ProDescriptions>
         </ProCard>
 
-        <ProCard colSpan={{ xs: 24, lg: 10 }} title={t('环境变量')} bordered>
+        <ProCard colSpan={{ xs: 24, lg: 10 }} title={t('common.environmentVariables')} bordered>
           {(task?.envs || []).length === 0 ? (
-            <Empty description={t('没有环境变量')} />
+            <Empty description={t('common.noEnvironmentVariables')} />
           ) : (
             <Table
               rowKey="key"
@@ -318,9 +328,9 @@ const TaskDetail: React.FC = () => {
               pagination={false}
               dataSource={task?.envs || []}
               columns={[
-                { title: t('变量名'), dataIndex: 'key' },
+                { title: t('common.variableName'), dataIndex: 'key' },
                 {
-                  title: t('值'),
+                  title: t('common.value'),
                   dataIndex: 'value',
                   render: (_: any, row: any) =>
                     row.isSecret ? <Text code>{SECRET_PLACEHOLDER}</Text> : row.value || '-',
@@ -329,7 +339,8 @@ const TaskDetail: React.FC = () => {
                   title: 'Secret',
                   dataIndex: 'isSecret',
                   width: 80,
-                  render: (v: boolean) => (v ? <Tag color="orange">{t('是')}</Tag> : <Tag>{t('否')}</Tag>),
+                  render: (v: boolean) =>
+                    v ? <Tag color="orange">{t('common.yes')}</Tag> : <Tag>{t('common.no')}</Tag>,
                 },
               ]}
             />
@@ -338,17 +349,18 @@ const TaskDetail: React.FC = () => {
       </ProCard>
 
       <Card
-        title={t('步骤列表')}
+        title={t('task.stepList')}
         style={{ marginBottom: 16 }}
         extra={
           task?.canEdit ? (
             <Button size="small" onClick={() => history.push(`/tasks/${key}/edit`)}>
-               {t('编辑步骤')} </Button>
+              {t('task.editSteps')}{' '}
+            </Button>
           ) : null
         }
       >
         {(task?.steps || []).length === 0 ? (
-          <Empty description={t('还没有步骤')} />
+          <Empty description={t('task.noStepsYet')} />
         ) : (
           <Table
             rowKey={(row, index) => `${index}-${row.name}`}
@@ -373,9 +385,11 @@ const TaskDetail: React.FC = () => {
         extra={
           <Space>
             <Button size="small" disabled={!task?.canEdit} onClick={() => setHookModalOpen(true)}>
-               {t('新建 Hook Token')} </Button>
+              {t('common.newHookToken')}{' '}
+            </Button>
             <Button size="small" onClick={load}>
-               {t('刷新')} </Button>
+              {t('common.refresh')}{' '}
+            </Button>
           </Space>
         }
       >
@@ -383,23 +397,24 @@ const TaskDetail: React.FC = () => {
           type="info"
           showIcon
           style={{ marginBottom: 12 }}
-          message={t('免登录触发（任务与项目用的是同一套 Hook 机制）')}
+          message={t('task.triggerWithoutSigningInTasks')}
           description={
             <Space direction="vertical" size={4} style={{ width: '100%' }}>
               <Space size={6} wrap>
                 <Text code>POST {baseUrl}/api/v1/hooks/&lt;HOOK_TOKEN&gt;</Text>
                 <a onClick={() => copy(`curl -X POST ${baseUrl}/api/v1/hooks/<HOOK_TOKEN>`)}>
-                   {t('复制 curl')} </a>
+                  {t('task.copyCurl')}{' '}
+                </a>
               </Space>
               <Space size={6} wrap>
-                <Text code>{t('POST {baseUrl}/api/v1/hooks/ + X-Deploy-Token 请求头', { baseUrl })}</Text>
-                <Tooltip title={t('令牌不出现在 URL 里，也就不会落进 nginx 的 access_log')}>
-                  <span style={{ color: '#999', fontSize: 12 }}>{t('推荐')}</span>
+                <Text code>{t('task.hookExample', { baseUrl })}</Text>
+                <Tooltip title={t('task.tokenUrlHint')}>
+                  <span style={{ color: '#999', fontSize: 12 }}>{t('task.recommended')}</span>
                 </Tooltip>
               </Space>
               <span style={{ color: '#999', fontSize: 12 }}>
-                {t('追加')} <Text code>?wait=true</Text>{' '}
-                {t('可同步等待任务跑完再返回结果。')}
+                {t('task.append')} <Text code>?wait=true</Text>{' '}
+                {t('task.canWaitSynchronouslyForThe')}
               </span>
             </Space>
           }
@@ -409,7 +424,7 @@ const TaskDetail: React.FC = () => {
             type="warning"
             showIcon
             style={{ marginBottom: 12 }}
-            message={t('当前没有可用的 Hook Token；即便有令牌，也需要任务本身开启「Hook 触发」。')}
+            message={t('task.noHookTokenIsAvailable')}
           />
         )}
         <Table<HookToken>
@@ -417,28 +432,32 @@ const TaskDetail: React.FC = () => {
           size="small"
           pagination={false}
           dataSource={hooks}
-          locale={{ emptyText: <Empty description={t('还没有 Hook Token')} /> }}
+          locale={{ emptyText: <Empty description={t('common.noHookTokenYet')} /> }}
           columns={[
-            { title: t('名称'), dataIndex: 'name' },
+            { title: t('common.name'), dataIndex: 'name' },
             {
-              title: t('前缀'),
+              title: t('common.prefix'),
               dataIndex: 'prefix',
               render: (v: string) => <Text code>{v}…</Text>,
             },
             {
-              title: t('状态'),
+              title: t('common.status'),
               dataIndex: 'enabled',
               render: (v: boolean) =>
-                v ? <Badge status="success" text={t('启用')} /> : <Badge status="default" text={t('停用')} />,
+                v ? (
+                  <Badge status="success" text={t('common.enable')} />
+                ) : (
+                  <Badge status="default" text={t('task.disable')} />
+                ),
             },
             {
-              title: t('过期时间'),
+              title: t('common.expiresAt'),
               dataIndex: 'expiresAt',
-              render: (v: string | null) => (v ? formatTime(v) : t('永不过期')),
+              render: (v: string | null) => (v ? formatTime(v) : t('common.neverExpires')),
             },
-            { title: t('调用次数'), dataIndex: 'callCount', width: 90 },
+            { title: t('common.calls'), dataIndex: 'callCount', width: 90 },
             {
-              title: t('最后使用'),
+              title: t('common.lastUsed'),
               dataIndex: 'lastUsedAt',
               render: (_: any, row: HookToken) =>
                 row.lastUsedAt ? (
@@ -449,35 +468,35 @@ const TaskDetail: React.FC = () => {
                     ) : null}
                   </Space>
                 ) : (
-                  t('未使用')
+                  t('task.unused')
                 ),
             },
             {
-              title: t('操作'),
+              title: t('common.actions'),
               render: (_: any, row: HookToken) => [
                 <Popconfirm
                   key="reset"
-                  title={t('重置令牌')}
-                  description={t('旧令牌立即失效，新令牌只显示一次。')}
+                  title={t('task.resetToken')}
+                  description={t('task.oldTokenIsInvalidatedImmediately')}
                   onConfirm={async () => {
                     const created = await taskApi.resetHook(row.id);
                     setPlainToken(created);
                     load();
                   }}
                 >
-                  <a>{t('重置')}</a>
+                  <a>{t('common.reset')}</a>
                 </Popconfirm>,
                 <Popconfirm
                   key="del"
-                  title={t('删除令牌')}
-                  description={t('删除后无法恢复。')}
+                  title={t('task.deleteToken')}
+                  description={t('task.cannotBeUndone')}
                   onConfirm={async () => {
                     await taskApi.removeHook(row.id);
-                    messageApi.success(t('已删除'));
+                    messageApi.success(t('common.deleted'));
                     load();
                   }}
                 >
-                  <a style={{ color: '#ff4d4f' }}>{t('删除')}</a>
+                  <a style={{ color: '#ff4d4f' }}>{t('common.delete')}</a>
                 </Popconfirm>,
               ],
             },
@@ -485,7 +504,7 @@ const TaskDetail: React.FC = () => {
         />
       </Card>
 
-      <Card title={t('运行历史')}>
+      <Card title={t('common.runHistory')}>
         <ProTable<Run>
           rowKey="id"
           actionRef={runActionRef}
@@ -506,17 +525,17 @@ const TaskDetail: React.FC = () => {
 
       <Modal
         open={!!plainToken}
-        title={t('Hook Token 已生成（明文仅显示这一次）')}
+        title={t('common.hookTokenGenerated')}
         onCancel={() => setPlainToken(undefined)}
         onOk={() => setPlainToken(undefined)}
-        okText={t('我已保存')}
+        okText={t('common.iHaveSavedIt')}
         cancelButtonProps={{ style: { display: 'none' } }}
       >
         <Alert
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
-          message={t('服务端只保存哈希，关闭后无法再次查看；丢失请重置。')}
+          message={t('task.serverStoresOnlyAHash')}
         />
         <Paragraph copyable={{ text: plainToken?.token }}>
           <Text code>{plainToken?.token}</Text>
@@ -528,17 +547,29 @@ const TaskDetail: React.FC = () => {
 
       <Modal
         open={hookModalOpen}
-        title={t('新建 Hook Token')}
+        title={t('common.newHookToken')}
         onCancel={() => setHookModalOpen(false)}
         onOk={createHook}
-        okText={t('创建')}
+        okText={t('common.create')}
       >
         <Form form={hookForm} layout="vertical">
-          <Form.Item name="name" label={t('名称')} rules={[{ required: true, message: t('请填写名称') }]}>
-            <Input placeholder={t('例如：ci / 定时压测')} />
+          <Form.Item
+            name="name"
+            label={t('common.name')}
+            rules={[{ required: true, message: t('common.enterAName') }]}
+          >
+            <Input placeholder={t('task.exampleName')} />
           </Form.Item>
-          <Form.Item name="expiresInDays" label={t('有效期（天）')} tooltip={t('留空表示永不过期')}>
-            <InputNumber min={1} style={{ width: '100%' }} placeholder={t('留空 = 永不过期')} />
+          <Form.Item
+            name="expiresInDays"
+            label={t('task.validityDays')}
+            tooltip={t('common.leaveEmptyForNoExpiry')}
+          >
+            <InputNumber
+              min={1}
+              style={{ width: '100%' }}
+              placeholder={t('task.emptyNeverExpires')}
+            />
           </Form.Item>
         </Form>
       </Modal>

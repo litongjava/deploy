@@ -1,6 +1,6 @@
+import { t } from '@/i18n';
 import { DefaultFooter } from '@ant-design/pro-components';
 import React from 'react';
-import { t } from '@/i18n';
 
 /** 开源项目地址（Gitee）：不再单独占一行，直接做在版权文字上 */
 const SOURCE_CODE_URL = 'https://gitee.com/ppnt/deploy';
@@ -14,7 +14,8 @@ const SOURCE_CODE_URL = 'https://gitee.com/ppnt/deploy';
  */
 const COPYRIGHT = (
   <a href={SOURCE_CODE_URL} target="_blank" rel="noreferrer">
-     {t('轻量命令式 CI/CD 平台')} </a>
+    {t('footer.lightweightImperativeCICDPlatform')}{' '}
+  </a>
 ) as unknown as string;
 
 const Footer: React.FC = () => {

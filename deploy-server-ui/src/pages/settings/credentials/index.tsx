@@ -1,3 +1,4 @@
+import { t } from '@/i18n';
 import { credentialApi, systemApi } from '@/services/system';
 import type { Credential, CredentialType, SshKeyInfo } from '@/services/types';
 import { CREDENTIAL_TYPE_OPTIONS, formatTime } from '@/utils/constants';
@@ -20,7 +21,6 @@ import {
   message,
 } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
-import { t } from '@/i18n';
 
 const { Text, Paragraph } = Typography;
 
@@ -60,7 +60,7 @@ const Credentials: React.FC = () => {
     try {
       const data = await systemApi.generateSshKey({ type: sshKeyType });
       setSshKey(data);
-      messageApi.success(t('已生成 SSH 公钥'));
+      messageApi.success(t('settings.credentials.sshPublicKeyGenerated'));
     } catch (e) {
       // 统一提示（同类型密钥已存在时后端返回 40900）
     } finally {
@@ -71,7 +71,7 @@ const Credentials: React.FC = () => {
   const copy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      messageApi.success(t('已复制'));
+      messageApi.success(t('common.copied'));
       return;
     } catch (e) {
       // 降级方案：clipboard API 在非 HTTPS 下不可用
@@ -81,9 +81,9 @@ const Credentials: React.FC = () => {
       el.select();
       try {
         document.execCommand('copy');
-        messageApi.success(t('已复制'));
+        messageApi.success(t('common.copied'));
       } catch (err) {
-        messageApi.error(t('复制失败，请手动选择文本'));
+        messageApi.error(t('common.copyFailed'));
       }
       document.body.removeChild(el);
     }
@@ -115,10 +115,10 @@ const Credentials: React.FC = () => {
     try {
       if (editing) {
         await credentialApi.update(editing.id, values);
-        messageApi.success(t('已保存'));
+        messageApi.success(t('common.saved'));
       } else {
         await credentialApi.create(values);
-        messageApi.success(t('凭据已创建'));
+        messageApi.success(t('settings.credentials.credentialCreated'));
       }
       setOpen(false);
       actionRef.current?.reload();
@@ -131,7 +131,7 @@ const Credentials: React.FC = () => {
 
   const testGit = async () => {
     if (!testUrl) {
-      messageApi.warning(t('请先填写仓库地址'));
+      messageApi.warning(t('settings.credentials.enterTheRepositoryURLFirst'));
       return;
     }
     setTesting(true);
@@ -142,10 +142,18 @@ const Credentials: React.FC = () => {
         branch: testBranch || undefined,
       });
       if (res?.ok) {
-        messageApi.success(t('连接成功：{detail}', { detail: res.message || t('git ls-remote 可用') }));
+        messageApi.success(
+          t('settings.credentials.connectionSucceeded', {
+            detail: res.message || t('settings.credentials.gitLsRemoteWorks'),
+          }),
+        );
         setTestOpen(false);
       } else {
-        messageApi.error(t('连接失败：{detail}', { detail: res?.message || t('未知原因') }));
+        messageApi.error(
+          t('settings.credentials.connectionFailed', {
+            detail: res?.message || t('settings.credentials.unknownReason'),
+          }),
+        );
       }
     } catch (e) {
       // 统一提示
@@ -157,7 +165,7 @@ const Credentials: React.FC = () => {
   const remove = async (id: number) => {
     try {
       await credentialApi.remove(id);
-      messageApi.success(t('已删除'));
+      messageApi.success(t('common.deleted'));
       actionRef.current?.reload();
     } catch (e) {
       // 统一提示（被引用时后端返回 40900）
@@ -166,72 +174,73 @@ const Credentials: React.FC = () => {
 
   const columns: ProColumns<Credential>[] = [
     {
-      title: t('名称'),
+      title: t('common.name'),
       dataIndex: 'name',
       hideInSearch: true,
       render: (_, row) => <Text strong>{row.name}</Text>,
     },
     {
-      title: t('类型'),
+      title: t('common.type'),
       dataIndex: 'type',
       hideInSearch: true,
       width: 160,
       render: (_, row) =>
         row.type === 'ssh_key' ? (
-          <Tag color="purple">{t('SSH 私钥')}</Tag>
+          <Tag color="purple">{t('common.sshPrivateKey')}</Tag>
         ) : (
           <Tag color="blue">HTTPS Token</Tag>
         ),
     },
     {
-      title: t('用户名'),
+      title: t('common.username'),
       dataIndex: 'username',
       hideInSearch: true,
       render: (_, row) => row.username || '-',
     },
     {
-      title: t('创建时间'),
+      title: t('common.createdAt'),
       dataIndex: 'createdAt',
       hideInSearch: true,
       width: 180,
       render: (_, row) => formatTime(row.createdAt),
     },
     {
-      title: t('操作'),
+      title: t('common.actions'),
       valueType: 'option',
       width: 140,
       render: (_, row) => [
         <a key="edit" onClick={() => openEdit(row)}>
-           {t('编辑')} </a>,
+          {t('common.edit')}{' '}
+        </a>,
         <Popconfirm
           key="del"
-          title={t('删除凭据')}
-          description={t('如果该凭据被项目引用，后端会拒绝删除。')}
-          okText={t('删除')}
+          title={t('settings.credentials.deleteCredential')}
+          description={t('settings.credentials.ifAProjectReferencesThis')}
+          okText={t('common.delete')}
           okButtonProps={{ danger: true }}
-          cancelText={t('取消')}
+          cancelText={t('common.cancel')}
           onConfirm={() => remove(row.id)}
         >
-          <a style={{ color: '#ff4d4f' }}>{t('删除')}</a>
+          <a style={{ color: '#ff4d4f' }}>{t('common.delete')}</a>
         </Popconfirm>,
       ],
     },
   ];
 
   return (
-    <PageContainer title={t('凭据管理')}>
+    <PageContainer title={t('settings.credentials.credentials')}>
       {contextHolder}
       <Alert
         style={{ marginBottom: 16 }}
         type="info"
         showIcon
-        message={t('用于 Git 私有仓库拉取')}
-        description={t('凭据内容在服务端加密存储，接口永不返回 secret；项目通过「Git 凭据」下拉引用，不在项目里明文存密码。')}
+        message={t('settings.credentials.privateRepoHint')}
+        description={t('settings.credentials.encryptedHint')}
       />
       <Card
         size="small"
         style={{ marginBottom: 16 }}
-        title={t('服务器 SSH 公钥')}
+        title={t('settings.credentials.serverSSHPublicKey')}
         extra={
           <Space>
             <Select
@@ -245,10 +254,10 @@ const Credentials: React.FC = () => {
               ]}
             />
             <Popconfirm
-              title={t('生成 SSH Key')}
-              description={t('将在服务器的 ~/.ssh 目录写入新密钥；同类型密钥已存在时不会覆盖。')}
-              okText={t('生成')}
-              cancelText={t('取消')}
+              title={t('settings.credentials.generateSSHKey')}
+              description={t('settings.credentials.newKeyWillBeWritten')}
+              okText={t('settings.credentials.generate')}
+              cancelText={t('common.cancel')}
               disabled={!access.canAdmin || sshKeyExists}
               onConfirm={generateSshKey}
             >
@@ -257,14 +266,14 @@ const Credentials: React.FC = () => {
                 loading={genLoading}
                 disabled={!access.canAdmin || sshKeyExists}
               >
-                {t('生成 SSH Key')}
+                {t('settings.credentials.generateSSHKey')}
               </Button>
             </Popconfirm>
           </Space>
         }
       >
         <Paragraph type="secondary" style={{ marginBottom: 12 }}>
-          {t('这是部署进程所属用户的 SSH 公钥，用于在服务器上手工 git clone（如 gitee / github）。把公钥添加到对应平台的 SSH Key 后即可免密拉取；只读公钥，私钥不会返回。')}
+          {t('settings.credentials.sshPublicKeyHint')}
         </Paragraph>
         {sshKey?.keys?.length ? (
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -275,10 +284,10 @@ const Credentials: React.FC = () => {
                   <Text type="secondary">{k.keyPath}</Text>
                   {k.fingerprint ? (
                     <Text type="secondary">
-                      {t('指纹')}: {k.fingerprint}
+                      {t('settings.credentials.fingerprint')}: {k.fingerprint}
                     </Text>
                   ) : null}
-                  <a onClick={() => copy(k.publicKey)}>{t('复制')}</a>
+                  <a onClick={() => copy(k.publicKey)}>{t('common.copy')}</a>
                 </Space>
                 <Paragraph
                   style={{
@@ -294,7 +303,7 @@ const Credentials: React.FC = () => {
             ))}
           </Space>
         ) : (
-          <Text type="secondary">{t('未找到 SSH 公钥')}</Text>
+          <Text type="secondary">{t('settings.credentials.noSSHPublicKeyFound')}</Text>
         )}
       </Card>
       <ProTable<Credential>
@@ -311,48 +320,71 @@ const Credentials: React.FC = () => {
         }}
         toolBarRender={() => [
           <Button key="create" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-             {t('新建凭据')} </Button>,
+            {t('settings.credentials.newCredential')}{' '}
+          </Button>,
         ]}
       />
 
       <Modal
         open={open}
-        title={editing ? t('编辑凭据：{name}', { name: editing.name }) : t('新建凭据')}
+        title={
+          editing
+            ? t('settings.credentials.editCredential', { name: editing.name })
+            : t('settings.credentials.newCredential')
+        }
         onCancel={() => setOpen(false)}
         onOk={submit}
         confirmLoading={saving}
-        okText={t('保存')}
-        cancelText={t('取消')}
+        okText={t('common.save')}
+        cancelText={t('common.cancel')}
         destroyOnClose
       >
         <Form form={form} layout="vertical" preserve={false}>
-          <Form.Item name="name" label={t('名称')} rules={[{ required: true, message: t('请填写名称') }]}>
-            <Input placeholder={t('例如 gitee-deploy')} />
+          <Form.Item
+            name="name"
+            label={t('common.name')}
+            rules={[{ required: true, message: t('common.enterAName') }]}
+          >
+            <Input placeholder={t('settings.credentials.namePlaceholder')} />
           </Form.Item>
-          <Form.Item name="type" label={t('类型')} rules={[{ required: true }]}>
+          <Form.Item name="type" label={t('common.type')} rules={[{ required: true }]}>
             <Select options={CREDENTIAL_TYPE_OPTIONS} />
           </Form.Item>
           <Form.Item
             name="username"
-            label={type === 'ssh_key' ? t('用户名（可选）') : t('用户名')}
+            label={
+              type === 'ssh_key' ? t('settings.credentials.usernameOptional') : t('common.username')
+            }
             rules={
               type === 'https_token'
-                ? [{ required: true, message: t('请填写 Git 用户名') }]
+                ? [{ required: true, message: t('settings.credentials.enterTheGitUsername') }]
                 : undefined
             }
-            tooltip={type === 'ssh_key' ? t('SSH 方式一般填 git') : t('HTTPS 方式通常填 Git 平台的账号名')}
+            tooltip={
+              type === 'ssh_key'
+                ? t('settings.credentials.sshUsernameHint')
+                : t('settings.credentials.httpsUsernameHint')
+            }
           >
             <Input autoComplete="off" />
           </Form.Item>
           <Form.Item
             name="secret"
-            label={type === 'ssh_key' ? t('私钥内容') : t('Token / 密码')}
+            label={
+              type === 'ssh_key'
+                ? t('settings.credentials.privateKeyContent')
+                : t('settings.credentials.tokenPassword')
+            }
             rules={
               editing
                 ? undefined
-                : [{ required: true, message: t('请填写密文内容（编辑时留空表示不修改）') }]
+                : [{ required: true, message: t('settings.credentials.ciphertextHint') }]
             }
-            tooltip={editing ? t('留空表示保持原值不变') : t('仅提交给服务端，前端与后续接口都不再返回')}
+            tooltip={
+              editing
+                ? t('settings.credentials.leaveEmptyToKeepThe')
+                : t('settings.credentials.sentToTheServerOnly')
+            }
           >
             {type === 'ssh_key' ? (
               <Input.TextArea
@@ -361,12 +393,28 @@ const Credentials: React.FC = () => {
                 style={{ fontFamily: 'Menlo, Consolas, monospace' }}
               />
             ) : (
-              <Input.Password placeholder={editing ? t('留空表示不修改') : t('例如 ghp_xxxx')} />
+              <Input.Password
+                placeholder={
+                  editing
+                    ? t('settings.credentials.leaveEmptyToKeepUnchanged')
+                    : t('settings.credentials.tokenPlaceholder')
+                }
+              />
             )}
           </Form.Item>
           {type === 'ssh_key' ? (
-            <Form.Item name="passphrase" label={t('私钥口令（可选）')} tooltip={t('留空表示私钥无口令')}>
-              <Input.Password placeholder={editing ? t('留空表示不修改') : t('可选')} />
+            <Form.Item
+              name="passphrase"
+              label={t('settings.credentials.passphrase')}
+              tooltip={t('settings.credentials.leaveEmptyIfThePrivate')}
+            >
+              <Input.Password
+                placeholder={
+                  editing
+                    ? t('settings.credentials.leaveEmptyToKeepUnchanged')
+                    : t('common.optional')
+                }
+              />
             </Form.Item>
           ) : null}
           {editing ? (
@@ -379,9 +427,11 @@ const Credentials: React.FC = () => {
                   setTestOpen(true);
                 }}
               >
-                 {t('测试连接')} </Button>
+                {t('settings.credentials.testConnection')}{' '}
+              </Button>
               <Text type="secondary" style={{ fontSize: 12 }}>
-                 {t('使用已保存的凭据内容执行 git ls-remote（表单里未保存的修改不会生效）')} </Text>
+                {t('settings.credentials.testHint')}{' '}
+              </Text>
             </Space>
           ) : null}
         </Form>
@@ -389,22 +439,22 @@ const Credentials: React.FC = () => {
 
       <Modal
         open={testOpen}
-        title={t('测试 Git 连接')}
+        title={t('settings.credentials.testGitConnection')}
         onCancel={() => setTestOpen(false)}
         onOk={testGit}
         confirmLoading={testing}
-        okText={t('开始测试')}
-        cancelText={t('取消')}
+        okText={t('settings.credentials.startTest')}
+        cancelText={t('common.cancel')}
       >
         <Form layout="vertical">
-          <Form.Item label={t('仓库地址')} required>
+          <Form.Item label={t('common.repositoryURL')} required>
             <Input
               value={testUrl}
               onChange={(e) => setTestUrl(e.target.value)}
               placeholder="https://gitee.com/xxx/yyy.git"
             />
           </Form.Item>
-          <Form.Item label={t('分支（可选）')}>
+          <Form.Item label={t('settings.credentials.branchOptional')}>
             <Input
               value={testBranch}
               onChange={(e) => setTestBranch(e.target.value)}

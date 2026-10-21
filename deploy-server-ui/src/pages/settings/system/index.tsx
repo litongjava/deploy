@@ -1,3 +1,4 @@
+import { t } from '@/i18n';
 import { systemApi } from '@/services/system';
 import type { SystemSettings } from '@/services/types';
 import { formatBytes } from '@/utils/constants';
@@ -12,17 +13,16 @@ import {
 import { history, useAccess } from '@umijs/max';
 import { Alert, Card, Descriptions, Spin, Tag, message } from 'antd';
 import React, { useCallback, useEffect, useState } from 'react';
-import { t } from '@/i18n';
 
 const VISIBILITY_OPTIONS = [
-  { label: t('其他登录用户只读可见（allReadable）'), value: 'allReadable' },
-  { label: t('仅归属者可见（ownerOnly）'), value: 'ownerOnly' },
+  { label: t('settings.system.readableByOtherSignedIn'), value: 'allReadable' },
+  { label: t('settings.system.visibleToOwnerOnlyOwneronly'), value: 'ownerOnly' },
 ];
 
 const NOTIFY_ON_OPTIONS = [
-  { label: t('成功'), value: 'success' },
-  { label: t('失败'), value: 'failed' },
-  { label: t('全部'), value: 'all' },
+  { label: t('common.success'), value: 'success' },
+  { label: t('common.failed'), value: 'failed' },
+  { label: t('common.all'), value: 'all' },
 ];
 
 const SystemSettingsPage: React.FC = () => {
@@ -52,13 +52,13 @@ const SystemSettingsPage: React.FC = () => {
 
   const save = async (values: SystemSettings) => {
     if (!canEdit) {
-      messageApi.warning(t('只有管理员可以修改系统设置'));
+      messageApi.warning(t('settings.system.adminOnly'));
       return;
     }
     setSaving(true);
     try {
       await systemApi.updateSettings(values);
-      messageApi.success(t('已保存'));
+      messageApi.success(t('common.saved'));
       load();
     } catch (e) {
       // 统一提示
@@ -68,19 +68,19 @@ const SystemSettingsPage: React.FC = () => {
   };
 
   return (
-    <PageContainer title={t('系统设置')}>
+    <PageContainer title={t('common.systemSettings')}>
       {contextHolder}
       {!canEdit ? (
         <Alert
           style={{ marginBottom: 16 }}
           type="info"
           showIcon
-          message={t('只读模式')}
-          description={t('当前账号不是管理员，可以查看但不能修改系统设置。')}
+          message={t('settings.system.readOnlyMode')}
+          description={t('settings.system.accountIsNotAnAdministrator')}
         />
       ) : null}
 
-      <Card title={t('运行与日志')} style={{ marginBottom: 16 }}>
+      <Card title={t('settings.system.runsAndLogs')} style={{ marginBottom: 16 }}>
         {loading ? (
           <div style={{ textAlign: 'center', padding: '40px 0' }}>
             <Spin />
@@ -102,7 +102,7 @@ const SystemSettingsPage: React.FC = () => {
             }
             disabled={!canEdit}
             submitter={{
-              searchConfig: { submitText: t('保存设置') },
+              searchConfig: { submitText: t('settings.system.saveSettings') },
               submitButtonProps: { loading: saving, disabled: !canEdit },
             }}
             onFinish={async (values) => {
@@ -112,93 +112,96 @@ const SystemSettingsPage: React.FC = () => {
           >
             <ProFormText
               name="webRoot"
-              label={t('工作根目录')}
+              label={t('common.workspaceRoot')}
               width="xl"
-              tooltip={t('项目工作目录的默认根路径，改这里不会搬动已有目录')}
+              tooltip={t('settings.system.defaultRootHint')}
               placeholder="/srv/deploy/workspaces"
             />
             <ProFormText
               name="serverUrl"
-              label={t('服务端外部地址')}
+              label={t('settings.system.serverExternalURL')}
               width="xl"
-              tooltip={t('注入给脚本的 DEPLOY_SERVER_URL。对外地址变了在这里改，保存后对后续部署立即生效，不用重启服务；留空表示回退到启动参数（-server-url / DEPLOY_SERVER_URL）里的默认值')}
+              tooltip={t('settings.system.deployServerUrlHint')}
               placeholder="http://192.168.31.97:10055"
               rules={[
                 {
                   pattern: /^https?:\/\/\S+$/,
-                  message: t('需填 http:// 或 https:// 开头的完整地址'),
+                  message: t('settings.system.enterAFullURLStarting'),
                 },
               ]}
             />
             <ProFormDigit
               name="maxConcurrentRuns"
-              label={t('全局最大并发运行数')}
+              label={t('settings.system.globalMaxConcurrentRuns')}
               width="sm"
               min={1}
               max={200}
-              tooltip={t('超出后新触发的运行进入 queued 排队')}
+              tooltip={t('settings.system.newRunsBeyondThisEnter')}
             />
             <ProFormDigit
               name="logRetentionDays"
-              label={t('日志保留天数')}
+              label={t('settings.system.logRetentionDays')}
               width="sm"
               min={0}
-              tooltip={t('0 表示不自动清理')}
+              tooltip={t('settings.system.cleanupZeroHint')}
             />
             <ProFormDigit
               name="logMaxBytes"
-              label={t('单条日志大小上限（字节）')}
+              label={t('settings.system.maxSizePerLogEntry')}
               width="md"
               min={1024}
-              tooltip={t('超出后截断并提示')}
+              tooltip={t('settings.system.truncatedWithANoticeWhen')}
               fieldProps={{ step: 1048576 }}
             />
             <ProFormDigit
               name="hookRateLimitPerMinute"
-              label={t('Hook 每分钟限流')}
+              label={t('settings.system.hookRateLimitPerMinute')}
               width="sm"
               min={1}
-              tooltip={t('单 Token 每分钟最大触发次数')}
+              tooltip={t('settings.system.maxTriggersPerTokenPer')}
             />
             <ProFormSelect
               name="visibility"
-              label={t('项目可见性')}
+              label={t('settings.system.projectVisibility')}
               width="md"
               options={VISIBILITY_OPTIONS}
             />
             <ProFormSwitch
               name="allowRegistration"
-              label={t('开放注册')}
-              tooltip={t('默认关闭；开启后任何人都能注册账号')}
+              label={t('settings.system.openRegistration')}
+              tooltip={t('settings.system.offByDefaultWhenOn')}
             />
           </ProForm>
         )}
       </Card>
 
-      <Card title={t('通知')} style={{ marginBottom: 16 }}>
+      <Card title={t('settings.system.notifications')} style={{ marginBottom: 16 }}>
         {settings ? (
           <Descriptions column={1} size="small" bordered>
-            <Descriptions.Item label={t('状态')}>
+            <Descriptions.Item label={t('common.status')}>
               {settings.notify?.enabled ? (
-                <Tag color="green">{t('已启用')}</Tag>
+                <Tag color="green">{t('common.enabled')}</Tag>
               ) : (
-                <Tag>{t('未启用')}</Tag>
+                <Tag>{t('common.disabled')}</Tag>
               )}
             </Descriptions.Item>
-            <Descriptions.Item label={t('Webhook 地址')}>
+            <Descriptions.Item label={t('settings.system.webhookURL')}>
               {settings.notify?.url || '-'}
             </Descriptions.Item>
-            <Descriptions.Item label={t('触发条件')}>
+            <Descriptions.Item label={t('settings.system.triggerConditions')}>
               {(settings.notify?.on || []).join('、') || '-'}
             </Descriptions.Item>
-            <Descriptions.Item label={t('当前日志策略')}>
+            <Descriptions.Item label={t('settings.system.currentLogPolicy')}>
               {settings.logRetentionDays
-                ? t('保留 {logRetentionDays} 天', { logRetentionDays: settings.logRetentionDays })
-                : t('不自动清理')}
-              {settings.logMaxBytes ? t(' · 单条上限 {p0}', { p0: formatBytes(settings.logMaxBytes) }) : ''}
+                ? t('settings.system.keepForDays', { logRetentionDays: settings.logRetentionDays })
+                : t('settings.system.noAutomaticCleanup')}
+              {settings.logMaxBytes
+                ? t('settings.system.maxPerEntry', { p0: formatBytes(settings.logMaxBytes) })
+                : ''}
             </Descriptions.Item>
-            <Descriptions.Item label={t('服务端 uptime')}>
-               {t('见下方「环境自检」')} </Descriptions.Item>
+            <Descriptions.Item label={t('settings.system.serverUptime')}>
+              {t('settings.system.seeDoctorBelow')}{' '}
+            </Descriptions.Item>
           </Descriptions>
         ) : (
           <Spin />
@@ -209,17 +212,18 @@ const SystemSettingsPage: React.FC = () => {
         style={{ marginBottom: 16 }}
         type="info"
         showIcon
-        message={t('环境自检与工具链安装已独立成菜单')}
+        message={t('settings.system.doctorAndToolchainInstallAre')}
         description={
           <span>
-{t('服务端环境、缺失工具链与一键安装都在侧边栏的「环境自检」页：')}
-            <a onClick={() => history.push('/doctor')}>  {t('去环境自检 →')}</a>
+            {t('settings.system.doctorHint')}
+            <a onClick={() => history.push('/doctor')}> {t('settings.system.goToDoctor')}</a>
           </span>
         }
       />
 
       <div style={{ marginTop: 12, color: '#999', fontSize: 12 }}>
-         {t('提示：日志清理与并发上限都由服务端热读取这些配置；修改后立即生效，无需重启。')} </div>
+        {t('settings.system.hotReloadHint')}{' '}
+      </div>
     </PageContainer>
   );
 };

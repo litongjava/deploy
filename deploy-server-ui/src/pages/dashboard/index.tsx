@@ -1,3 +1,4 @@
+import { t } from '@/i18n';
 import { projectApi } from '@/services/project';
 import { runApi } from '@/services/run';
 import type { ProjectBrief, Run } from '@/services/types';
@@ -11,9 +12,21 @@ import {
 } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
 import { history } from '@umijs/max';
-import { Button, Card, Col, Dropdown, Empty, List, Row, Space, Statistic, Table, Tag, message } from 'antd';
+import {
+  Button,
+  Card,
+  Col,
+  Dropdown,
+  Empty,
+  List,
+  Row,
+  Space,
+  Statistic,
+  Table,
+  Tag,
+  message,
+} from 'antd';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { t } from '@/i18n';
 
 const REFRESH_MS = 10000;
 
@@ -74,8 +87,11 @@ const Dashboard: React.FC = () => {
       const depCount = res?.dependencies?.length || 0;
       messageApi.success(
         withDependencies && depCount > 0
-          ? t('已触发 #{buildNumber}，先构建 {depCount} 个依赖…', { buildNumber: res.buildNumber, depCount: depCount })
-          : t('已触发 #{buildNumber}，正在跳转日志…', { buildNumber: res.buildNumber }),
+          ? t('dashboard.triggeredBuildingDependenciesFirst', {
+              buildNumber: res.buildNumber,
+              depCount: depCount,
+            })
+          : t('dashboard.triggeredJumpingToLogs', { buildNumber: res.buildNumber }),
       );
       history.push(`/runs/${res.runId}`);
     } catch (e) {
@@ -85,17 +101,19 @@ const Dashboard: React.FC = () => {
 
   return (
     <PageContainer
-      title={t('概览')}
+      title={t('dashboard.overview')}
       extra={[
         <Button key="refresh" onClick={() => load()} loading={loading}>
-           {t('刷新')} </Button>,
+          {t('common.refresh')}{' '}
+        </Button>,
         <Button
           key="new"
           type="primary"
           icon={<ThunderboltOutlined />}
           onClick={() => history.push('/projects/new')}
         >
-           {t('新建项目')} </Button>,
+          {t('common.newProject')}{' '}
+        </Button>,
       ]}
     >
       {contextHolder}
@@ -103,7 +121,7 @@ const Dashboard: React.FC = () => {
         <Col xs={12} sm={12} md={6}>
           <Card>
             <Statistic
-              title={t('运行中')}
+              title={t('common.running')}
               value={stats.running}
               prefix={<SyncOutlined spin={stats.running > 0} />}
               valueStyle={{ color: stats.running > 0 ? '#1890ff' : undefined }}
@@ -112,13 +130,17 @@ const Dashboard: React.FC = () => {
         </Col>
         <Col xs={12} sm={12} md={6}>
           <Card>
-            <Statistic title={t('排队中')} value={stats.queued} prefix={<PlayCircleOutlined />} />
+            <Statistic
+              title={t('common.queued')}
+              value={stats.queued}
+              prefix={<PlayCircleOutlined />}
+            />
           </Card>
         </Col>
         <Col xs={12} sm={12} md={6}>
           <Card>
             <Statistic
-              title={t('今日成功')}
+              title={t('dashboard.succeededToday')}
               value={stats.todaySuccess}
               prefix={<CheckCircleOutlined />}
               valueStyle={{ color: '#52c41a' }}
@@ -128,7 +150,7 @@ const Dashboard: React.FC = () => {
         <Col xs={12} sm={12} md={6}>
           <Card>
             <Statistic
-              title={t('今日失败')}
+              title={t('dashboard.failedToday')}
               value={stats.todayFailed}
               prefix={<CloseCircleOutlined />}
               valueStyle={{ color: stats.todayFailed > 0 ? '#ff4d4f' : undefined }}
@@ -140,10 +162,11 @@ const Dashboard: React.FC = () => {
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col xs={24} lg={16}>
           <Card
-            title={t('最近运行')}
+            title={t('dashboard.recentRuns')}
             extra={
               <Button type="link" onClick={() => history.push('/runs')}>
-                 {t('查看全部')} </Button>
+                {t('dashboard.viewAll')}{' '}
+              </Button>
             }
           >
             <Table<Run>
@@ -152,10 +175,10 @@ const Dashboard: React.FC = () => {
               loading={loading}
               dataSource={runs.slice(0, 10)}
               pagination={false}
-              locale={{ emptyText: <Empty description={t('还没有运行记录')} /> }}
+              locale={{ emptyText: <Empty description={t('dashboard.noRunsYet')} /> }}
               columns={[
                 {
-                  title: t('构建号'),
+                  title: t('common.buildNumber'),
                   dataIndex: 'buildNumber',
                   width: 90,
                   render: (v: number, row) => (
@@ -163,7 +186,7 @@ const Dashboard: React.FC = () => {
                   ),
                 },
                 {
-                  title: t('项目'),
+                  title: t('common.project'),
                   dataIndex: 'projectName',
                   render: (v: string, row) => (
                     <a onClick={() => history.push(`/projects/${row.projectKey}`)}>
@@ -172,7 +195,7 @@ const Dashboard: React.FC = () => {
                   ),
                 },
                 {
-                  title: t('状态'),
+                  title: t('common.status'),
                   dataIndex: 'status',
                   width: 100,
                   render: (v: Run['status']) => (
@@ -180,19 +203,19 @@ const Dashboard: React.FC = () => {
                   ),
                 },
                 {
-                  title: t('触发'),
+                  title: t('common.trigger'),
                   dataIndex: 'triggerUserName',
                   width: 110,
                   render: (v: string, row) => v || row.triggerType,
                 },
                 {
-                  title: t('耗时'),
+                  title: t('common.duration'),
                   dataIndex: 'durationMs',
                   width: 100,
                   render: (v: number) => formatDuration(v),
                 },
                 {
-                  title: t('开始时间'),
+                  title: t('common.startTime'),
                   dataIndex: 'startedAt',
                   width: 170,
                   render: (v: string) => formatTime(v),
@@ -202,11 +225,14 @@ const Dashboard: React.FC = () => {
           </Card>
         </Col>
         <Col xs={24} lg={8}>
-          <Card title={t('快捷执行')} extra={<a onClick={() => history.push('/projects')}>{t('项目列表')}</a>}>
+          <Card
+            title={t('dashboard.quickRun')}
+            extra={<a onClick={() => history.push('/projects')}>{t('dashboard.projectList')}</a>}
+          >
             <List
               dataSource={projects}
               loading={loading}
-              locale={{ emptyText: <Empty description={t('还没有项目')} /> }}
+              locale={{ emptyText: <Empty description={t('dashboard.noProjectsYet')} /> }}
               renderItem={(item) => (
                 <List.Item
                   actions={[
@@ -216,14 +242,15 @@ const Dashboard: React.FC = () => {
                         trigger={['click']}
                         menu={{
                           items: [
-                            { key: 'with-deps', label: t('含依赖执行（推荐）') },
-                            { key: 'only', label: t('仅执行本项目') },
+                            { key: 'with-deps', label: t('common.runWithDependenciesRecommended') },
+                            { key: 'only', label: t('common.runThisProjectOnly') },
                           ],
                           onClick: ({ key }) => handleRun(item.key, key === 'with-deps'),
                         }}
                       >
                         <Button type="link" size="small">
-                           {t('执行')} </Button>
+                          {t('common.execute')}{' '}
+                        </Button>
                       </Dropdown>
                     ) : (
                       <Button
@@ -233,10 +260,12 @@ const Dashboard: React.FC = () => {
                         disabled={item.archived}
                         onClick={() => handleRun(item.key)}
                       >
-                         {t('执行')} </Button>
+                        {t('common.execute')}{' '}
+                      </Button>
                     ),
                     <a key="detail" onClick={() => history.push(`/projects/${item.key}`)}>
-                       {t('详情')} </a>,
+                      {t('common.details')}{' '}
+                    </a>,
                   ]}
                 >
                   <List.Item.Meta
@@ -244,14 +273,14 @@ const Dashboard: React.FC = () => {
                       <Space size={6}>
                         <span>{item.name}</span>
                         <Tag>{item.key}</Tag>
-                        {item.archived ? <Tag color="default">{t('已归档')}</Tag> : null}
+                        {item.archived ? <Tag color="default">{t('common.archived')}</Tag> : null}
                       </Space>
                     }
                     description={
                       <Space size={12} wrap>
-                        <span>{t('共 {count} 次', { count: item.runCount })}</span>
+                        <span>{t('dashboard.total', { count: item.runCount })}</span>
                         <span>
-                          {t('上次：')}
+                          {t('dashboard.last')}
                           {item.lastRunStatus
                             ? RUN_STATUS_META[item.lastRunStatus as Run['status']]?.text
                             : '-'}

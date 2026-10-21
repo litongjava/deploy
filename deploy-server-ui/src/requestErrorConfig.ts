@@ -1,8 +1,8 @@
+import { t } from '@/i18n';
 import type { RequestOptions } from '@@/plugin-request/request';
 import type { RequestConfig } from '@umijs/max';
 import { message, notification } from 'antd';
 import { getToken, redirectToLogin } from './services/authStore';
-import { t } from '@/i18n';
 
 // 错误处理方案： 错误类型
 enum ErrorShowType {
@@ -94,14 +94,14 @@ export const errorConfig: RequestConfig = {
         // Axios 的错误
         // 请求成功发出且服务器也响应了状态码，但状态代码超出了 2xx 的范围
         message.error(
-          body?.errorMessage || t('请求失败（HTTP {status}）', { status: error.response.status }),
+          body?.errorMessage || t('request.requestFailedHTTP', { status: error.response.status }),
         );
       } else if (error.request) {
         // 请求已经成功发起，但没有收到响应
-        message.error(t('服务无响应，请检查网络或后端是否启动'));
+        message.error(t('request.serviceIsNotRespondingCheck'));
       } else {
         // 发送请求时出了点问题
-        message.error(t('请求发送失败，请重试'));
+        message.error(t('request.requestFailedToSendPlease'));
       }
     },
   },

@@ -1,5 +1,8 @@
-import { credentialApi, systemApi } from '@/services/system';
+import EnvListEditor from '@/components/EnvListEditor';
+import ScriptListEditor from '@/components/ScriptListEditor';
+import { t } from '@/i18n';
 import { projectApi } from '@/services/project';
+import { credentialApi, systemApi } from '@/services/system';
 import type {
   CommandInput,
   Credential,
@@ -9,13 +12,14 @@ import type {
   ProjectKind,
 } from '@/services/types';
 import {
+  CONCURRENCY_OPTIONS,
   PROJECT_KIND_META,
   PROJECT_KIND_OPTIONS,
   SECRET_PLACEHOLDER,
   SHELL_OPTIONS,
-  CONCURRENCY_OPTIONS,
   defaultWorkdir,
 } from '@/utils/constants';
+import { inferProjectFromGitUrl } from '@/utils/repoInfer';
 import { ArrowLeftOutlined, SaveOutlined } from '@ant-design/icons';
 import {
   PageContainer,
@@ -30,10 +34,6 @@ import {
 import { history, useParams } from '@umijs/max';
 import { Alert, Button, Card, Col, Form, Row, Space, Spin, message } from 'antd';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import ScriptListEditor from '@/components/ScriptListEditor';
-import { inferProjectFromGitUrl } from '@/utils/repoInfer';
-import EnvListEditor from '@/components/EnvListEditor';
-import { t } from '@/i18n';
 
 interface FormValues {
   key: string;
@@ -72,7 +72,11 @@ const ProjectEdit: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [dependencyCandidates, setDependencyCandidates] = useState<ProjectBrief[]>([]);
-  const [dependencyPlan, setDependencyPlan] = useState<{ ok: boolean; error?: string; order: string[] }>({
+  const [dependencyPlan, setDependencyPlan] = useState<{
+    ok: boolean;
+    error?: string;
+    order: string[];
+  }>({
     ok: true,
     order: [],
   });
@@ -111,7 +115,7 @@ const ProjectEdit: React.FC = () => {
     if (isEdit) return;
     const inferred = inferProjectFromGitUrl(gitUrlValue);
     const manualKey = (keyValue ?? '').trim();
-    const finalKey = keyEditedRef.current ? manualKey : inferred?.key ?? manualKey;
+    const finalKey = keyEditedRef.current ? manualKey : (inferred?.key ?? manualKey);
 
     const patch: Partial<FormValues> = {};
     if (!keyEditedRef.current && inferred) patch.key = inferred.key;
@@ -201,7 +205,7 @@ const ProjectEdit: React.FC = () => {
       .then((doc) => {
         const git = (doc?.checks || []).find((c) => c.name === 'git');
         if (git && !git.found) {
-          setDoctorWarning(git.hint || t('服务端未找到 git 命令，Git 准备阶段会失败。'));
+          setDoctorWarning(git.hint || t('project.gitCommandWasNotFound'));
         }
       })
       .catch(() => undefined);
@@ -222,7 +226,7 @@ const ProjectEdit: React.FC = () => {
       (dependencyCandidates || [])
         .filter((p) => !isEdit || p.key !== editKey)
         .map((p) => ({
-          label: `${p.name}（${p.key}）${p.archived ? t(' · 已归档') : ''}`,
+          label: `${p.name}（${p.key}）${p.archived ? t('project.archived') : ''}`,
           value: p.key,
           disabled: p.archived,
         })),
@@ -237,7 +241,7 @@ const ProjectEdit: React.FC = () => {
         .filter((c) => c && (c.name || c.script))
         .map((c, index) => ({
           id: c.id,
-          name: c.name || t('命令 {p0}', { p0: index + 1 }),
+          name: c.name || t('project.command', { p0: index + 1 }),
           script: c.script || '',
           sortOrder: index + 1,
           enabled: c.enabled !== false,
@@ -290,11 +294,11 @@ const ProjectEdit: React.FC = () => {
 
       if (isEdit) {
         await projectApi.update(editKey!, payload);
-        messageApi.success(t('保存成功'));
+        messageApi.success(t('common.saveSuccess'));
         history.push(`/projects/${editKey}`);
       } else {
         await projectApi.create(payload);
-        messageApi.success(t('创建成功'));
+        messageApi.success(t('common.created'));
         history.push(`/projects/${payload.key}`);
       }
     } catch (e) {
@@ -306,7 +310,9 @@ const ProjectEdit: React.FC = () => {
 
   if (loading) {
     return (
-      <PageContainer title={isEdit ? t('编辑项目 {editKey}', { editKey: editKey }) : t('新建项目')}>
+      <PageContainer
+        title={isEdit ? t('project.editTitle', { editKey: editKey }) : t('common.newProject')}
+      >
         <div style={{ textAlign: 'center', padding: '60px 0' }}>
           <Spin />
         </div>
@@ -316,18 +322,19 @@ const ProjectEdit: React.FC = () => {
 
   return (
     <PageContainer
-      title={isEdit ? t('编辑项目：{editKey}', { editKey: editKey }) : t('新建项目')}
+      title={isEdit ? t('project.editTitleColon', { editKey: editKey }) : t('common.newProject')}
       onBack={() => history.back()}
       extra={[
         <Button key="back" icon={<ArrowLeftOutlined />} onClick={() => history.back()}>
-           {t('返回')} </Button>,
+          {t('common.back')}{' '}
+        </Button>,
       ]}
     >
       {contextHolder}
       <ProForm<FormValues>
         form={form}
         submitter={{
-          searchConfig: { submitText: isEdit ? t('保存') : t('创建项目') },
+          searchConfig: { submitText: isEdit ? t('common.save') : t('project.createProject') },
           render: (props, doms) => (
             <Space>
               <Button
@@ -336,9 +343,9 @@ const ProjectEdit: React.FC = () => {
                 loading={saving}
                 onClick={() => props.form?.submit()}
               >
-                {isEdit ? t('保存') : t('创建项目')}
+                {isEdit ? t('common.save') : t('project.createProject')}
               </Button>
-              <Button onClick={() => history.back()}>{t('取消')}</Button>
+              <Button onClick={() => history.back()}>{t('common.cancel')}</Button>
             </Space>
           ),
         }}
@@ -375,11 +382,11 @@ const ProjectEdit: React.FC = () => {
           envs: [],
         }}
       >
-        <Card title={t('Git 准备阶段')} style={{ marginBottom: 16 }}>
+        <Card title={t('project.gitPreparationStage')} style={{ marginBottom: 16 }}>
           <ProFormSwitch
             name="useGit"
-            label={t('执行前拉取代码')}
-            tooltip={t('打开后，每次执行会先 clone/fetch 再跑用户命令')}
+            label={t('project.pullCodeBeforeRunning')}
+            tooltip={t('project.whenOnEachRunClones')}
           />
           {useGit ? (
             <>
@@ -388,7 +395,7 @@ const ProjectEdit: React.FC = () => {
                   type="warning"
                   showIcon
                   style={{ marginBottom: 16 }}
-                  message={t('环境提示')}
+                  message={t('project.environmentNotice')}
                   description={doctorWarning}
                 />
               ) : null}
@@ -396,18 +403,18 @@ const ProjectEdit: React.FC = () => {
                 <Col xs={24} xl={16}>
                   <ProFormText
                     name="gitUrl"
-                    label={t('仓库地址')}
-                    tooltip={t('填好后会按仓库名自动预填「项目 Key / 项目名称 / 工作目录」；这三项一旦手动改过就不再覆盖')}
-                    placeholder={t('https://gitee.com/xxx/yyy.git 或 git@github.com:xxx/yyy.git')}
-                    rules={[{ required: true, message: t('启用 Git 后必须填写仓库地址') }]}
+                    label={t('common.repositoryURL')}
+                    tooltip={t('project.onceFilledTheProjectKey')}
+                    placeholder={t('project.httpsGiteeComXxxYyy')}
+                    rules={[{ required: true, message: t('project.repositoryURLIsRequiredWhen') }]}
                   />
                 </Col>
                 <Col xs={24} md={12} xl={8}>
                   <ProFormText
                     name="gitBranch"
-                    label={t('分支 / Tag / Commit')}
+                    label={t('project.branchTagCommit')}
                     placeholder="main"
-                    rules={[{ required: true, message: t('请填写分支') }]}
+                    rules={[{ required: true, message: t('project.enterABranch') }]}
                   />
                 </Col>
               </Row>
@@ -415,26 +422,26 @@ const ProjectEdit: React.FC = () => {
                 <Col xs={24} md={12} xl={8}>
                   <ProFormSelect
                     name="gitCredentialId"
-                    label={t('Git 凭据')}
+                    label={t('project.gitCredential')}
                     allowClear
                     options={credentialOptions}
-                    placeholder={t('公开仓库可留空')}
-                    tooltip={t('私有仓库请先在「设置 → 凭据管理」中创建凭据')}
+                    placeholder={t('project.leaveEmptyForPublicRepositories')}
+                    tooltip={t('project.privateRepositoriesCreateACredential')}
                   />
                 </Col>
                 <Col xs={24} md={12} xl={8}>
                   <ProFormText
                     name="gitSubdir"
-                    label={t('仓库子目录')}
-                    placeholder={t('monorepo 场景，例如 apps/web')}
+                    label={t('project.repositorySubdirectory')}
+                    placeholder={t('project.monoreposEGAppsWeb')}
                   />
                 </Col>
                 <Col xs={24} md={12} xl={8}>
                   <ProFormDigit
                     name="gitDepth"
-                    label={t('浅克隆深度')}
+                    label={t('project.shallowCloneDepth')}
                     min={0}
-                    tooltip={t('0 表示完整克隆')}
+                    tooltip={t('project.cloneDepthHint')}
                   />
                 </Col>
               </Row>
@@ -442,12 +449,15 @@ const ProjectEdit: React.FC = () => {
                 <Col xs={24} md={12} xl={8}>
                   <ProFormSwitch
                     name="gitClean"
-                    label={t('拉取前 git clean -fdx')}
-                    tooltip={t('危险：会删除工作目录中所有未跟踪文件')}
+                    label={t('project.runGitCleanFdxBefore')}
+                    tooltip={t('project.dangerDeletesAllUntrackedFiles')}
                   />
                 </Col>
                 <Col xs={24} md={12} xl={8}>
-                  <ProFormSwitch name="gitSubmodule" label={t('递归拉取子模块')} />
+                  <ProFormSwitch
+                    name="gitSubmodule"
+                    label={t('project.recursivelyFetchSubmodules')}
+                  />
                 </Col>
               </Row>
             </>
@@ -455,27 +465,27 @@ const ProjectEdit: React.FC = () => {
             <Alert
               type="info"
               showIcon
-              message={t('未启用 Git 准备阶段')}
-              description={t('关闭时平台不拉代码，需要自己把 git pull 之类的命令写进「命令」里。')}
+              message={t('project.gitPreparationStageIsDisabled')}
+              description={t('project.whenOffThePlatformDoes')}
             />
           )}
         </Card>
 
-        <Card title={t('基本信息')} style={{ marginBottom: 16 }}>
+        <Card title={t('common.basicInformation')} style={{ marginBottom: 16 }}>
           {/* PC（≥1200px）一行三个、平板（≥768px）一行两个、手机一列一个，互相不挤 */}
           <Row gutter={24}>
             <Col xs={24} md={12} xl={8}>
               <ProFormText
                 name="key"
-                label={t('项目 Key')}
-                tooltip={t('唯一标识，用于 URL / CLI / Hook 引用，创建后不建议修改；新建时会按上方「仓库地址」自动推断')}
+                label={t('project.projectKey')}
+                tooltip={t('project.uniqueIdentifierUsedInUrls')}
                 disabled={isEdit}
-                placeholder={t('例如 my-app（字母数字与 - _）')}
+                placeholder={t('project.exampleProjectKey')}
                 rules={[
-                  { required: true, message: t('请填写项目 Key') },
+                  { required: true, message: t('project.enterTheProjectKey') },
                   {
                     pattern: /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/,
-                    message: t('只能包含字母、数字、- 和 _，且以字母或数字开头'),
+                    message: t('project.mayContainOnlyLettersDigits'),
                   },
                 ]}
               />
@@ -483,17 +493,17 @@ const ProjectEdit: React.FC = () => {
             <Col xs={24} md={12} xl={8}>
               <ProFormText
                 name="name"
-                label={t('项目名称')}
-                rules={[{ required: true, message: t('请填写项目名称') }]}
+                label={t('project.projectName')}
+                rules={[{ required: true, message: t('project.enterTheProjectName') }]}
               />
             </Col>
             <Col xs={24} md={24} xl={8}>
               <ProFormText
                 name="workdir"
-                label={t('工作目录')}
-                placeholder={t('例如 /srv/workspaces/tio-boot')}
-                tooltip={t('绝对路径。新建时按项目 Key 自动填成 /srv/workspaces/<key>，可手动改；支持 ${WORKSPACE_ROOT} 之类的变量由 shell 展开')}
-                rules={[{ required: true, message: t('请填写工作目录') }]}
+                label={t('common.workingDirectory')}
+                placeholder={t('project.exampleWorkdir')}
+                tooltip={t('project.workdirHint')}
+                rules={[{ required: true, message: t('common.enterTheWorkingDirectory') }]}
               />
             </Col>
           </Row>
@@ -501,7 +511,7 @@ const ProjectEdit: React.FC = () => {
             <Col xs={24} md={12} xl={8}>
               <ProFormSelect
                 name="concurrency"
-                label={t('并发策略')}
+                label={t('common.concurrencyPolicy')}
                 options={CONCURRENCY_OPTIONS}
               />
             </Col>
@@ -510,59 +520,63 @@ const ProjectEdit: React.FC = () => {
                 name="shell"
                 label="Shell"
                 options={SHELL_OPTIONS}
-                tooltip={t('auto 会按平台选择 bash -lc / sh -c / pwsh / cmd')}
+                tooltip={t('project.shellAutoHint')}
               />
             </Col>
             <Col xs={24} md={12} xl={8}>
               <ProFormDigit
                 name="timeoutSec"
-                label={t('默认超时（秒）')}
+                label={t('common.defaultTimeoutSeconds')}
                 min={0}
-                tooltip={t('0 表示不限制')}
+                tooltip={t('project.zeroMeansNoLimit')}
               />
             </Col>
           </Row>
           <Row gutter={24}>
             <Col xs={24} md={12} xl={8}>
-              <ProFormTextArea name="description" label={t('描述')} fieldProps={{ rows: 2 }} />
+              <ProFormTextArea
+                name="description"
+                label={t('common.description')}
+                fieldProps={{ rows: 2 }}
+              />
             </Col>
             <Col xs={24} md={12} xl={8}>
               <ProFormSwitch
                 name="hookEnabled"
-                label={t('启用 Hook 触发')}
-                tooltip={t('关闭后该项目的 Hook 地址不可用')}
+                label={t('common.enableHookTrigger')}
+                tooltip={t('project.whenOffThisProjectHook')}
               />
             </Col>
             <Col xs={24} md={12} xl={8}>
               <ProFormSwitch
                 name="allowEnvOverride"
-                label={t('允许触发时覆盖环境变量')}
-                tooltip={t('关闭后 Hook / CLI / 网页触发的 env 参数会被忽略')}
+                label={t('common.allowEnvOverrideOnTrigger')}
+                tooltip={t('project.whenOffEnvParametersFrom')}
               />
             </Col>
           </Row>
         </Card>
 
-        <Card title={t('项目类型与依赖构建')} style={{ marginBottom: 16 }}>
+        <Card title={t('project.projectTypeAndDependencyBuilds')} style={{ marginBottom: 16 }}>
           <Row gutter={24}>
             <Col xs={24} xl={8}>
               <ProFormRadio.Group
                 name="kind"
-                label={t('项目类型')}
+                label={t('project.projectType')}
                 options={PROJECT_KIND_OPTIONS}
-                tooltip={t('应用项目=常规的构建/部署单元；构建项目=产出被依赖的产物（底层库）。类型只影响默认命令与图标，两类项目都可以声明依赖、也都可以被别的项目依赖')}
-                rules={[{ required: true, message: t('请选择项目类型') }]}
+                tooltip={t('project.typeHint')}
+                rules={[{ required: true, message: t('project.selectAProjectType') }]}
               />
             </Col>
             <Col xs={24} xl={16}>
               <ProFormSelect
                 name="dependencies"
-                label={t('依赖的项目')}
+                label={t('project.dependentProjects')}
                 mode="multiple"
                 allowClear
                 options={dependencyOptions}
-                placeholder={t('可多选；列出全部项目')}
-                tooltip={t('含依赖执行时，先按依赖顺序构建这些项目，全部成功后才执行本项目。直接依赖会自动递归展开；项目之间可以互相依赖（例如上层应用依赖底层的构建项目，构建项目之间也可以互相依赖）。')}
+                placeholder={t('project.multipleSelectionsAllProjectsAre')}
+                tooltip={t('project.whenRunningWithDependenciesThese')}
                 fieldProps={{ optionFilterProp: 'label' }}
               />
             </Col>
@@ -574,8 +588,8 @@ const ProjectEdit: React.FC = () => {
             message={PROJECT_KIND_META[(kind as ProjectKind) || 'app'].text}
             description={
               (kind || 'app') === 'lib'
-                ? t('构建项目：产出被依赖的产物（底层库），被别的项目依赖时先构建它。它自己也可以依赖更底层的项目（多模块/父 pom 场景）。命令通常是 mvn install / go build 之类产生产物的步骤。')
-                : t('应用项目：可声明依赖的项目，执行时先按顺序构建它们（网页上点「执行」默认含依赖）。')
+                ? t('project.buildProjectProducesArtifactsOther')
+                : t('project.applicationProjectCanDeclareDependent')
             }
           />
           {isEdit && dependencyPlan.order.length > 0 ? (
@@ -584,7 +598,7 @@ const ProjectEdit: React.FC = () => {
                 style={{ marginBottom: 12 }}
                 type="success"
                 showIcon
-                message={t('构建顺序（含依赖执行时）')}
+                message={t('project.buildOrderWhenRunningWith')}
                 description={dependencyPlan.order.join('  →  ') + `  →  ${editKey}`}
               />
             ) : (
@@ -592,26 +606,29 @@ const ProjectEdit: React.FC = () => {
                 style={{ marginBottom: 12 }}
                 type="error"
                 showIcon
-                message={t('依赖配置当前不可用')}
+                message={t('project.dependencyUnavailable')}
                 description={dependencyPlan.error}
               />
             )
           ) : null}
         </Card>
 
-
-        <Card title={t('环境变量')} style={{ marginBottom: 16 }}>
+        <Card title={t('common.environmentVariables')} style={{ marginBottom: 16 }}>
           <Alert
             style={{ marginBottom: 12 }}
             type="info"
             showIcon
-            message={t('优先级：系统环境 → 项目变量 → Secret 变量 → 内置变量 → 触发时传入的变量（若允许覆盖）')}
+            message={t('project.envPriority')}
           />
           <EnvListEditor />
         </Card>
 
-        <Card title={t('命令列表（按顺序执行）')}>
-          <ScriptListEditor listName="commands" itemNoun={t('命令')} ownerNoun={t('项目')} />
+        <Card title={t('project.commandsExecutedInOrder')}>
+          <ScriptListEditor
+            listName="commands"
+            itemNoun={t('common.command')}
+            ownerNoun={t('common.project')}
+          />
         </Card>
       </ProForm>
     </PageContainer>

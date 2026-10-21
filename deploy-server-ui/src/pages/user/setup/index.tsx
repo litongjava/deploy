@@ -1,5 +1,7 @@
-import DoctorPanel from '@/components/DoctorPanel';
+import Settings from '@/../config/defaultSettings';
 import { Footer } from '@/components';
+import DoctorPanel from '@/components/DoctorPanel';
+import { t } from '@/i18n';
 import { authApi } from '@/services/auth';
 import { getToken, setToken } from '@/services/authStore';
 import { systemApi } from '@/services/system';
@@ -9,8 +11,6 @@ import { ProFormText, StepsForm } from '@ant-design/pro-components';
 import { Helmet, history } from '@umijs/max';
 import { Alert, Button, Result } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
-import Settings from '@/../config/defaultSettings';
-import { t } from '@/i18n';
 
 /**
  * 首次启动初始化向导（FR-INIT-1）：
@@ -68,7 +68,7 @@ const Setup: React.FC = () => {
         error?.info?.errorMessage ||
         error?.response?.data?.errorMessage ||
         error?.message ||
-        t('初始化失败，请重试');
+        t('setup.setupFailedPleaseRetry');
       setErrorMessage(msg);
       return false;
     }
@@ -77,7 +77,7 @@ const Setup: React.FC = () => {
   return (
     <>
       <Helmet>
-        <title>{t('初始化 - {title}', { title: Settings.title })}</title>
+        <title>{t('setup.setup', { title: Settings.title })}</title>
       </Helmet>
       <div
         style={{
@@ -107,7 +107,8 @@ const Setup: React.FC = () => {
                           window.location.href = '/';
                         }}
                       >
-                         {t('进入平台')} </Button>
+                        {t('setup.enterPlatform')}{' '}
+                      </Button>
                     </div>
                   );
                 }
@@ -117,58 +118,53 @@ const Setup: React.FC = () => {
           >
             <StepsForm.StepForm
               name="admin"
-              title={t('创建管理员')}
+              title={t('setup.createAdministrator')}
               onFinish={handleBootstrap}
-              stepProps={{ description: t('设置超级管理员账号（密码至少 8 位）') }}
+              stepProps={{ description: t('setup.setUpTheSuperAdministrator') }}
             >
               {errorMessage && (
-                <Alert
-                  style={{ marginBottom: 16 }}
-                  type="error"
-                  showIcon
-                  message={errorMessage}
-                />
+                <Alert style={{ marginBottom: 16 }} type="error" showIcon message={errorMessage} />
               )}
               <Alert
                 style={{ marginBottom: 16 }}
                 type="info"
                 showIcon
-                message={t('这是平台的第一个账号，拥有全部权限（用户管理、系统设置、所有项目）。')}
+                message={t('setup.platformSFirstAccountAnd')}
               />
               <ProFormText
                 name="username"
-                label={t('用户名')}
-                placeholder={t('例如 admin')}
+                label={t('common.username')}
+                placeholder={t('setup.usernamePlaceholder')}
                 fieldProps={{ prefix: <UserOutlined />, autoComplete: 'off' }}
                 rules={[
-                  { required: true, message: t('请输入用户名') },
-                  { pattern: /^[a-zA-Z0-9_.-]{2,32}$/, message: t('2-32 位字母、数字、_ . -') },
+                  { required: true, message: t('setup.enterTheUsername') },
+                  { pattern: /^[a-zA-Z0-9_.-]{2,32}$/, message: t('common.usernameRule') },
                 ]}
               />
               <ProFormText.Password
                 name="password"
-                label={t('密码')}
-                placeholder={t('至少 8 位')}
+                label={t('common.password')}
+                placeholder={t('setup.least8Characters')}
                 fieldProps={{ prefix: <LockOutlined />, autoComplete: 'new-password' }}
                 rules={[
-                  { required: true, message: t('请输入密码') },
-                  { min: 8, message: t('密码长度至少 8 位') },
+                  { required: true, message: t('setup.enterThePassword') },
+                  { min: 8, message: t('common.passwordMin8') },
                 ]}
               />
               <ProFormText.Password
                 name="confirm"
-                label={t('确认密码')}
-                placeholder={t('再次输入密码')}
+                label={t('setup.confirmPassword')}
+                placeholder={t('setup.confirmPasswordPlaceholder')}
                 dependencies={['password']}
                 fieldProps={{ prefix: <LockOutlined />, autoComplete: 'new-password' }}
                 rules={[
-                  { required: true, message: t('请再次输入密码') },
+                  { required: true, message: t('setup.confirmPasswordRequired') },
                   ({ getFieldValue }) => ({
                     validator(_, value) {
                       if (!value || getFieldValue('password') === value) {
                         return Promise.resolve();
                       }
-                      return Promise.reject(new Error(t('两次输入的密码不一致')));
+                      return Promise.reject(new Error(t('common.twoPasswordsDoNotMatch')));
                     },
                   }),
                 ]}
@@ -177,8 +173,8 @@ const Setup: React.FC = () => {
 
             <StepsForm.StepForm
               name="doctor"
-              title={t('环境自检')}
-              stepProps={{ description: t('检查服务端工具链是否就绪') }}
+              title={t('common.doctor')}
+              stepProps={{ description: t('setup.checkWhetherTheServerToolchain') }}
               onFinish={async () => true}
             >
               {getToken() ? (
@@ -186,10 +182,11 @@ const Setup: React.FC = () => {
               ) : (
                 <Result
                   status="warning"
-                  title={t('需要先完成管理员创建')}
+                  title={t('setup.administratorAccountMustBeCreated')}
                   extra={
                     <Button type="primary" onClick={() => history.replace('/user/login')}>
-                       {t('返回登录页')} </Button>
+                      {t('setup.backToSignIn')}{' '}
+                    </Button>
                   }
                 />
               )}
