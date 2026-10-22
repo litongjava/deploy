@@ -69,6 +69,8 @@ type EnvVar struct {
 
 // Project 对象（契约 4.1）。列表接口不返回 commands / envs。
 type Project struct {
+	Kind             string    `json:"kind"`
+	Dependencies     []string  `json:"dependencies"`
 	ID               int64     `json:"id"`
 	Key              string    `json:"key"`
 	Name             string    `json:"name"`
@@ -122,6 +124,8 @@ type EnvVarInput struct {
 
 // ProjectInput 对应契约 4.4 的 ProjectInput（POST/PUT 内联 commands + envs）。
 type ProjectInput struct {
+	Kind             string         `json:"kind"`
+	Dependencies     []string       `json:"dependencies"`
 	Key              string         `json:"key"`
 	Name             string         `json:"name"`
 	Description      string         `json:"description"`
@@ -197,10 +201,11 @@ type RunStep struct {
 
 // RunRequest 是 POST /projects/{key}/run 的请求体。
 type RunRequest struct {
-	Branch     string            `json:"branch,omitempty"`
-	Env        map[string]string `json:"env,omitempty"`
-	CommandIDs []int64           `json:"commandIds,omitempty"`
-	CommandID  int64             `json:"commandId,omitempty"`
+	WithDependencies bool              `json:"withDependencies,omitempty"`
+	Branch           string            `json:"branch,omitempty"`
+	Env              map[string]string `json:"env,omitempty"`
+	CommandIDs       []int64           `json:"commandIds,omitempty"`
+	CommandID        int64             `json:"commandId,omitempty"`
 }
 
 // RunTriggerResult 是触发运行返回的 data。

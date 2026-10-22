@@ -19,6 +19,6 @@ func newProjectCmd(app *App) *cobra.Command {
 			return cmd.Help()
 		},
 	}
-	cmd.AddCommand(newProjectListCmd(app), newProjectGetCmd(app), newProjectCreateCmd(app))
+	cmd.AddCommand(newProjectListCmd(app), newProjectGetCmd(app), newProjectCreateCmd(app), newProjectUpdateCmd(app))
 	return cmd
 }

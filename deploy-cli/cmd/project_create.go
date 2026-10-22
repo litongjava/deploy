@@ -27,6 +27,8 @@ var (
 
 func newProjectCreateCmd(app *App) *cobra.Command {
 	var (
+		kind             string
+		dependencies     []string
 		filePath         string
 		key              string
 		name             string
@@ -91,6 +93,12 @@ Running without flags or --file starts the interactive wizard.`,
 				pf, baseDir, err := loadProjectFile(filePath)
 				if err != nil {
 					return err
+				}
+				if !cmd.Flags().Changed("kind") && pf.Kind != "" {
+					kind = pf.Kind
+				}
+				if !cmd.Flags().Changed("dependencies") && pf.Dependencies != nil {
+					dependencies = pf.Dependencies
 				}
 				if !cmd.Flags().Changed("key") && pf.Key != "" {
 					key = pf.Key
@@ -213,6 +221,9 @@ Running without flags or --file starts the interactive wizard.`,
 				return exitcode.Usagef("at least one command is required; pass --command script (repeatable) or use --file with commands")
 			}
 
+			if err := validateProjectDependencies(key, kind, dependencies); err != nil {
+				return err
+			}
 			// ---- 校验枚举值 ----
 			if !validShells[shell] {
 				return exitcode.Usagef("--shell must be auto/bash/sh/pwsh/cmd, got %q", shell)
@@ -263,6 +274,7 @@ Running without flags or --file starts the interactive wizard.`,
 			}
 
 			in := &api.ProjectInput{
+				Kind: kind, Dependencies: dependencies,
 				Key:              key,
 				Name:             name,
 				Description:      description,
@@ -308,6 +320,8 @@ Running without flags or --file starts the interactive wizard.`,
 	}
 
 	f := cmd.Flags()
+	f.StringVar(&kind, "kind", "app", "project type: app or lib")
+	f.StringSliceVar(&dependencies, "dependencies", nil, "dependency project keys; comma-separated or repeatable")
 	f.StringVar(&filePath, "file", "", "read the project definition from a JSON file (explicit flags override the file)")
 	f.StringVar(&key, "key", "", "project key (unique, used in the URL; letters/digits/-/_)")
 	f.StringVar(&name, "name", "", "project name (defaults to the key)")
@@ -338,6 +352,8 @@ Running without flags or --file starts the interactive wizard.`,
 // 导出后改一改再建。每条命令的脚本二选一：script 内联，或 scriptFile 指向一个文件
 // （相对 JSON 文件所在目录，Windows 的 sh\01.sh 写法也能用）。
 type projectFile struct {
+	Kind             string            `json:"kind"`
+	Dependencies     []string          `json:"dependencies"`
 	Key              string            `json:"key"`
 	Name             string            `json:"name"`
 	Description      string            `json:"description"`

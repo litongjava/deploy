@@ -460,3 +460,15 @@ go test ./... -cover
 - 日志 offset 续拉（分块拉到 `eof`、重连去重、鉴权失败不重试、Ctrl+C 中断语义）
 - 命令层：进程内跑完整 cobra 命令树，对照真实 HTTP + WebSocket 假服务端校验退出码与输出
 - 中间件动作：逐个校验 `action` / `components` / `mode` / `dryRun` 请求体，密码参数不回显、空串表示清空
+
+### Source dependency builds
+
+Create library projects with `--kind lib` and declare their prerequisite project keys:
+
+```bash
+deploy --server 97 project create --file library.json --kind lib --dependencies java-model
+deploy --server 97 project update my-app --dependencies tio-boot-admin
+deploy --server 97 run my-app --with-dependencies --wait --json
+```
+
+Project JSON accepts `kind` and `dependencies`. `project update <key> --file project.json` updates supplied fields and resolves relative `scriptFile` paths. Omitted fields remain unchanged; supplied command and environment lists replace those lists. Use `--dependencies=` to clear dependencies. Dependency ordering, cycle checks and failure propagation are handled by deploy-server. Without `--with-dependencies`, `run` builds only the target project.

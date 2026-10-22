@@ -39,6 +39,8 @@ func newProjectGetCmd(app *App) *cobra.Command {
 				p.String(output.KeyValue([][2]string{
 					{"Key", p.Bold(proj.Key)},
 					{"name", orDash(proj.Name)},
+					{"kind", proj.Kind},
+					{"dependencies", strings.Join(proj.Dependencies, ", ")},
 					{"description", orDash(proj.Description)},
 					{"workdir", orDash(proj.Workdir)},
 					{"Shell", orDash(proj.Shell)},

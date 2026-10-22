@@ -18,6 +18,7 @@ import (
 
 func newRunCmd(app *App) *cobra.Command {
 	var (
+		withDependencies  bool
 		follow            bool
 		wait              bool
 		branch            string
@@ -60,9 +61,10 @@ Ctrl+C only detaches log following by default and does not cancel the run; add -
 
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			res, err := client.TriggerRun(ctx, key, &api.RunRequest{
-				Branch:     branch,
-				Env:        envMap,
-				CommandIDs: commandIDs,
+				WithDependencies: withDependencies,
+				Branch:           branch,
+				Env:              envMap,
+				CommandIDs:       commandIDs,
 			})
 			cancel()
 			if err != nil {
@@ -111,6 +113,7 @@ Ctrl+C only detaches log following by default and does not cancel the run; add -
 	}
 
 	f := cmd.Flags()
+	f.BoolVar(&withDependencies, "with-dependencies", false, "build dependency projects before running the target")
 	f.BoolVarP(&follow, "follow", "f", false, "replay history first, then follow live over WebSocket until the end")
 	f.BoolVar(&wait, "wait", false, "wait for the run to finish and return (no logs)")
 	f.StringVar(&branch, "branch", "", "branch / ref to use (written to requestedRef)")

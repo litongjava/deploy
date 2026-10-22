@@ -436,3 +436,12 @@ func (c *Client) RunLog(ctx context.Context, id, offset int64, limit int) (*LogC
 func (c *Client) CancelRun(ctx context.Context, id int64) error {
 	return c.do(ctx, http.MethodPost, "/runs/"+strconv.FormatInt(id, 10)+"/cancel", nil, nil, nil)
 }
+
+// UpdateProject sends only the explicitly supplied fields.
+func (c *Client) UpdateProject(ctx context.Context, key string, in map[string]any) (*Project, error) {
+	var out Project
+	if err := c.do(ctx, http.MethodPut, "/projects/"+url.PathEscape(key), nil, in, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
