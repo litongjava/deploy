@@ -66,6 +66,30 @@ Before creating a project from this example, adapt the Git URL/branch, project k
 
 The full project runs all six steps. For an operations-only check, select the actual command ID for `06-ops.sh` using `--command-id`; do not rerun the whole project. Review the service replacement and log deletion in step 4 before execution. Import with `project create --file <copied-directory>/project.json --json`, then inspect the created project before an authorized run.
 
+## Update projects and build source dependencies
+
+Current CLI supports `project update`, `--kind app|lib`, `--dependencies`, and `run --with-dependencies`. Check installed help before using them. If the requested workflow needs missing CLI capabilities and the user authorizes CLI changes, update its source, test and install it rather than maintaining a separate API workaround.
+
+```bash
+deploy --server <server> project create --file library.json --kind lib
+deploy --server <server> project update <library> --dependencies base-library
+deploy --server <server> project update <app> --file project.json
+deploy --server <server> run <app> --with-dependencies --wait --json
+```
+
+- JSON project definitions accept `kind` and `dependencies`. Use `lib` for build/install projects and `app` for deployable applications. Create prerequisites before dependents, then read back the dependency graph.
+- `project update` preserves omitted fields. Supplied command/environment lists replace those lists; use `--dependencies=` to clear dependencies. The file key must match the target. `scriptFile` is resolved relative to the definition file and CRLF is normalized for remote shells.
+- Without `--with-dependencies`, a run executes only the target. With it, the server orders and deduplicates prerequisite builds. A dependency failure blocks the application: inspect the failing child run, not just the parent summary.
+- For unpublished Java changes, fetch the specified source repositories on the server and run each repository's `build.txt` install command with GPG signing disabled. Match each library's required JDK separately from the application JDK. Respect requested JDK download sources and paths; do not bypass JDK enforcement.
+- Use the same Maven local repository/user across prerequisite and application builds. Check Maven settings and artifact coordinates. A successful build against a published artifact does not prove it contains current source changes; verify source commits, install logs and packaged dependency versions.
+- Keep application configuration outside Git. Use encrypted deployment variables or existing restricted files, avoid printing secrets, and avoid persistent project scripts that depend on temporary local download servers.
+
+## Remove temporary projects
+
+When cleanup is authorized, list projects and their dependencies first. Keep active applications, referenced library projects and unrelated system projects. Remove only identified temporary inspection/bootstrap/obsolete deployment projects.
+
+If the CLI lacks deletion, use the documented deploy-server `DELETE /api/v1/projects/{key}` API with the configured target and token, without printing the token. Deletion cancels project runs and removes project commands, encrypted variables, run history and log files. It does not delete the source workspace, database or systemd service. Do not delete workspace directories as an implicit part of project cleanup. Read back the project list and verify the deployed service afterward.
+
 ## Run and track completion
 
 ```bash
