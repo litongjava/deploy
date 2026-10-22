@@ -422,7 +422,7 @@ func (pf *projectFile) commandInputs(baseDir, defaultFailStrategy string) ([]api
 			if err != nil {
 				return nil, exitcode.Usagef("command %d: cannot read scriptFile %s: %v", i+1, c.ScriptFile, err)
 			}
-			script = string(b)
+			script = strings.ReplaceAll(string(b), "\r\n", "\n")
 		}
 		if strings.TrimSpace(script) == "" {
 			return nil, exitcode.Usagef("command %d has an empty script (set script or scriptFile)", i+1)
